@@ -1,0 +1,11 @@
+<view class="work-card" bindtap="handleTap">
+  <view class="work-image-wrap">
+    <image wx:if="{{work.imageUrl && !imageError}}" class="work-image" mode="aspectFill" src="{{work.imageUrl}}" binderror="handleImageError" />
+    <view wx:else class="work-placeholder"><text>拾光</text><text>{{work.categoryName}}</text></view>
+    <text class="work-category">{{work.categoryName}}</text>
+  </view>
+  <view class="work-content">
+    <text class="work-title">{{work.title}}</text>
+    <text class="work-description">{{work.description}}</text>
+  </view>
+</view>

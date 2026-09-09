@@ -1,0 +1,18 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 48rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  line-height: 48rpx;
+}
+
+.badge-PENDING_PAYMENT { background: #fff4df; color: #aa7832; }
+.badge-RESERVED { background: #fff0f1; color: #af606b; }
+.badge-ARRIVED,
+.badge-IN_SERVICE { background: #f3e9f4; color: #865f8d; }
+.badge-COMPLETED { background: #e8f4e9; color: #5d8a67; }
+.badge-CANCELLED,
+.badge-CANCELLED_BY_USER,
+.badge-CANCELLED_NO_SHOW { background: #f3eeee; color: #988684; }

@@ -1,0 +1,48 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/services/index",
+    "pages/service-detail/index",
+    "pages/work-detail/index",
+    "pages/booking/index",
+    "pages/orders/index",
+    "pages/order-detail/index",
+    "pages/profile/index",
+    "pages/points/index",
+    "pages/staff/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "拾光美研",
+    "navigationBarBackgroundColor": "#fffaf7",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#fffaf7",
+    "backgroundTextStyle": "light"
+  },
+  "tabBar": {
+    "color": "#9a8581",
+    "selectedColor": "#bb6f79",
+    "backgroundColor": "#fffdfb",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/services/index",
+        "text": "项目"
+      },
+      {
+        "pagePath": "pages/booking/index",
+        "text": "预约"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

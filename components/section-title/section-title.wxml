@@ -1,0 +1,7 @@
+<view class="section-title-wrap">
+  <view>
+    <text wx:if="{{eyebrow}}" class="eyebrow">{{eyebrow}}</text>
+    <text class="title">{{title}}</text>
+  </view>
+  <text wx:if="{{linkText}}" class="link" bindtap="handleLink">{{linkText}} ›</text>
+</view>

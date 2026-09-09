@@ -1,0 +1,73 @@
+<view class="page-shell home-page">
+  <view wx:if="{{isDemo}}" class="demo-banner">
+    <text>当前为演示模式，部署 api 云函数后将切换为真实数据</text>
+  </view>
+
+  <view class="home-header">
+    <view>
+      <text class="eyebrow">SHIGUANG BEAUTY STUDIO</text>
+      <text class="greeting">把喜欢的样子，留给今天</text>
+      <text class="store-name">{{store.storeName || '拾光美研'}}</text>
+    </view>
+    <view class="header-mark">✦</view>
+  </view>
+
+  <view class="hero-card">
+    <view class="hero-copy">
+      <text class="hero-kicker">让每一次变美，都值得被认真安排</text>
+      <text class="hero-title">为自己留一段<br />不被打扰的时间</text>
+      <text class="hero-desc">精选项目 · 预约到店 · 一位顾客一位技师</text>
+      <button class="hero-button" bindtap="goServices">看看本周项目 <text>›</text></button>
+    </view>
+    <view class="hero-orbit orbit-one"></view>
+    <view class="hero-orbit orbit-two"></view>
+    <view class="hero-flower">✿</view>
+  </view>
+
+  <view class="quick-info card">
+    <view class="quick-item" bindtap="showAddress">
+      <text class="quick-icon">⌖</text>
+      <view><text class="quick-label">门店位置</text><text class="quick-value">{{store.address || '预约后展示地址'}}</text></view>
+    </view>
+    <view class="quick-divider"></view>
+    <view class="quick-item" bindtap="makePhoneCall">
+      <text class="quick-icon">⌁</text>
+      <view><text class="quick-label">营业时间</text><text class="quick-value">每日 10:00 — 20:00</text></view>
+    </view>
+  </view>
+
+  <view class="section-block">
+    <section-title eyebrow="EXPLORE" title="从喜欢的类别开始" link-text="全部项目" bindlink="goServices"></section-title>
+    <view class="category-grid">
+      <view wx:for="{{categories}}" wx:key="id" class="category-item" style="background: {{item.color}}" data-id="{{item.id}}" bindtap="handleCategoryTap">
+        <text class="category-icon">{{item.icon}}</text>
+        <text class="category-name">{{item.name}}</text>
+        <text class="category-subtitle">{{item.subtitle}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="section-block">
+    <section-title eyebrow="SIGNATURE" title="本周人气项目" link-text="查看更多" bindlink="goServices"></section-title>
+    <view wx:if="{{loading}}" class="loading-row"><view class="skeleton loading-card"></view><view class="skeleton loading-card"></view></view>
+    <view wx:else class="service-list">
+      <service-card wx:for="{{services}}" wx:key="id" service="{{item}}" bindselect="handleServiceTap"></service-card>
+    </view>
+    <empty-state wx:if="{{!loading && !services.length}}" title="项目正在整理中" description="稍后再来看看新的服务吧"></empty-state>
+  </view>
+
+  <view class="section-block works-section">
+    <section-title eyebrow="OUR WORK" title="最近完成的作品" link-text="看全部" bindlink="goServices"></section-title>
+    <scroll-view class="work-scroll" scroll-x="true" enhanced="true" show-scrollbar="false">
+      <view class="work-scroll-inner">
+        <work-card wx:for="{{works}}" wx:key="id" work="{{item}}" bindselect="handleWorkTap"></work-card>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view class="notice-card">
+    <text class="notice-mark">“</text>
+    <text class="notice-copy">{{store.notice || '每次预约只安排一位顾客和一位技师，请提前 5 分钟到店。'}}</text>
+    <text class="notice-sign">— 拾光美研</text>
+  </view>
+</view>

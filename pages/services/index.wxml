@@ -1,0 +1,32 @@
+<view class="page-shell services-page">
+  <view class="page-heading">
+    <text class="eyebrow">SERVICES</text>
+    <text class="page-title">找到适合你的那一项</text>
+    <text class="page-subtitle">提前 14 天开放预约，至少提前 1 小时提交</text>
+  </view>
+
+  <scroll-view class="category-tabs" scroll-x="true" show-scrollbar="false">
+    <view class="category-tabs-inner">
+      <view class="category-tab {{activeCategoryId === '' ? 'active' : ''}}" data-id="" bindtap="handleCategoryTap">全部</view>
+      <view wx:for="{{categories}}" wx:key="id" class="category-tab {{activeCategoryId === item.id ? 'active' : ''}}" data-id="{{item.id}}" bindtap="handleCategoryTap">{{item.name}}</view>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{loading}}" class="service-loading">
+    <view wx:for="{{skeletons}}" wx:key="*this" class="skeleton service-skeleton"></view>
+  </view>
+  <view wx:elif="{{services.length}}" class="service-page-list">
+    <service-card wx:for="{{services}}" wx:key="id" service="{{item}}" compact="true" bindselect="handleServiceTap"></service-card>
+  </view>
+  <empty-state wx:else title="这个类别暂时没有项目" description="可以先看看其他类别，或者稍后再来"></empty-state>
+
+  <view class="works-intro">
+    <text class="eyebrow">PORTFOLIO</text>
+    <text class="works-title">作品灵感</text>
+    <text class="works-subtitle">喜欢哪一张，可以直接从作品进入对应项目。</text>
+  </view>
+  <view class="works-grid">
+    <work-card wx:for="{{works}}" wx:key="id" work="{{item}}" bindselect="handleWorkTap"></work-card>
+  </view>
+  <view class="works-tip">首页展示精选作品，点击作品即可查看详情。</view>
+</view>

@@ -1,0 +1,160 @@
+.points-page {
+  padding-top: 26rpx;
+}
+
+.points-heading {
+  padding: 10rpx 4rpx 24rpx;
+}
+
+.page-title {
+  display: block;
+  margin-top: 12rpx;
+  color: #332c2b;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 44rpx;
+  font-weight: 700;
+}
+
+.page-subtitle {
+  display: block;
+  margin-top: 12rpx;
+  color: #9a8581;
+  font-size: 23rpx;
+}
+
+.points-balance-card {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  min-height: 220rpx;
+  padding: 30rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(135deg, #9b626e, #bd7d84 62%, #d39a97);
+  box-shadow: 0 18rpx 36rpx rgba(164, 98, 108, 0.2);
+}
+
+.debt-note {
+  margin-top: 16rpx;
+  padding: 18rpx 22rpx;
+  border: 1rpx solid #efd7c8;
+  border-radius: 18rpx;
+  background: #fff4e9;
+  color: #a87952;
+  font-size: 22rpx;
+  line-height: 1.55;
+}
+
+.balance-label,
+.frozen text {
+  display: block;
+  color: rgba(255, 250, 247, 0.75);
+  font-size: 22rpx;
+}
+
+.balance-number {
+  display: block;
+  margin-top: 4rpx;
+  color: #fffaf7;
+  font-family: Georgia, serif;
+  font-size: 72rpx;
+  font-weight: 700;
+}
+
+.frozen {
+  text-align: right;
+}
+
+.frozen text:last-child {
+  margin-top: 8rpx;
+  color: #fffaf7;
+  font-family: Georgia, serif;
+  font-size: 34rpx;
+}
+
+.rule-card {
+  margin-top: 22rpx;
+  padding: 24rpx;
+  background: #fff6ed;
+}
+
+.rule-title,
+.rule-copy {
+  display: block;
+}
+
+.rule-title {
+  color: #8b673d;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.rule-copy {
+  margin-top: 10rpx;
+  color: #a17d51;
+  font-size: 22rpx;
+  line-height: 1.65;
+}
+
+.ledger-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-top: 44rpx;
+}
+
+.ledger-heading .section-title {
+  font-size: 34rpx;
+}
+
+.ledger-list {
+  margin-top: 20rpx;
+  padding: 4rpx 24rpx;
+}
+
+.ledger-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 104rpx;
+  border-bottom: 1rpx solid #f2e9e5;
+}
+
+.ledger-item:last-child {
+  border-bottom: 0;
+}
+
+.ledger-description,
+.ledger-time {
+  display: block;
+}
+
+.ledger-description {
+  color: #765c58;
+  font-size: 25rpx;
+}
+
+.ledger-time {
+  margin-top: 6rpx;
+  color: #b19d98;
+  font-size: 20rpx;
+}
+
+.ledger-amount {
+  font-family: Georgia, serif;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.ledger-amount.positive { color: #69936f; }
+.ledger-amount.negative { color: #bb6f79; }
+
+.ledger-skeleton {
+  height: 300rpx;
+  margin-top: 20rpx;
+}
+
+.empty-ledger {
+  margin-top: 30rpx;
+  color: #a08c86;
+  text-align: center;
+}

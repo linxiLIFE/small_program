@@ -1,0 +1,83 @@
+{
+  "envId": "cloud1-d5g44sjps7b57763c",
+  "functionRoot": "./cloudfunctions",
+  "functions": [
+    {
+      "name": "api",
+      "timeout": 20,
+      "memorySize": 256,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "description": "拾光美研预约小程序业务 API",
+      "vpc": {
+        "vpcId": "vpc-kshyiilq",
+        "subnetId": "subnet-csqhts8n"
+      }
+    },
+    {
+      "name": "jobs",
+      "timeout": 60,
+      "memorySize": 256,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "description": "拾光美研预约、支付和退款补偿任务",
+      "triggers": [
+        {
+          "name": "shiguang-jobs-every-minute",
+          "type": "timer",
+          "config": "0 */1 * * * * *"
+        }
+      ],
+      "vpc": {
+        "vpcId": "vpc-kshyiilq",
+        "subnetId": "subnet-csqhts8n"
+      }
+    },
+    {
+      "name": "seed",
+      "timeout": 60,
+      "memorySize": 256,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "description": "拾光美研受控演示数据初始化",
+      "vpc": {
+        "vpcId": "vpc-kshyiilq",
+        "subnetId": "subnet-csqhts8n"
+      }
+    },
+    {
+      "name": "admin-api",
+      "timeout": 20,
+      "memorySize": 256,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "description": "拾光美研管理后台 HTTPS API",
+      "vpc": {
+        "vpcId": "vpc-kshyiilq",
+        "subnetId": "subnet-csqhts8n"
+      }
+    },
+    {
+      "name": "payment-callback",
+      "timeout": 20,
+      "memorySize": 256,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "description": "拾光美研微信支付 API v3 回调入口",
+      "vpc": {
+        "vpcId": "vpc-kshyiilq",
+        "subnetId": "subnet-csqhts8n"
+      }
+    }
+  ],
+  "ai": {
+    "defaultAgent": "{{env.AI_DEFAULT_AGENT}}",
+    "agents": {
+      "codex": {
+        "type": "cloudbase",
+        "provider": "longcat",
+        "model": "LongCat-Flash-Chat"
+      }
+    }
+  }
+}

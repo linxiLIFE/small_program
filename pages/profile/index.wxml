@@ -1,0 +1,26 @@
+<view class="page-shell profile-page">
+  <view wx:if="{{isDemo}}" class="demo-banner">当前为演示模式，真实用户资料会由微信身份上下文返回。</view>
+  <view class="profile-hero">
+    <view class="profile-avatar"><image wx:if="{{profile.avatarUrl}}" mode="aspectFill" src="{{profile.avatarUrl}}" /><text wx:else>拾</text></view>
+    <view class="profile-copy"><text class="profile-name">{{profile.nickname || '拾光访客'}}</text><text class="profile-phone">{{profile.phoneLabel || '绑定手机号后即可预约'}}</text></view>
+    <text class="profile-star">✦</text>
+  </view>
+
+  <view class="points-card" bindtap="openPoints">
+    <view><text class="points-eyebrow">MY POINTS</text><text class="points-number">{{profile.points || 0}}</text><text class="points-unit">积分</text></view>
+    <view class="points-right"><text>查看积分明细</text><text class="points-arrow">›</text></view>
+  </view>
+
+  <view class="menu-card card">
+    <view class="menu-item" bindtap="openOrders"><view class="menu-icon rose">◷</view><view class="menu-copy"><text>预约记录</text><text>查看每一次到店安排</text></view><text class="menu-arrow">›</text></view>
+    <view class="divider"></view>
+    <view class="menu-item" bindtap="contactService"><view class="menu-icon sand">⌁</view><view class="menu-copy"><text>联系客服</text><text>有任何问题都可以找我们</text></view><text class="menu-arrow">›</text></view>
+    <view class="divider"></view>
+    <view class="menu-item" bindtap="privacy"><view class="menu-icon plum">♡</view><view class="menu-copy"><text>隐私与授权</text><text>了解信息如何被使用</text></view><text class="menu-arrow">›</text></view>
+    <view wx:if="{{profile.role && profile.role !== 'CUSTOMER'}}" class="divider"></view>
+    <view wx:if="{{profile.role && profile.role !== 'CUSTOMER'}}" class="menu-item" bindtap="openStaff"><view class="menu-icon green">✓</view><view class="menu-copy"><text>工作台</text><text>进入{{profile.roleLabel || '工作人员'}}工作台</text></view><text class="menu-arrow">›</text></view>
+  </view>
+
+  <view wx:if="{{!profile.phone && !profile.phoneMasked}}" class="phone-reminder card"><view><text class="reminder-title">预约前绑定手机号</text><text class="reminder-copy">仅用于预约确认和到店提醒，不影响浏览项目。</text></view><button open-type="getPhoneNumber|agreePrivacyAuthorization" phone-number-no-quota-toast="false" bindgetphonenumber="handleGetPhoneNumber" bindagreeprivacyauthorization="handleAgreePrivacyAuthorization">去绑定</button></view>
+  <text class="profile-footer">拾光美研 · 为自己留一段时间</text>
+</view>

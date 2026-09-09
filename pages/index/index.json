@@ -1,0 +1,9 @@
+{
+  "navigationBarTitleText": "拾光美研",
+  "usingComponents": {
+    "section-title": "/components/section-title/section-title",
+    "service-card": "/components/service-card/service-card",
+    "work-card": "/components/work-card/work-card",
+    "empty-state": "/components/empty-state/empty-state"
+  }
+}

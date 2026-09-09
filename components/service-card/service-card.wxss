@@ -1,0 +1,115 @@
+.service-card {
+  overflow: hidden;
+  border: 1rpx solid #f0e4df;
+  border-radius: 26rpx;
+  background: #fffdfb;
+  box-shadow: 0 14rpx 32rpx rgba(104, 69, 63, 0.06);
+}
+
+.service-card.compact {
+  display: flex;
+  margin-bottom: 20rpx;
+}
+
+.cover-wrap {
+  position: relative;
+  height: 300rpx;
+}
+
+.compact .cover-wrap {
+  flex: 0 0 220rpx;
+  height: 220rpx;
+}
+
+.cover,
+.cover-fallback {
+  width: 100%;
+  height: 100%;
+}
+
+.cover-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10rpx;
+  background: linear-gradient(135deg, #f4d8d2, #e7c6c4 52%, #e8d9d0);
+  color: #95666b;
+  font-size: 24rpx;
+}
+
+.fallback-mark {
+  font-size: 54rpx;
+}
+
+.category-pill {
+  position: absolute;
+  top: 20rpx;
+  left: 20rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 253, 251, 0.88);
+  color: #9f626b;
+  font-size: 22rpx;
+}
+
+.service-body {
+  padding: 24rpx 24rpx 28rpx;
+}
+
+.compact .service-body {
+  flex: 1;
+  min-width: 0;
+  padding: 22rpx 24rpx;
+}
+
+.service-title-row,
+.service-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.service-name {
+  overflow: hidden;
+  color: #332c2b;
+  font-size: 31rpx;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arrow {
+  margin-left: 18rpx;
+  color: #c89996;
+  font-size: 40rpx;
+  line-height: 1;
+}
+
+.service-description {
+  display: -webkit-box;
+  height: 68rpx;
+  margin-top: 12rpx;
+  overflow: hidden;
+  color: #9a8581;
+  font-size: 24rpx;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.service-meta {
+  margin-top: 20rpx;
+}
+
+.price {
+  color: #bb6f79;
+  font-family: Georgia, serif;
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.duration {
+  color: #9a8581;
+  font-size: 23rpx;
+}

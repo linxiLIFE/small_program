@@ -1,0 +1,13 @@
+{
+  "name": "shiguang-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "拾光美研预约小程序业务 API",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/js-sdk": "^3.8.2",
+    "@cloudbase/node-sdk": "^3.18.3",
+    "mysql2": "3.24.4",
+    "wx-server-sdk": "3.0.1"
+  }
+}

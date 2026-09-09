@@ -1,0 +1,243 @@
+.detail-page {
+  padding: 0 0 140rpx;
+}
+
+.detail-loading {
+  padding: 32rpx;
+}
+
+.detail-cover-skeleton {
+  height: 520rpx;
+}
+
+.detail-line {
+  width: 64%;
+  height: 32rpx;
+  margin-top: 32rpx;
+}
+
+.detail-line.large {
+  width: 82%;
+  height: 46rpx;
+}
+
+.detail-cover-wrap {
+  position: relative;
+  height: 560rpx;
+  overflow: hidden;
+  background: #edd5d0;
+}
+
+.detail-cover,
+.detail-cover-fallback,
+.cover-overlay {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.detail-cover-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16rpx;
+  background: linear-gradient(135deg, #edc7c2, #f4e2da 58%, #dcb9ba);
+  color: #9f626b;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 30rpx;
+}
+
+.detail-cover-fallback text:first-child {
+  font-size: 62rpx;
+  font-weight: 700;
+}
+
+.cover-overlay {
+  background: linear-gradient(0deg, rgba(47, 32, 33, 0.66), rgba(47, 32, 33, 0.02) 68%);
+}
+
+.cover-caption {
+  position: absolute;
+  right: 34rpx;
+  bottom: 40rpx;
+  left: 34rpx;
+}
+
+.cover-caption .eyebrow {
+  color: #f8dfe0;
+}
+
+.cover-title {
+  display: block;
+  margin-top: 10rpx;
+  color: #fffaf7;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 48rpx;
+  font-weight: 700;
+}
+
+.detail-content {
+  padding: 34rpx 32rpx;
+}
+
+.price-row,
+.technician-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.detail-price {
+  color: #bb6f79;
+  font-family: Georgia, serif;
+  font-size: 46rpx;
+  font-weight: 700;
+}
+
+.detail-duration {
+  color: #9a8581;
+  font-size: 24rpx;
+}
+
+.detail-description {
+  display: block;
+  margin-top: 22rpx;
+  color: #765c58;
+  font-size: 27rpx;
+  line-height: 1.75;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 22rpx;
+}
+
+.tag {
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: #f8e9e5;
+  color: #a66b70;
+  font-size: 22rpx;
+}
+
+.info-note {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 30rpx;
+  padding: 22rpx;
+  border-radius: 20rpx;
+  background: #fff6ed;
+  color: #997651;
+  font-size: 23rpx;
+  line-height: 1.6;
+}
+
+.note-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32rpx;
+  width: 32rpx;
+  height: 32rpx;
+  margin: 2rpx 12rpx 0 0;
+  border: 1rpx solid #d5a866;
+  border-radius: 50%;
+  font-family: Georgia, serif;
+  font-size: 22rpx;
+}
+
+.technician-heading {
+  margin-top: 42rpx;
+}
+
+.technician-heading .section-title {
+  font-size: 34rpx;
+}
+
+.technician-list {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 22rpx;
+  overflow-x: auto;
+}
+
+.technician-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 300rpx;
+  min-height: 104rpx;
+  padding: 18rpx;
+  border: 1rpx solid #eee1dc;
+  border-radius: 20rpx;
+  background: #fffdfb;
+}
+
+.technician-item.selected {
+  border-color: #cd9296;
+  background: #fff5f4;
+  box-shadow: 0 8rpx 20rpx rgba(187, 111, 121, 0.1);
+}
+
+.technician-avatar {
+  flex: 0 0 68rpx;
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 50%;
+}
+
+.avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #efd9d5;
+  color: #a66b70;
+  font-size: 28rpx;
+}
+
+.technician-copy {
+  min-width: 0;
+  margin-left: 14rpx;
+}
+
+.technician-name,
+.technician-title {
+  display: block;
+}
+
+.technician-name {
+  color: #594846;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.technician-title {
+  overflow: hidden;
+  margin-top: 5rpx;
+  color: #a08c86;
+  font-size: 20rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-icon {
+  position: absolute;
+  right: 14rpx;
+  bottom: 12rpx;
+  color: #bb6f79;
+  font-size: 24rpx;
+}
+
+.bottom-bar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  padding: 18rpx 32rpx;
+  background: rgba(255, 250, 247, 0.94);
+  box-shadow: 0 -8rpx 24rpx rgba(104, 69, 63, 0.08);
+}

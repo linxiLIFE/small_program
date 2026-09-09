@@ -1,0 +1,158 @@
+.work-detail-page {
+  padding: 20rpx 32rpx 48rpx;
+}
+
+.work-detail-skeleton {
+  height: 660rpx;
+}
+
+.work-hero {
+  position: relative;
+  height: 660rpx;
+  overflow: hidden;
+  border-radius: 30rpx;
+  background: #edd5d0;
+}
+
+.work-hero-image,
+.work-hero-fallback,
+.work-hero-overlay {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.work-hero-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #edc7c2, #f4e2da 58%, #dcb9ba);
+  color: #9f626b;
+  font-family: Georgia, serif;
+  font-size: 70rpx;
+}
+
+.work-hero-overlay {
+  background: linear-gradient(0deg, rgba(47, 32, 33, 0.7), transparent 70%);
+}
+
+.work-hero-caption {
+  position: absolute;
+  right: 30rpx;
+  bottom: 32rpx;
+  left: 30rpx;
+}
+
+.work-hero-title {
+  display: block;
+  margin-top: 10rpx;
+  color: #fffaf7;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 48rpx;
+  font-weight: 700;
+}
+
+.work-detail-content {
+  padding-top: 30rpx;
+}
+
+.work-detail-description {
+  display: block;
+  color: #765c58;
+  font-size: 28rpx;
+  line-height: 1.75;
+}
+
+.artist-card {
+  display: flex;
+  align-items: center;
+  margin-top: 30rpx;
+  padding: 24rpx;
+}
+
+.artist-avatar {
+  flex: 0 0 112rpx;
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 50%;
+}
+
+.artist-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #efd9d5;
+  color: #a66b70;
+  font-size: 42rpx;
+}
+
+.artist-copy {
+  min-width: 0;
+  margin-left: 22rpx;
+}
+
+.artist-name,
+.artist-title,
+.artist-bio {
+  display: block;
+}
+
+.artist-name {
+  color: #594846;
+  font-size: 31rpx;
+  font-weight: 700;
+}
+
+.artist-title {
+  margin-top: 5rpx;
+  color: #bb6f79;
+  font-size: 22rpx;
+}
+
+.artist-bio {
+  margin-top: 12rpx;
+  color: #9a8581;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
+.related-service {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 22rpx;
+  padding: 24rpx;
+}
+
+.related-copy {
+  min-width: 0;
+}
+
+.related-name,
+.related-meta {
+  display: block;
+}
+
+.related-name {
+  margin-top: 8rpx;
+  color: #594846;
+  font-size: 29rpx;
+  font-weight: 700;
+}
+
+.related-meta {
+  margin-top: 8rpx;
+  color: #9a8581;
+  font-size: 22rpx;
+}
+
+.small-book-button {
+  flex: 0 0 126rpx;
+  height: 66rpx;
+  margin: 0 0 0 18rpx;
+  border-radius: 15rpx;
+  background: #bb6f79;
+  color: #ffffff;
+  font-size: 24rpx;
+  line-height: 66rpx;
+}

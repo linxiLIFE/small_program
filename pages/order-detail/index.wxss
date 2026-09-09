@@ -1,0 +1,182 @@
+.order-detail-page {
+  padding-top: 26rpx;
+  padding-bottom: 70rpx;
+}
+
+.detail-status-skeleton {
+  height: 190rpx;
+}
+
+.detail-order-skeleton {
+  height: 620rpx;
+  margin-top: 20rpx;
+}
+
+.order-status-card,
+.detail-card,
+.timeline-card {
+  padding: 28rpx 24rpx;
+}
+
+.status-top,
+.detail-card-heading,
+.detail-row,
+.refund-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.status-title {
+  display: block;
+  margin-top: 10rpx;
+  color: #594846;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 42rpx;
+  font-weight: 700;
+}
+
+.status-hint {
+  display: block;
+  margin-top: 22rpx;
+  color: #9a8581;
+  font-size: 23rpx;
+  line-height: 1.55;
+}
+
+.detail-card,
+.timeline-card {
+  margin-top: 20rpx;
+}
+
+.detail-card-heading .section-title {
+  font-size: 32rpx;
+}
+
+.order-number {
+  color: #bb6f79;
+  font-size: 22rpx;
+}
+
+.detail-row {
+  margin-top: 24rpx;
+  color: #806d68;
+  font-size: 25rpx;
+}
+
+.row-label {
+  color: #a08c86;
+}
+
+.row-value {
+  max-width: 68%;
+  color: #594846;
+  text-align: right;
+}
+
+.row-value.discount {
+  color: #bb6f79;
+}
+
+.total-row {
+  margin-top: 20rpx;
+}
+
+.row-value.total {
+  color: #bb6f79;
+  font-family: Georgia, serif;
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.refund-row {
+  margin: 24rpx -24rpx -28rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 0 0 28rpx 28rpx;
+  background: #fff7ed;
+  color: #a87949;
+  font-size: 23rpx;
+}
+
+.refund-row text:last-child {
+  color: #bb6f79;
+}
+
+.timeline-item {
+  display: flex;
+  align-items: flex-start;
+  color: #b09d98;
+  font-size: 25rpx;
+}
+
+.timeline-item.active {
+  color: #765c58;
+}
+
+.timeline-dot {
+  flex: 0 0 18rpx;
+  width: 18rpx;
+  height: 18rpx;
+  margin: 6rpx 18rpx 0 2rpx;
+  border: 4rpx solid #e8d8d3;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.active .timeline-dot {
+  border-color: #e4b2b4;
+  background: #bb6f79;
+}
+
+.timeline-meta {
+  display: block;
+  margin-top: 7rpx;
+  color: #b09d98;
+  font-size: 21rpx;
+}
+
+.timeline-line {
+  width: 2rpx;
+  height: 34rpx;
+  margin: 4rpx 0 4rpx 10rpx;
+  background: #eee1dc;
+}
+
+.action-bar {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.action-button {
+  flex: 1;
+  height: 82rpx;
+  margin: 0;
+  border-radius: 17rpx;
+  font-size: 27rpx;
+  line-height: 82rpx;
+}
+
+.action-button.primary {
+  background: #bb6f79;
+  color: #ffffff;
+}
+
+.action-button.ghost {
+  border: 1rpx solid #ead8d2;
+  background: #fffdfb;
+  color: #765c58;
+}
+
+.action-button.danger {
+  border: 1rpx solid #e7b4ae;
+  background: #fff7f5;
+  color: #c2675f;
+}
+
+.order-footnote {
+  margin-top: 26rpx;
+  color: #b19d98;
+  font-size: 20rpx;
+  text-align: center;
+}

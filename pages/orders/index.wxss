@@ -1,0 +1,119 @@
+.orders-page {
+  padding-top: 26rpx;
+}
+
+.orders-heading {
+  padding: 10rpx 4rpx 18rpx;
+}
+
+.page-title {
+  display: block;
+  margin-top: 12rpx;
+  color: #332c2b;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 44rpx;
+  font-weight: 700;
+}
+
+.status-tabs {
+  width: calc(100% + 64rpx);
+  margin: 10rpx -32rpx 28rpx;
+  white-space: nowrap;
+}
+
+.status-tabs-inner {
+  display: inline-flex;
+  gap: 12rpx;
+  padding: 8rpx 32rpx;
+}
+
+.status-tab {
+  padding: 12rpx 22rpx;
+  border-radius: 999rpx;
+  color: #9a8581;
+  font-size: 24rpx;
+}
+
+.status-tab.active {
+  background: #f5dfde;
+  color: #a85d68;
+  font-weight: 600;
+}
+
+.order-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.order-skeleton {
+  height: 244rpx;
+}
+
+.order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.order-card {
+  padding: 24rpx;
+}
+
+.order-card-top,
+.order-card-bottom,
+.order-time {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.order-service,
+.order-tech,
+.order-id {
+  display: block;
+}
+
+.order-service {
+  color: #594846;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.order-tech {
+  margin-top: 7rpx;
+  color: #a08c86;
+  font-size: 22rpx;
+}
+
+.order-time {
+  justify-content: flex-start;
+  margin: 24rpx 0 20rpx;
+  color: #765c58;
+  font-size: 25rpx;
+}
+
+.time-icon {
+  margin-right: 12rpx;
+  color: #bb6f79;
+  font-size: 30rpx;
+}
+
+.order-card-bottom {
+  margin-top: 18rpx;
+}
+
+.order-id {
+  overflow: hidden;
+  max-width: 55%;
+  color: #b19d98;
+  font-size: 20rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-paid {
+  color: #bb6f79;
+  font-size: 25rpx;
+  font-weight: 600;
+}

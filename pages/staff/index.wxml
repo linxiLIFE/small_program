@@ -1,0 +1,15 @@
+<view class="page-shell staff-page">
+  <view class="staff-heading"><view><text class="eyebrow">STAFF DESK</text><text class="page-title">今日工作台</text><text class="staff-role">{{profile.roleLabel || '工作人员'}} · 仅展示有权限的订单</text></view><view class="staff-mark">✦</view></view>
+  <scroll-view class="staff-tabs" scroll-x="true" show-scrollbar="false"><view class="staff-tabs-inner"><view wx:for="{{tabs}}" wx:key="id" class="staff-tab {{activeStatus === item.id ? 'active' : ''}}" data-status="{{item.id}}" bindtap="selectTab">{{item.label}}</view></view></scroll-view>
+  <view wx:if="{{loading}}" class="staff-loading"><view wx:for="{{skeletons}}" wx:key="*this" class="skeleton staff-skeleton"></view></view>
+  <view wx:elif="{{orders.length}}" class="staff-order-list">
+    <view wx:for="{{orders}}" wx:key="id" class="staff-order card">
+      <view class="staff-order-top"><view><text class="staff-service">{{item.serviceName}}</text><text class="staff-customer">{{item.customerName || '预约顾客'}} · {{item.technicianName}}</text></view><status-badge status="{{item.status}}" label="{{item.statusLabel}}"></status-badge></view>
+      <view class="staff-time">◷ {{item.timeLabel}}</view>
+      <view wx:if="{{item.status === 'RESERVED'}}" class="staff-actions"><button class="staff-button check" data-id="{{item.id}}" data-action="checkIn" bindtap="transition">确认到店</button></view>
+      <view wx:elif="{{item.status === 'ARRIVED'}}" class="staff-actions"><button class="staff-button start" data-id="{{item.id}}" data-action="start" bindtap="transition">开始服务</button></view>
+      <view wx:elif="{{item.status === 'IN_SERVICE'}}" class="staff-actions"><button class="staff-button complete" data-id="{{item.id}}" data-action="complete" bindtap="transition">完成服务</button></view>
+    </view>
+  </view>
+  <empty-state wx:else title="当前没有待处理订单" description="新的预约会在支付确认后出现在这里"></empty-state>
+</view>

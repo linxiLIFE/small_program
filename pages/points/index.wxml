@@ -1,0 +1,10 @@
+<view class="page-shell points-page">
+  <view class="points-heading"><text class="eyebrow">LOYALTY</text><text class="page-title">积分明细</text><text class="page-subtitle">服务完成后，实付每满 1 元获得 1 积分</text></view>
+  <view class="points-balance-card"><view><text class="balance-label">可用积分</text><text class="balance-number">{{account.available || 0}}</text></view><view class="frozen"><text>冻结中</text><text>{{account.frozen || 0}}</text></view></view>
+  <view wx:if="{{account.debt}}" class="debt-note">当前有 {{account.debt}} 积分待冲回，后续完成服务获得的奖励会优先抵扣。</view>
+  <view class="rule-card card"><text class="rule-title">如何使用积分</text><text class="rule-copy">20 积分抵 1 元，每单最高抵扣项目金额的 10%。下单时冻结，支付确认后消耗，未支付关闭会自动解冻。</text></view>
+  <view class="ledger-heading"><text class="section-title">收支记录</text><text class="muted">不设过期</text></view>
+  <view wx:if="{{loading}}" class="skeleton ledger-skeleton"></view>
+  <view wx:elif="{{ledger.length}}" class="ledger-list card"><view wx:for="{{ledger}}" wx:key="id" class="ledger-item"><view><text class="ledger-description">{{item.description}}</text><text class="ledger-time">{{item.timeLabel}}</text></view><text class="ledger-amount {{item.positive ? 'positive' : 'negative'}}">{{item.amountLabel}}</text></view></view>
+  <view wx:else class="empty-ledger">还没有积分流水</view>
+</view>

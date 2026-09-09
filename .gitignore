@@ -1,0 +1,15 @@
+.DS_Store
+admin/node_modules/
+admin/dist/
+*.log
+.env
+.env.*
+!.env.example
+cloudfunctions/**/node_modules/
+cloudfunctions/jobs/lib/
+cloudfunctions/payment-callback/lib/
+cloudfunctions/admin-api/lib/
+cloudfunctions/admin-api/api.js
+
+# Environment variables
+.env.local

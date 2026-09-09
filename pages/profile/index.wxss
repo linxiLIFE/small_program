@@ -1,0 +1,209 @@
+.profile-page {
+  padding-top: 24rpx;
+}
+
+.demo-banner {
+  margin-bottom: 22rpx;
+  padding: 14rpx 20rpx;
+  border: 1rpx solid #ead5b9;
+  border-radius: 14rpx;
+  background: #fff7e8;
+  color: #9a743e;
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
+.profile-hero {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 4rpx 30rpx;
+}
+
+.profile-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 118rpx;
+  height: 118rpx;
+  overflow: hidden;
+  border: 6rpx solid #f3dedd;
+  border-radius: 50%;
+  background: #ead0d0;
+  color: #a86d72;
+  font-family: Georgia, serif;
+  font-size: 44rpx;
+}
+
+.profile-avatar image {
+  width: 100%;
+  height: 100%;
+}
+
+.profile-copy {
+  flex: 1;
+  margin-left: 22rpx;
+}
+
+.profile-name,
+.profile-phone {
+  display: block;
+}
+
+.profile-name {
+  color: #594846;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.profile-phone {
+  margin-top: 8rpx;
+  color: #a08c86;
+  font-size: 23rpx;
+}
+
+.profile-star {
+  align-self: flex-start;
+  color: #c99392;
+  font-size: 38rpx;
+}
+
+.points-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 180rpx;
+  padding: 28rpx 30rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(135deg, #9b626e, #bd7d84 62%, #d39a97);
+  box-shadow: 0 18rpx 36rpx rgba(164, 98, 108, 0.2);
+}
+
+.points-eyebrow {
+  display: block;
+  color: rgba(255, 250, 247, 0.72);
+  font-size: 20rpx;
+  letter-spacing: 3rpx;
+}
+
+.points-number {
+  color: #fffaf7;
+  font-family: Georgia, serif;
+  font-size: 62rpx;
+  font-weight: 700;
+}
+
+.points-unit {
+  margin-left: 8rpx;
+  color: #fffaf7;
+  font-size: 23rpx;
+}
+
+.points-right {
+  display: flex;
+  align-items: center;
+  color: rgba(255, 250, 247, 0.84);
+  font-size: 22rpx;
+}
+
+.points-arrow {
+  margin-left: 10rpx;
+  font-size: 36rpx;
+}
+
+.menu-card {
+  margin-top: 24rpx;
+  padding: 4rpx 24rpx;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 112rpx;
+}
+
+.menu-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58rpx;
+  height: 58rpx;
+  border-radius: 18rpx;
+  font-size: 30rpx;
+}
+
+.menu-icon.rose { background: #f8e0df; color: #b97279; }
+.menu-icon.sand { background: #f7ead3; color: #b18a52; }
+.menu-icon.plum { background: #efe1ec; color: #936c8d; }
+.menu-icon.green { background: #e3f0e5; color: #69936f; }
+
+.menu-copy {
+  flex: 1;
+  margin-left: 18rpx;
+}
+
+.menu-copy text {
+  display: block;
+}
+
+.menu-copy text:first-child {
+  color: #594846;
+  font-size: 27rpx;
+  font-weight: 600;
+}
+
+.menu-copy text:last-child {
+  margin-top: 6rpx;
+  color: #a08c86;
+  font-size: 21rpx;
+}
+
+.menu-arrow {
+  color: #c9b5b0;
+  font-size: 38rpx;
+}
+
+.phone-reminder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 22rpx;
+  padding: 22rpx;
+}
+
+.reminder-title,
+.reminder-copy {
+  display: block;
+}
+
+.reminder-title {
+  color: #765c58;
+  font-size: 25rpx;
+  font-weight: 600;
+}
+
+.reminder-copy {
+  margin-top: 6rpx;
+  color: #a08c86;
+  font-size: 21rpx;
+}
+
+.phone-reminder button {
+  height: 62rpx;
+  margin: 0 0 0 12rpx;
+  padding: 0 18rpx;
+  border-radius: 14rpx;
+  background: #bb6f79;
+  color: #ffffff;
+  font-size: 22rpx;
+  line-height: 62rpx;
+}
+
+.profile-footer {
+  display: block;
+  margin-top: 52rpx;
+  color: #c3afaa;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 22rpx;
+  text-align: center;
+}

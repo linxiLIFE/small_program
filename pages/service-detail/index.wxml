@@ -1,0 +1,45 @@
+<view class="page-shell detail-page">
+  <view wx:if="{{loading}}" class="detail-loading">
+    <view class="skeleton detail-cover-skeleton"></view>
+    <view class="skeleton detail-line large"></view>
+    <view class="skeleton detail-line"></view>
+  </view>
+
+  <block wx:else>
+    <view class="detail-cover-wrap">
+      <image wx:if="{{service.coverUrl}}" class="detail-cover" mode="aspectFill" src="{{service.coverUrl}}" />
+      <view wx:else class="detail-cover-fallback"><text>拾光美研</text><text>{{service.categoryName}}</text></view>
+      <view class="cover-overlay"></view>
+      <view class="cover-caption"><text class="eyebrow">{{service.categoryName}}</text><text class="cover-title">{{service.name}}</text></view>
+    </view>
+
+    <view class="detail-content">
+      <view class="price-row">
+        <text class="detail-price">¥{{service.priceText}}</text>
+        <text class="detail-duration">约 {{service.durationText}}</text>
+      </view>
+      <text class="detail-description">{{service.description}}</text>
+      <view class="tag-list">
+        <text wx:for="{{service.tags}}" wx:key="*this" class="tag">{{item}}</text>
+      </view>
+
+      <view class="info-note">
+        <text class="note-icon">i</text>
+        <text>预约为全额预付。付款成功后锁定时段；到店核销前可自主取消并申请全额退款。</text>
+      </view>
+
+      <view class="technician-heading"><text class="section-title">选择技师</text><text class="muted">{{technicians.length}} 位可预约</text></view>
+      <view wx:if="{{technicians.length}}" class="technician-list">
+        <view wx:for="{{technicians}}" wx:key="id" class="technician-item {{item.selected ? 'selected' : ''}}" data-id="{{item.id}}" bindtap="selectTechnician">
+          <image wx:if="{{item.avatarUrl}}" class="technician-avatar" mode="aspectFill" src="{{item.avatarUrl}}" />
+          <view wx:else class="technician-avatar avatar-fallback">{{item.initial}}</view>
+          <view class="technician-copy"><text class="technician-name">{{item.name}}</text><text class="technician-title">{{item.title}}</text></view>
+          <view class="selected-icon">{{item.selected ? '✓' : ''}}</view>
+        </view>
+      </view>
+      <empty-state wx:else title="暂时没有可预约的技师" description="可以稍后再来看看"></empty-state>
+    </view>
+
+    <view class="bottom-bar safe-bottom"><button class="primary-button" bindtap="startBooking">选择时间并预约</button></view>
+  </block>
+</view>

@@ -1,0 +1,8 @@
+{
+  "navigationBarTitleText": "服务项目",
+  "usingComponents": {
+    "service-card": "/components/service-card/service-card",
+    "work-card": "/components/work-card/work-card",
+    "empty-state": "/components/empty-state/empty-state"
+  }
+}

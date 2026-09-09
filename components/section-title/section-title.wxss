@@ -1,0 +1,20 @@
+.section-title-wrap {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 22rpx;
+}
+
+.title {
+  display: block;
+  margin-top: 8rpx;
+  color: #332c2b;
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.link {
+  padding: 10rpx 0 4rpx 20rpx;
+  color: #bb6f79;
+  font-size: 24rpx;
+}
