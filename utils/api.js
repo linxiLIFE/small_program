@@ -49,7 +49,7 @@ function getHome() {
     store: mock.settings,
     categories: mock.categories,
     services: mock.services.slice(0, 3),
-    works: mock.works,
+    works: mock.works.filter(item => item.featured === true),
     technicians: mock.technicians
   }));
 }
@@ -118,6 +118,7 @@ function createOrder(payload) {
     const quote = payload.quote || {};
     const order = {
       id: `demo-order-${Date.now()}`, status: quote.paidFen > 0 ? 'PENDING_PAYMENT' : 'RESERVED', statusLabel: quote.paidFen > 0 ? '待付款' : '待到店',
+      work: payload.workId ? mock.works.find(item => item.id === payload.workId) : null,
       serviceName: service.name, technicianName: tech.name, date: payload.date, startAt: payload.startAt,
       durationMinutes: service.durationMinutes, totalFen: service.priceFen, pointsUsed: quote.pointsToUse || 0,
       discountFen: quote.discountFen || 0, paidFen: quote.paidFen || service.priceFen, refundStatus: '', demo: true

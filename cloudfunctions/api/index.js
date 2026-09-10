@@ -54,6 +54,14 @@ async function route(action, payload) {
     case 'listPoints': return booking.listPoints();
     case 'staffListOrders': return booking.staffListOrders(payload && payload.status);
     case 'staffTransition': return booking.transitionStaff(payload && payload.orderId, payload && payload.action);
+    case 'adminUploadImage': return require('./lib/media').uploadImage(payload || {});
+    case 'adminSaveCategory': return require('./lib/catalog-admin').saveCategory(payload || {});
+    case 'adminSaveTechnician': return require('./lib/catalog-admin').saveTechnician(payload || {});
+    case 'staffSession': return require('./lib/team').session();
+    case 'adminCreateTechnicianLogin': return require('./lib/team').createTechnicianLogin(payload || {});
+    case 'adminPreviewTechnicianSchedule': return admin.previewTechnicianSchedule(payload || {});
+    case 'mySchedule': return admin.mySchedule(payload || {});
+    case 'saveMySchedule': return admin.saveScheduleDay(payload || {});
     case 'adminSummary': return admin.summary();
     case 'adminBootstrapStatus': return admin.bootstrapStatus();
     case 'adminBootstrapOwner': return admin.bootstrapOwner();
@@ -62,6 +70,7 @@ async function route(action, payload) {
     case 'adminSchedule': return admin.schedule(payload || {});
     case 'adminSaveScheduleDay': return admin.saveScheduleDay(payload || {});
     case 'adminSaveWeeklySchedule': return admin.saveWeeklySchedule(payload || {});
+    case 'adminSaveWork': return admin.saveWork(payload || {});
     case 'adminSaveService': return admin.saveService(payload || {});
     case 'adminSaveSettings': return admin.saveSettings(payload || {});
     case 'adminPaymentStatus': return admin.getPaymentConfigStatus();
@@ -74,7 +83,7 @@ exports.main = async (event = {}) => {
   const id = requestId();
   try {
     const data = await withRequestContext(getRequestContext(), () => route(event.action, event.payload || {}));
-    return { ok: true, requestId: id, data };
+    return { ok: true, requestId: id, data: await require('./lib/media').resolveImages(data) };
   } catch (error) {
     const safe = publicError(error);
     console.error('api request failed', { requestId: id, code: safe.code });

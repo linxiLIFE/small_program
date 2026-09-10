@@ -48,9 +48,8 @@ Page({
   },
 
   startBooking() {
-    const query = [`serviceId=${this.data.service.id}`];
-    if (this.data.selectedTechnicianId) query.push(`technicianId=${this.data.selectedTechnicianId}`);
-    wx.navigateTo({ url: `/pages/booking/index?${query.join('&')}` });
+    getApp().globalData.pendingBooking = { serviceId: this.data.service.id, technicianId: this.data.selectedTechnicianId };
+    wx.switchTab({ url: '/pages/booking/index' });
   },
 
   goBack() {

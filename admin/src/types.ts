@@ -1,4 +1,4 @@
-export type PageKey = 'dashboard' | 'orders' | 'services' | 'technicians' | 'settings' | 'payment';
+export type PageKey = 'team' | 'my-schedule' | 'dashboard' | 'orders' | 'services' | 'technicians' | 'settings' | 'payment';
 
 export interface MetricSummary {
   paidFen: number;
@@ -16,6 +16,7 @@ export interface AdminOrder {
   status: string;
   statusLabel: string;
   serviceName: string;
+  work?: { id: string; title: string; imageUrl: string } | null;
   technicianName: string;
   customerName?: string;
   phoneMasked?: string;
@@ -43,6 +44,10 @@ export interface Technician {
   name: string;
   title: string;
   bio: string;
+  avatarUrl?: string;
+  avatarFileID?: string;
+  bound?: boolean;
+  loginName?: string;
   skills: string[];
   enabled: boolean;
   sort?: number;
@@ -95,8 +100,16 @@ export interface Settings {
   points: { pointRateFen: number; unit: number; discountFen: number; maxPercent: number };
 }
 
+export interface Category { id:string; name:string; icon:string; color:string; coverUrl?:string; coverFileID?:string; enabled:boolean; sort:number; }
+
 export interface CatalogResponse {
+  categories: Category[];
   services: Service[];
-  works: unknown[];
+  works: Work[];
   technicians: Technician[];
 }
+
+export interface Work { id: string; title: string; imageUrl: string; serviceId: string; categoryId?: string; categoryName?: string; published: boolean; sort: number; featured?: boolean; featuredSort?: number; imageFileID?:string; }
+
+export interface MySchedule { technician:Technician; days:TechnicianDayPlan[]; plan:TechnicianDayPlan; orders:AdminOrder[]; }
+export interface SessionInfo { role:'OWNER'|'STAFF'|'TECHNICIAN'|'UNASSIGNED'; name:string; technicianId?:string; }

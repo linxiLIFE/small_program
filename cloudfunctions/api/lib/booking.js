@@ -199,6 +199,7 @@ function publicOrder(order) {
     id: order.id || order._id,
     status: order.status,
     statusLabel: ({ PENDING_PAYMENT: '待付款', RESERVED: '待到店', ARRIVED: '已到店', IN_SERVICE: '服务中', COMPLETED: '已完成', CANCELLED: '已取消', CANCELLED_BY_USER: '已取消', CANCELLED_NO_SHOW: '未到店已取消' })[order.status] || '处理中',
+    work: order.workSnapshot || null,
     serviceName: order.serviceSnapshot && order.serviceSnapshot.name,
     categoryName: order.serviceSnapshot && order.serviceSnapshot.categoryName,
     technicianName: order.technicianSnapshot && order.technicianSnapshot.name,
@@ -252,6 +253,8 @@ async function createOrder(payload) {
   const user = await ensureUser(context.openid, context);
   assert(user.phoneCipher, 'PHONE_REQUIRED', '预约前请先授权并绑定手机号');
   const validation = await validateBookingSlot(payload);
+  const work = payload.workId ? await require('./catalog').getWork(payload.workId) : null;
+  assert(!work || work.serviceId === validation.service.id, 'WORK_SERVICE_MISMATCH', '款式与项目不匹配');
   const account = await getPointsAccount(context.openid);
   const rule = { unit: validation.settings.points.unit, discountFen: validation.settings.points.discountFen, maxPercent: validation.settings.points.maxPercent };
   const price = calculatePointsDiscount({ totalFen: validation.service.priceFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
@@ -274,6 +277,7 @@ async function createOrder(payload) {
     technicianId: validation.technician.id,
     technicianSnapshot: { id: validation.technician.id, name: validation.technician.name, title: validation.technician.title || '' },
     serviceId: validation.service.id,
+    workSnapshot: work ? { id: work.id, title: work.title, imageUrl: work.imageUrl } : null,
     serviceSnapshot: { id: validation.service.id, name: validation.service.name, categoryId: validation.service.categoryId, categoryName: validation.service.categoryName, priceFen: validation.service.priceFen, durationMinutes: validation.service.durationMinutes, bufferMinutes: validation.service.bufferMinutes },
     date: payload.date, startAt: validation.slot.startAt, endAt: validation.slot.endAt,
     totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen,
@@ -358,7 +362,9 @@ async function getProfile() {
   const user = await ensureUser(context.openid, context);
   const staff = await requireStaffIfAny(context.openid);
   const points = await getPointsAccount(context.openid);
-  return safeUser({ ...user, role: staff ? staff.role : user.role }, points);
+  const technician = staff && staff.role === 'TECHNICIAN' ? await getOptional(COLLECTIONS.technicians, staff.technicianId) : null;
+  const activeStaff = staff && (staff.role !== 'TECHNICIAN' || technician && technician.enabled !== false);
+  return safeUser({ ...user, role: activeStaff ? staff.role : 'CUSTOMER' }, points);
 }
 
 async function requireStaffIfAny(openid) {

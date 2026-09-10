@@ -1,66 +1,30 @@
 const api = require('../../utils/api');
-const { formatMoney, formatDuration } = require('../../utils/format');
-
 Page({
-  data: {
-    categories: [],
-    services: [],
-    works: [],
-    skeletons: [1, 2, 3],
-    activeCategoryId: '',
-    loading: true,
-    error: ''
-  },
-
-  onLoad(options) {
-    this.pendingCategoryId = options.categoryId || '';
+  data: { categories: [], services: [], works: [], visibleWorks: [], activeCategoryId: '', activeServiceId: '', loading: true, error: '' },
+  onShow() {
+    const state = getApp().globalData;
+    if (state.pendingServiceCategoryId !== undefined || state.pendingServiceId !== undefined) {
+      this.setData({ activeCategoryId: state.pendingServiceCategoryId || '', activeServiceId: state.pendingServiceId || '' });
+      delete state.pendingServiceCategoryId; delete state.pendingServiceId;
+      this.filterWorks();
+    }
     this.loadServices();
   },
-
-  onShow() {
-    const pendingCategoryId = getApp().globalData.pendingServiceCategoryId;
-    if (pendingCategoryId !== undefined) {
-      delete getApp().globalData.pendingServiceCategoryId;
-      this.setCategory(pendingCategoryId);
-      return;
-    }
-    if (this.pendingCategoryId && this.data.categories.length) {
-      this.setCategory(this.pendingCategoryId);
-      this.pendingCategoryId = '';
-    }
-  },
-
-  async loadServices(categoryId = this.data.activeCategoryId) {
+  async loadServices() {
     this.setData({ loading: true, error: '' });
-    const result = await api.listServices(categoryId);
-    const services = (result.services || []).map((item) => ({
-      ...item,
-      priceText: formatMoney(item.priceFen, false),
-      durationText: formatDuration(item.durationMinutes)
-    }));
-    this.setData({
-      categories: result.categories || [],
-      services,
-      works: result.works || [],
-      activeCategoryId: categoryId,
-      loading: false
-    });
+    try {
+      const result = await api.listServices();
+      this.setData({ categories: result.categories || [], services: result.services || [], works: result.works || [], loading: false });
+      this.filterWorks();
+    } catch (error) { this.setData({ loading: false, error: '加载失败' }); }
   },
-
-  setCategory(categoryId) {
-    const value = categoryId || '';
-    this.loadServices(value);
+  filterWorks() {
+    const { activeCategoryId, activeServiceId, services, works } = this.data;
+    const filteredServices = services.filter(item => !activeCategoryId || item.categoryId === activeCategoryId);
+    const ids = new Set(filteredServices.map(item => item.id));
+    this.setData({ filteredServices, visibleWorks: works.filter(item => ids.has(item.serviceId) && (!activeServiceId || item.serviceId === activeServiceId)) });
   },
-
-  handleCategoryTap(event) {
-    this.setCategory(event.currentTarget.dataset.id || '');
-  },
-
-  handleServiceTap(event) {
-    wx.navigateTo({ url: `/pages/service-detail/index?serviceId=${event.detail.service.id}` });
-  },
-
-  handleWorkTap(event) {
-    wx.navigateTo({ url: `/pages/work-detail/index?workId=${event.detail.work.id}` });
-  }
+  handleCategoryTap(event) { this.setData({ activeCategoryId: event.currentTarget.dataset.id || '', activeServiceId: '' }); this.filterWorks(); },
+  handleProjectTap(event) { this.setData({ activeServiceId: event.currentTarget.dataset.id || '' }); this.filterWorks(); },
+  handleWorkTap(event) { wx.navigateTo({ url: `/pages/work-detail/index?workId=${encodeURIComponent(event.detail.work.id)}` }); }
 });

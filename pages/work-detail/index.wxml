@@ -5,17 +5,17 @@
       <image wx:if="{{work.imageUrl}}" class="work-hero-image" mode="aspectFill" src="{{work.imageUrl}}" />
       <view wx:else class="work-hero-fallback"><text>拾光</text></view>
       <view class="work-hero-overlay"></view>
-      <view class="work-hero-caption"><text class="eyebrow">{{work.categoryName}}</text><text class="work-hero-title">{{work.title}}</text></view>
+      <view class="work-hero-caption"><text class="work-hero-title">{{work.title}}</text></view>
     </view>
     <view class="work-detail-content">
-      <text class="work-detail-description">{{work.description}}</text>
+
       <view class="artist-card card">
         <image wx:if="{{technician.avatarUrl}}" class="artist-avatar" mode="aspectFill" src="{{technician.avatarUrl}}" />
         <view wx:else class="artist-avatar artist-fallback">{{technician.initial}}</view>
-        <view class="artist-copy"><text class="artist-name">{{technician.name}}</text><text class="artist-title">{{technician.title}}</text><text class="artist-bio">{{technician.bio}}</text></view>
+        <view class="artist-copy"><text class="artist-name">{{technician.name}}</text><text class="artist-title">{{technician.title}}</text></view>
       </view>
       <view class="related-service card">
-        <view class="related-copy"><text class="eyebrow">RELATED SERVICE</text><text class="related-name">{{service.name}}</text><text class="related-meta">{{service.durationText}} · ¥{{service.priceText}}</text></view>
+        <view class="related-copy"><text class="related-name">{{service.name}}</text><text class="related-meta">{{service.durationText}} · ¥{{service.priceText}}</text></view>
         <button class="small-book-button" bindtap="startBooking">去预约</button>
       </view>
     </view>

@@ -180,7 +180,7 @@ async function listOrdersForAdmin(payload = {}) {
 
 async function listAllTechnicians() {
   const records = await find(COLLECTIONS.technicians, {}, { orderBy: { field: 'sort', direction: 'asc' }, limit: 200 });
-  return records.map((item) => ({ ...publicTechnician(item), enabled: item.enabled !== false, sort: Number(item.sort || 0) }));
+  return records.filter(item => !item.archived).map((item) => ({ ...publicTechnician(item), enabled: item.enabled !== false, sort: Number(item.sort || 0) }));
 }
 
 async function getAdminDayPlan(technicianId, date, settings, reader = db) {
@@ -212,12 +212,14 @@ async function assertNoScheduleConflict(transaction, technicianId, date, plan, e
 }
 
 async function saveScheduleDay(payload = {}) {
-  const { account } = await requireRole(['OWNER']);
+  const { account } = await requireRole(['OWNER', 'TECHNICIAN']);
+  if (account.role === 'TECHNICIAN') assert(payload.technicianId === account.technicianId, 'FORBIDDEN', '只能修改自己的排班', 403);
   assert(payload && payload.technicianId, 'INVALID_SCHEDULE', '缺少技师 ID');
   const technicianId = String(payload.technicianId);
   const technician = await getOptional(COLLECTIONS.technicians, technicianId);
   assert(technician, 'TECHNICIAN_NOT_FOUND', '技师不存在', 404);
   const date = normalizeDate(payload.date);
+  if (account.role === 'TECHNICIAN') assert(date >= toDateString(), 'INVALID_DATE', '不能修改过去的排班');
   const leave = payload.leave === true;
   const shifts = normalizeShifts(payload.shifts || []);
   assert(leave || shifts.length > 0, 'INVALID_SCHEDULE', '工作日至少需要一个班次，休息日请勾选休息');
@@ -271,19 +273,6 @@ async function saveWeeklySchedule(payload = {}) {
   return { version, weekly };
 }
 
-async function saveService(payload) {
-  const { account } = await requireRole(['OWNER']);
-  assert(payload && payload.id && payload.name && payload.categoryId, 'INVALID_SERVICE', '项目名称、类别和 ID 不能为空');
-  const priceFen = integer(payload.priceFen, '项目价格');
-  const durationMinutes = integer(payload.durationMinutes, '服务时长');
-  assert(priceFen > 0 && durationMinutes > 0, 'INVALID_SERVICE', '项目价格和服务时长必须大于零');
-  const existing = await getOptional(COLLECTIONS.services, payload.id);
-  const service = { ...(existing || {}), _id: payload.id, id: payload.id, categoryId: payload.categoryId, categoryName: payload.categoryName || '', name: String(payload.name).slice(0, 80), description: String(payload.description || '').slice(0, 1000), priceFen, durationMinutes, bufferMinutes: integer(payload.bufferMinutes || 0, '缓冲时长'), coverUrl: String(payload.coverUrl || ''), tags: Array.isArray(payload.tags) ? payload.tags.slice(0, 12) : [], enabled: payload.enabled !== false, sort: Number(payload.sort || 0), version: Number(existing && existing.version || 0) + 1, updatedAt: Date.now(), createdAt: existing && existing.createdAt || Date.now() };
-  await db.collection(COLLECTIONS.services).doc(payload.id).set({ data: service });
-  await audit({ ...account, openid: account.openid }, 'SAVE_SERVICE', 'services', payload.id, { before: existing ? { priceFen: existing.priceFen, enabled: existing.enabled } : null, after: { priceFen, enabled: service.enabled } }, payload.reason);
-  return publicService(service);
-}
-
 async function saveSettings(payload) {
   const { account } = await requireRole(['OWNER']);
   const previous = await getCurrentSettings();
@@ -312,10 +301,31 @@ async function refundOrder(payload) {
   return result;
 }
 
-async function listCatalog() {
-  await requireRole(['OWNER', 'STAFF']);
-  const [services, works, technicians] = await Promise.all([listServices(), listWorks(), listAllTechnicians()]);
-  return { services, works, technicians };
+async function personalScheduleData(technicianId, payload = {}) {
+  const technician = await getOptional(COLLECTIONS.technicians, technicianId);
+  assert(technician, 'TECHNICIAN_NOT_FOUND', '技师账号已停用');
+  const settings = await getCurrentSettings();
+  const date = normalizeDate(payload.date);
+  const first = toDateString();
+  const days = await Promise.all(Array.from({length:14}, async (_, index) => {
+    const day = toDateString(dateToTimestamp(first) + index * 86400000);
+    const { record, source } = await getAdminDayPlan(technicianId, day, settings);
+    const orders = await find(COLLECTIONS.orders, { technicianId: technicianId, date: day }, {limit:200});
+    return publicDayPlan(record, source, orders);
+  }));
+  const {record, source} = await getAdminDayPlan(technicianId, date, settings);
+  const orders = await find(COLLECTIONS.orders, { technicianId: technicianId, date }, {limit:200});
+  return { technician: publicTechnician(technician), days, plan: publicDayPlan(record,source,orders), orders: orders.filter(activeOccupancy).map(publicOrder) };
 }
 
-module.exports = { summary, bootstrapStatus, bootstrapOwner, listOrdersForAdmin, schedule, saveScheduleDay, saveWeeklySchedule, saveService, saveSettings, getPaymentConfigStatus, refundOrder, listCatalog };
+async function mySchedule(payload = {}) {
+  const {account}=await requireRole(['TECHNICIAN']);
+  return personalScheduleData(account.technicianId,payload);
+}
+async function previewTechnicianSchedule(payload = {}) {
+  await requireRole(['OWNER']);
+  return personalScheduleData(payload.technicianId,payload);
+}
+
+const { saveService, saveWork, listCatalog } = require('./catalog-admin');
+module.exports = { previewTechnicianSchedule, mySchedule, normalizeShifts, planCoversInterval, summary, bootstrapStatus, bootstrapOwner, listOrdersForAdmin, schedule, saveScheduleDay, saveWeeklySchedule, saveService, saveWork, saveSettings, getPaymentConfigStatus, refundOrder, listCatalog };

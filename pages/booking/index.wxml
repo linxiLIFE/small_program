@@ -2,16 +2,18 @@
   <view wx:if="{{loading}}" class="booking-loading">
     <view class="skeleton booking-skeleton"></view><view class="skeleton booking-skeleton short"></view>
   </view>
+  <view wx:elif="{{!service.id}}" class="booking-empty"><button class="primary-button" bindtap="chooseStyle">选款预约</button></view>
   <block wx:else>
-    <view class="booking-heading"><text class="eyebrow">BOOK A VISIT</text><text class="page-title">把时间留给自己</text></view>
+    <view class="booking-heading"><text class="page-title">预约</text></view>
 
+    <view wx:if="{{work}}" class="selected-style card"><image src="{{work.imageUrl}}" mode="aspectFill"/><text>{{work.title}}</text><button bindtap="chooseStyle">更换</button></view>
     <view class="booking-service card">
       <view class="booking-service-copy"><text class="booking-service-name">{{service.name}}</text><text class="booking-service-meta">{{service.durationText}} · {{service.categoryName}}</text></view>
       <text class="booking-service-price">¥{{service.priceText}}</text>
     </view>
 
     <view class="booking-step">
-      <view class="step-heading"><text class="step-number">01</text><view><text class="step-title">选择技师</text><text class="step-subtitle">每位技师同一时段只接待一位顾客</text></view></view>
+      <view class="step-heading"><text class="step-number">01</text><view><text class="step-title">选择技师</text></view></view>
       <scroll-view class="technician-scroll" scroll-x="true" show-scrollbar="false">
         <view class="technician-scroll-inner">
           <view wx:for="{{technicians}}" wx:key="id" class="booking-tech {{selectedTechnicianId === item.id ? 'selected' : ''}}" data-id="{{item.id}}" bindtap="selectTechnician">
@@ -25,7 +27,7 @@
     </view>
 
     <view class="booking-step">
-      <view class="step-heading"><text class="step-number">02</text><view><text class="step-title">选择日期</text><text class="step-subtitle">未来 14 天可预约，至少提前 1 小时</text></view></view>
+      <view class="step-heading"><text class="step-number">02</text><view><text class="step-title">选择日期</text></view></view>
       <scroll-view class="date-scroll" scroll-x="true" show-scrollbar="false">
         <view class="date-scroll-inner">
           <view wx:for="{{dates}}" wx:key="value" class="date-item {{selectedDate === item.value ? 'selected' : ''}}" data-date="{{item.value}}" bindtap="selectDate"><text>{{item.label}}</text></view>
@@ -34,23 +36,23 @@
     </view>
 
     <view class="booking-step slot-step">
-      <view class="step-heading"><text class="step-number">03</text><view><text class="step-title">选择时间</text><text class="step-subtitle">项目时长约 {{service.durationText}}，包含整理缓冲</text></view></view>
+      <view class="step-heading"><text class="step-number">03</text><view><text class="step-title">选择时间</text></view></view>
       <view wx:if="{{slots.length}}" class="slot-grid">
         <view wx:for="{{slots}}" wx:key="id" class="slot-item {{selectedSlotId === item.id ? 'selected' : ''}} {{item.available === false ? 'disabled' : ''}}" data-id="{{item.id}}" bindtap="selectSlot">{{item.label}}</view>
       </view>
-      <empty-state wx:else title="当天没有合适的时间" description="换一天或换一位技师试试"></empty-state>
+      <empty-state wx:else title="当天没有合适的时间"></empty-state>
     </view>
 
     <view class="booking-step">
-      <view class="step-heading"><text class="step-number">04</text><view><text class="step-title">确认优惠</text><text class="step-subtitle">积分抵扣上限为项目金额的 10%</text></view></view>
+      <view class="step-heading"><text class="step-number">04</text><view><text class="step-title">确认优惠</text></view></view>
       <view class="points-option card">
-        <view><text class="points-title">使用积分抵扣</text><text class="points-balance">可用 {{profile.points || 0}} 积分 · {{pointHint}}</text></view>
+        <view><text class="points-title">使用积分抵扣</text><text class="points-balance">可用 {{profile.points || 0}} 积分</text></view>
         <switch color="#bb6f79" checked="{{usePoints}}" bindchange="togglePoints"></switch>
       </view>
     </view>
 
     <view class="contact-card card">
-      <view><text class="contact-label">预约联系方式</text><text class="contact-phone">{{profile.phoneLabel || '预约前需要绑定手机号'}}</text></view>
+      <view><text class="contact-label">预约联系方式</text><text class="contact-phone">{{profile.phoneLabel || '未绑定'}}</text></view>
       <button wx:if="{{!profile.phone && !profile.phoneMasked}}" class="bind-phone-button" open-type="getPhoneNumber|agreePrivacyAuthorization" phone-number-no-quota-toast="false" bindgetphonenumber="handleGetPhoneNumber" bindagreeprivacyauthorization="handleAgreePrivacyAuthorization">授权手机号</button>
       <text wx:else class="bound-mark">已绑定 ✓</text>
     </view>
@@ -61,7 +63,7 @@
       <view class="divider"></view>
       <view class="summary-total"><text>微信支付</text><text>{{quote.paidText || '¥0.00'}}</text></view>
       <button class="primary-button" loading="{{submitting}}" disabled="{{!canSubmit || submitting}}" bindtap="submitBooking">锁定时段并支付</button>
-      <text class="summary-footnote">提交后占位 5 分钟；支付结果以服务端查单为准。</text>
+
     </view>
   </block>
 </view>

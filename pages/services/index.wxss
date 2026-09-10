@@ -109,3 +109,5 @@
   font-size: 22rpx;
   text-align: center;
 }
+
+.works-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28rpx 18rpx}.project-tabs{white-space:nowrap;margin: -12rpx -32rpx 30rpx;width:calc(100% + 64rpx)}.project-tab{font-size:24rpx;color:#998780;padding:12rpx 0;margin-right:20rpx;border-bottom:3rpx solid transparent}.project-tab.selected{color:#8d505b;border-color:#8d505b}.page-title{letter-spacing:3rpx}

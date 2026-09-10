@@ -2,15 +2,16 @@
   <view wx:if="{{loading}}"><view class="skeleton detail-status-skeleton"></view><view class="skeleton detail-order-skeleton"></view></view>
   <block wx:else>
     <view class="order-status-card card">
-      <view class="status-top"><view><text class="eyebrow">ORDER STATUS</text><text class="status-title">{{order.statusLabel}}</text></view><status-badge status="{{order.status}}" label="{{order.statusLabel}}"></status-badge></view>
-      <text wx:if="{{order.status === 'PENDING_PAYMENT'}}" class="status-hint">请在占位时间内完成支付，超时会自动查单并释放时段。</text>
-      <text wx:elif="{{order.status === 'RESERVED'}}" class="status-hint">到店后请向店员或对应技师出示此订单。</text>
-      <text wx:elif="{{order.status === 'COMPLETED'}}" class="status-hint">感谢你的到店，实付金额已按规则累计积分。</text>
-      <text wx:else class="status-hint">订单状态会在服务端确认后更新。</text>
+      <view class="status-top"><view><text class="status-title">{{order.statusLabel}}</text></view><status-badge status="{{order.status}}" label="{{order.statusLabel}}"></status-badge></view>
+
+
+
+
     </view>
 
     <view class="detail-card card">
       <view class="detail-card-heading"><text class="section-title">预约信息</text><text class="order-number" bindtap="copyOrderId">复制订单号</text></view>
+      <view wx:if="{{order.work}}" class="detail-row"><text class="row-label">预约款式</text><text class="row-value">{{order.work.title}}</text></view>
       <view class="detail-row"><text class="row-label">服务项目</text><text class="row-value">{{order.serviceName}}</text></view>
       <view class="detail-row"><text class="row-label">服务技师</text><text class="row-value">{{order.technicianName}}</text></view>
       <view class="detail-row"><text class="row-label">预约时间</text><text class="row-value">{{order.timeLabel}}</text></view>
@@ -23,11 +24,11 @@
     </view>
 
     <view class="timeline-card card">
-      <view class="timeline-item active"><view class="timeline-dot"></view><view><text>提交预约</text><text class="timeline-meta">服务端已锁定技师日程</text></view></view>
+      <view class="timeline-item active"><view class="timeline-dot"></view><view><text>提交预约</text></view></view>
       <view class="timeline-line"></view>
-      <view class="timeline-item {{order.status === 'PENDING_PAYMENT' ? '' : 'active'}}"><view class="timeline-dot"></view><view><text>支付确认</text><text class="timeline-meta">以支付回调或主动查单为准</text></view></view>
+      <view class="timeline-item {{order.status === 'PENDING_PAYMENT' ? '' : 'active'}}"><view class="timeline-dot"></view><view><text>支付确认</text></view></view>
       <view class="timeline-line"></view>
-      <view class="timeline-item {{order.status === 'COMPLETED' ? 'active' : ''}}"><view class="timeline-dot"></view><view><text>到店完成</text><text class="timeline-meta">核销后开始服务，完成后获得积分</text></view></view>
+      <view class="timeline-item {{order.status === 'COMPLETED' ? 'active' : ''}}"><view class="timeline-dot"></view><view><text>到店完成</text></view></view>
     </view>
 
     <view wx:if="{{actions.length}}" class="action-bar safe-bottom">

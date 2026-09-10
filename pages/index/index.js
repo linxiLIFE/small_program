@@ -12,13 +12,15 @@ Page({
     technicians: []
   },
 
-  onLoad() {
+  onShow() {
     this.loadHome();
   },
 
   async loadHome() {
     this.setData({ loading: true });
-    const result = await api.getHome();
+    let result;
+    try { result = await api.getHome(); }
+    catch (error) { this.setData({ loading: false }); wx.showToast({ title: '加载失败', icon: 'none' }); return; }
     const services = (result.services || []).map((item) => ({
       ...item,
       priceText: formatMoney(item.priceFen, false),
@@ -33,6 +35,11 @@ Page({
       works: result.works || [],
       technicians: result.technicians || []
     });
+  },
+
+  openProject(event) {
+    getApp().globalData.pendingServiceId = event.currentTarget.dataset.id;
+    wx.switchTab({ url: '/pages/services/index' });
   },
 
   goServices() {
@@ -60,11 +67,5 @@ Page({
     wx.makePhoneCall({ phoneNumber: this.data.store.phone });
   },
 
-  showAddress() {
-    wx.showModal({
-      title: '到店提示',
-      content: this.data.store.address || '预约成功后，店员会向你发送详细地址。',
-      showCancel: false
-    });
-  }
+
 });

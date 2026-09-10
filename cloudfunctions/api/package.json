@@ -8,6 +8,7 @@
     "@cloudbase/js-sdk": "^3.8.2",
     "@cloudbase/node-sdk": "^3.18.3",
     "mysql2": "3.24.4",
+    "tencentcloud-sdk-nodejs-tcb": "^4.1.309",
     "wx-server-sdk": "3.0.1"
   }
 }

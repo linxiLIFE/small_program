@@ -1,6 +1,7 @@
-import type { AdminOrder, CatalogResponse, MetricSummary, ScheduleResponse, Service, Settings, TechnicianDayPlan, WeeklySchedule } from './types';
+import type { Category, Technician, MySchedule, SessionInfo, Work, AdminOrder, CatalogResponse, MetricSummary, ScheduleResponse, Service, Settings, TechnicianDayPlan, WeeklySchedule } from './types';
 import { callBusiness } from './cloudbase';
 
+const demoWorks: Work[] = [];
 const demo = import.meta.env.VITE_ADMIN_DEMO === 'true';
 
 export function isDemoMode(): boolean {
@@ -77,7 +78,8 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
   if (action === 'adminBootstrapOwner') return { id: 'demo-owner', role: 'OWNER' } as T;
   if (action === 'adminSummary') return { date: new Date().toISOString().slice(0, 10), metrics: { paidFen: 49800, refundFen: 0, netFen: 49800, completedFen: 19900, orderCount: 2, completedCount: 1, customerCount: 2, noShowCount: 0 } } as T;
   if (action === 'adminListOrders') return { orders: payload.status ? demoOrders.filter((item) => item.status === payload.status) : demoOrders, canRefund: true } as T;
-  if (action === 'adminCatalog') return { services: demoServices, works: [], technicians: demoTechnicians } as T;
+  if (action === 'staffSession') return {role:'OWNER',name:'店主'} as T;
+  if (action === 'adminCatalog') return { categories: [{id:'nail',name:'美甲',enabled:true,icon:'✦',color:'#f1ded8',sort:0},{id:'brow',name:'美眉',enabled:true,icon:'⌁',color:'#eee6d9',sort:1}], services: demoServices, works: demoWorks, technicians: demoTechnicians } as T;
   if (action === 'adminSchedule') return demoSchedule(String(payload.date || today())) as T;
   if (action === 'adminSaveScheduleDay') {
     const current = demoSchedule(String(payload.date || today()));
@@ -89,6 +91,12 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
   if (action === 'adminSaveWeeklySchedule') return { version: demoSettings.version + 1, weekly: payload.weekly as WeeklySchedule[] } as T;
   if (action === 'adminPaymentStatus') return { configured: false, missing: ['WX_MCH_ID', 'WX_MCH_SERIAL_NO', 'WX_API_V3_KEY', 'WX_PRIVATE_KEY', 'WX_NOTIFY_URL'], callbackCertificateConfigured: false, note: '仅返回状态，不返回密钥。' } as T;
   if (action === 'getSettings') return demoSettings as T;
+  if (action === 'adminSaveWork') {
+    const work = payload as unknown as Work;
+    const index = demoWorks.findIndex(item => item.id === work.id);
+    if (index >= 0) demoWorks[index] = { ...work }; else demoWorks.push({ ...work });
+    return work as T;
+  }
   if (action === 'adminSaveService') {
     const next = payload as unknown as Service;
     const index = demoServices.findIndex((item) => item.id === next.id);
@@ -113,12 +121,21 @@ export const adminApi = {
   bootstrapOwner: () => request<{ id: string; role: string }>('adminBootstrapOwner'),
   summary: () => request<{ date: string; metrics: MetricSummary }>('adminSummary'),
   orders: (status = '') => request<{ orders: AdminOrder[]; canRefund: boolean }>('adminListOrders', { status }),
+  session: () => request<SessionInfo>('staffSession'),
+  uploadImage: (base64:string) => request<{fileID:string;url:string}>('adminUploadImage',{base64}),
+  saveCategory: (category:Category) => request<Category>('adminSaveCategory',category as unknown as Record<string,unknown>),
+  saveTechnician: (technician:Technician) => request<Technician>('adminSaveTechnician',technician as unknown as Record<string,unknown>),
+  createTechnicianLogin: (technicianId:string,username:string,password:string) => request<{username:string}>('adminCreateTechnicianLogin',{technicianId,username,password}),
+  previewTechnicianSchedule: (technicianId:string,date:string) => request<MySchedule>('adminPreviewTechnicianSchedule',{technicianId,date}),
+  mySchedule: (date:string) => request<MySchedule>('mySchedule',{date}),
+  saveMySchedule: (plan:TechnicianDayPlan) => request<TechnicianDayPlan>('saveMySchedule',plan as unknown as Record<string,unknown>),
   catalog: () => request<CatalogResponse>('adminCatalog'),
   schedule: (date: string) => request<ScheduleResponse>('adminSchedule', { date }),
   saveScheduleDay: (plan: Pick<TechnicianDayPlan, 'technicianId' | 'date' | 'leave' | 'shifts' | 'version'> & { reason?: string }) => request<TechnicianDayPlan>('adminSaveScheduleDay', plan as unknown as Record<string, unknown>),
   saveWeeklySchedule: (weekly: WeeklySchedule[], reason?: string) => request<{ version: number; weekly: WeeklySchedule[] }>('adminSaveWeeklySchedule', { weekly, reason }),
   paymentStatus: () => request<{ configured: boolean; missing: string[]; callbackCertificateConfigured: boolean; note: string }>('adminPaymentStatus'),
   settings: () => request<Settings>('getSettings'),
+  saveWork: (work: Work) => request<Work>('adminSaveWork', work as unknown as Record<string, unknown>),
   saveService: (service: Service) => request<Service>('adminSaveService', service as unknown as Record<string, unknown>),
   saveSettings: (settings: Partial<Settings> & { reason?: string }) => request<Settings>('adminSaveSettings', settings as unknown as Record<string, unknown>),
   refund: (orderId: string, reason: string) => request<{ status: string }>('adminRefund', { orderId, reason })

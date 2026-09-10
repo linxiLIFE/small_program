@@ -60,7 +60,7 @@ const DEFAULT_SETTINGS = {
   timezone: 'Asia/Shanghai',
   store: {
     storeName: '拾光美研',
-    address: '预约成功后展示详细地址',
+    address: '哈尔滨市南岗区底下商店美甲店',
     phone: '',
     notice: '每次预约只安排一位顾客和一位技师，请提前 5 分钟到店。'
   },

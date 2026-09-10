@@ -49,6 +49,10 @@ async function requireRole(roles) {
   if (!account || !roles.includes(account.role)) {
     throw new AppError('FORBIDDEN', '当前账号没有执行该操作的权限', 403);
   }
+  if (account.role === 'TECHNICIAN') {
+    const technician = await getOptional(COLLECTIONS.technicians, account.technicianId);
+    assert(technician && technician.enabled !== false, 'FORBIDDEN', '技师账号已停用', 403);
+  }
   return { context, account };
 }
 

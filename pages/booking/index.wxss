@@ -328,3 +328,5 @@
   font-size: 21rpx;
   text-align: center;
 }
+
+.selected-style{display:flex;align-items:center;gap:24rpx;padding:20rpx;margin:24rpx 0}.selected-style image{flex-shrink:0;width:140rpx;height:170rpx;border-radius:14rpx}.selected-style text{flex:1}.selected-style button{flex:0 0 100rpx;width:100rpx;height:60rpx;line-height:60rpx;margin:0;padding:0;border-radius:14rpx;font-size:23rpx;background:#f4e8e4;color:#895b61}.booking-empty{padding-top:200rpx}

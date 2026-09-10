@@ -30,7 +30,7 @@ function dateToTimestamp(dateString, timeString = '00:00') {
 }
 
 function weekday(dateString) {
-  const day = new Date(`${dateString}T00:00:00+08:00`).getUTCDay();
+  const day = new Date(`${dateString}T12:00:00+08:00`).getUTCDay();
   return day === 0 ? 7 : day;
 }
 

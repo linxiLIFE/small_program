@@ -25,6 +25,7 @@ Page({
   },
 
   startBooking() {
-    wx.navigateTo({ url: `/pages/booking/index?serviceId=${this.data.service.id}&technicianId=${this.data.technician.id || ''}` });
+    getApp().globalData.pendingBooking = { serviceId: this.data.service.id, technicianId: this.data.technician.id || '', workId: this.data.work.id };
+    wx.switchTab({ url: '/pages/booking/index' });
   }
 });

@@ -26,17 +26,30 @@ Page({
     this.serviceId = options.serviceId || '';
     this.initialTechnicianId = options.technicianId || '';
     this.idempotencyKey = `booking-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    this.loadBooking();
   },
+
+  onShow() {
+    const pending = getApp().globalData.pendingBooking;
+    if (pending) {
+      delete getApp().globalData.pendingBooking;
+      this.serviceId = pending.serviceId; this.workId = pending.workId || ''; this.initialTechnicianId = pending.technicianId || '';
+      this.idempotencyKey = `booking-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      this.setData({ loading: true, canSubmit: false, quote: {}, usePoints: false });
+      this.loadBooking();
+    } else if (!this.serviceId) { this.setData({ loading: false, service: {} }); }
+  },
+
+  chooseStyle() { wx.switchTab({ url: '/pages/services/index' }); },
 
   async loadBooking() {
     try {
       const dates = mock.getDates();
       const selectedDate = dates[0] ? dates[0].value : '';
-      const [service, technicianResult, profile] = await Promise.all([
+      const [service, technicianResult, profile, work] = await Promise.all([
         api.getService(this.serviceId),
         api.listTechnicians(this.serviceId),
-        api.getProfile()
+        api.getProfile(),
+        this.workId ? api.getWork(this.workId) : Promise.resolve(null)
       ]);
       const technicians = (technicianResult.technicians || []).map((item) => ({
         ...item,
@@ -47,6 +60,7 @@ Page({
         : (technicians[0] ? technicians[0].id : '');
       this.setData({
         loading: false,
+        work,
         service: { ...service, priceText: formatMoney(service.priceFen, false), durationText: formatDuration(service.durationMinutes) },
         technicians,
         dates,
@@ -154,6 +168,7 @@ Page({
     wx.showLoading({ title: '锁定时段中' });
     try {
       const result = await api.createOrder({
+        workId: this.workId || '',
         serviceId: this.serviceId,
         technicianId: this.data.selectedTechnicianId,
         date: this.data.selectedDate,

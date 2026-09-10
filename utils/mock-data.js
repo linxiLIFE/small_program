@@ -139,7 +139,7 @@ const orders = [
 ];
 
 const settings = {
-  storeName: '拾光美研', address: '哈尔滨市南岗区 · 预约后展示详细地址', phone: '400-800-2026',
+  storeName: '拾光美研', address: '哈尔滨市南岗区底下商店美甲店', phone: '400-800-2026',
   notice: '每次预约只安排一位顾客和一位技师，请提前 5 分钟到店。',
   pointUnit: 20, pointDiscountFen: 100, pointMaxPercent: 10,
   minAdvanceMinutes: 60, openDays: 14

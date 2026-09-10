@@ -3,7 +3,7 @@ const { db, getOptional, find } = require('./db');
 const { assert } = require('./errors');
 
 function publicCategory(item) {
-  return { id: item.id || item._id, name: item.name, subtitle: item.subtitle || '', icon: item.icon || '✦', color: item.color || '#f7d9d3', sort: item.sort || 0 };
+  return { id: item.id || item._id, name: item.name, coverUrl: item.coverUrl || '', subtitle: item.subtitle || '', icon: item.icon || '✦', color: item.color || '#f7d9d3', sort: item.sort || 0 };
 }
 
 function publicService(item) {
@@ -31,7 +31,9 @@ function publicWork(item) {
     description: item.description || '',
     imageUrl: item.imageUrl || '',
     serviceId: item.serviceId || '',
-    technicianId: item.technicianId || ''
+    technicianId: item.technicianId || '',
+    featured: item.featured === true,
+    featuredSort: Number(item.featuredSort || 0)
   };
 }
 
@@ -56,13 +58,15 @@ async function listCategories() {
 async function listServices(categoryId = '') {
   const where = categoryId ? { enabled: true, categoryId } : { enabled: true };
   const records = await find(COLLECTIONS.services, where, { orderBy: { field: 'sort', direction: 'asc' } });
-  return records.map(publicService);
+  const categories = await listCategories();
+  return records.filter(item => categories.some(c => c.id === item.categoryId)).map(item => ({ ...publicService(item), categoryName: categories.find(c => c.id === item.categoryId).name }));
 }
 
 async function listWorks(categoryId = '') {
-  const where = categoryId ? { published: true, categoryId } : { published: true };
+  const where = { published: true };
   const records = await find(COLLECTIONS.works, where, { orderBy: { field: 'sort', direction: 'asc' } });
-  return records.map(publicWork);
+  const services = await listServices(categoryId);
+  return records.filter(item => services.some(s => s.id === item.serviceId)).map(item => { const service = services.find(s => s.id === item.serviceId); return { ...publicWork(item), categoryId: service.categoryId, categoryName: service.categoryName }; });
 }
 
 async function listTechnicians(serviceId = '') {
@@ -75,14 +79,17 @@ async function getService(serviceId) {
   assert(serviceId, 'INVALID_SERVICE', '缺少项目 ID');
   const record = await getOptional(COLLECTIONS.services, serviceId);
   assert(record && record.enabled !== false, 'SERVICE_NOT_FOUND', '项目不存在或已下架', 404);
-  return publicService(record);
+  const category = await getOptional(COLLECTIONS.categories, record.categoryId);
+  assert(category && category.enabled !== false, 'SERVICE_NOT_FOUND', '所属大类已停用', 404);
+  return { ...publicService(record), categoryName: category.name };
 }
 
 async function getWork(workId) {
   assert(workId, 'INVALID_WORK', '缺少作品 ID');
   const record = await getOptional(COLLECTIONS.works, workId);
   assert(record && record.published !== false, 'WORK_NOT_FOUND', '作品不存在或已下架', 404);
-  return publicWork(record);
+  const service = await getService(record.serviceId);
+  return { ...publicWork(record), categoryId: service.categoryId, categoryName: service.categoryName };
 }
 
 async function getHome(settings) {
@@ -93,7 +100,7 @@ async function getHome(settings) {
     store: settings.store,
     categories,
     services: services.slice(0, 6),
-    works: works.slice(0, 12),
+    works: works.filter(item => item.featured).sort((a,b) => a.featuredSort - b.featuredSort),
     technicians: technicians.slice(0, 8)
   };
 }

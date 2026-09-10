@@ -26,19 +26,27 @@
     "list": [
       {
         "pagePath": "pages/index/index",
-        "text": "首页"
+        "text": "首页",
+        "iconPath": "assets/tabbar/home.png",
+        "selectedIconPath": "assets/tabbar/home-active.png"
       },
       {
         "pagePath": "pages/services/index",
-        "text": "项目"
+        "text": "选款",
+        "iconPath": "assets/tabbar/styles.png",
+        "selectedIconPath": "assets/tabbar/styles-active.png"
       },
       {
         "pagePath": "pages/booking/index",
-        "text": "预约"
+        "text": "预约",
+        "iconPath": "assets/tabbar/booking.png",
+        "selectedIconPath": "assets/tabbar/booking-active.png"
       },
       {
         "pagePath": "pages/profile/index",
-        "text": "我的"
+        "text": "我的",
+        "iconPath": "assets/tabbar/profile.png",
+        "selectedIconPath": "assets/tabbar/profile-active.png"
       }
     ]
   },
