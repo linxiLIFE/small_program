@@ -2,7 +2,7 @@
   "name": "shiguang-jobs",
   "version": "1.0.0",
   "private": true,
-  "description": "拾光美研预约、支付和退款补偿任务",
+  "description": "四个小姐姐的店预约、支付和退款补偿任务",
   "main": "index.js",
   "dependencies": {
     "mysql2": "3.24.4",

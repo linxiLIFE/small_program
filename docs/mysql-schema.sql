@@ -1,4 +1,4 @@
--- 拾光美研 CloudBase MySQL schema
+-- 四个小姐姐的店 CloudBase MySQL schema
 --
 -- 每个业务对象使用一张 InnoDB 表，data 保存该对象的 JSON 结构，id、created_at、updated_at
 -- 作为 SQL 层的主键和基础索引。这样既使用 MySQL 事务，又保留服务端订单快照、排班数组等

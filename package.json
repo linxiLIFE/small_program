@@ -2,7 +2,7 @@
   "name": "shiguang-beauty-mini-program",
   "version": "1.0.0",
   "private": true,
-  "description": "拾光美研原生微信小程序与 CloudBase 业务代码",
+  "description": "四个小姐姐的店原生微信小程序与 CloudBase 业务代码",
   "scripts": {
     "test": "node scripts/test-domain.js && node scripts/validate-miniprogram.js && node scripts/test-style-flow.js && node scripts/test-style-admin.js && node scripts/test-refinements.js && node scripts/test-hierarchy.js",
     "prepare:functions": "node scripts/prepare-cloudfunctions.js",

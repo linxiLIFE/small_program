@@ -17,7 +17,7 @@
   border-radius: 50%;
   background: #f7e6e3;
   color: #c18a8b;
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 44rpx;
 }
 

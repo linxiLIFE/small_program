@@ -8,25 +8,37 @@ Page({
     filteredServices: [],
     works: [],
     activeCategoryId: '',
+    activeServiceId: '',
     loading: true,
     error: ''
   },
 
   onShow() {
     const state = getApp().globalData;
-    this.requestedCategoryId = state.pendingServiceCategoryId !== undefined ? state.pendingServiceCategoryId : this.data.activeCategoryId;
-    this.requestedServiceId = state.pendingServiceId !== undefined ? state.pendingServiceId : '';
+    const selection = state.catalogSelection || {};
+    const hasPendingCategory = state.pendingServiceCategoryId !== undefined;
+    const hasPendingService = state.pendingServiceId !== undefined;
+    this.requestedCategoryId = hasPendingCategory
+      ? state.pendingServiceCategoryId
+      : (hasPendingService ? '' : (selection.categoryId || this.data.activeCategoryId));
+    this.requestedServiceId = hasPendingService
+      ? state.pendingServiceId
+      : (hasPendingCategory ? '' : (selection.serviceId || this.data.activeServiceId));
     delete state.pendingServiceCategoryId;
     delete state.pendingServiceId;
     this.loadServices();
   },
 
   async loadServices() {
-    this.setData({ loading: true, error: '' });
+    const hasData = this.data.categories.length > 0;
+    this.setData({ loading: !hasData, error: '' });
+    const requestId = (this.requestId || 0) + 1;
+    this.requestId = requestId;
     try {
       const result = await api.listServices();
-    const categories = result.categories || [];
-    const works = result.works || [];
+      if (requestId !== this.requestId) return;
+      const categories = result.categories || [];
+      const works = result.works || [];
       const services = (result.services || []).map((item) => ({
         ...item,
         priceText: formatMoney(item.priceFen, false),
@@ -34,7 +46,11 @@ Page({
         styleCount: Number(item.styleCount !== undefined ? item.styleCount : works.filter((work) => work.serviceId === item.id && work.published !== false).length)
       }));
       const requestedCategory = categories.find((item) => item.id === this.requestedCategoryId);
-      const activeCategoryId = requestedCategory?.id || services.find((item) => item.id === this.requestedServiceId)?.categoryId || '';
+      const requestedService = services.find((item) => item.id === this.requestedServiceId);
+      const activeCategoryId = requestedCategory?.id || requestedService?.categoryId || this.data.activeCategoryId || '';
+      const activeServiceId = requestedService && requestedService.categoryId === activeCategoryId
+        ? requestedService.id
+        : (services.some((item) => item.id === this.data.activeServiceId && item.categoryId === activeCategoryId) ? this.data.activeServiceId : '');
       const categoryOptions = categories.map((category) => {
         const categoryServices = services.filter((service) => service.categoryId === category.id);
         return {
@@ -45,20 +61,26 @@ Page({
           styleCountText: `${categoryServices.reduce((count, service) => count + service.styleCount, 0)} 款式`
         };
       });
-      this.setData({ categories: categoryOptions, services, works, activeCategoryId, loading: false });
-      this.filterServices(activeCategoryId);
-    } catch (error) { this.setData({ loading: false, error: '加载失败' }); }
+      const filteredServices = activeCategoryId ? services.filter((item) => item.categoryId === activeCategoryId) : [];
+      this.setData({ categories: categoryOptions, services, works, activeCategoryId, activeServiceId, filteredServices, loading: false });
+    } catch (error) {
+      if (requestId !== this.requestId) return;
+      this.setData({ loading: false, error: hasData ? '' : '加载失败' });
+    }
   },
 
   filterServices(categoryId = this.data.activeCategoryId) {
     const { services } = this.data;
     const filteredServices = categoryId ? services.filter((item) => item.categoryId === categoryId) : [];
-    this.setData({ filteredServices });
+    const activeServiceId = filteredServices.some((item) => item.id === this.data.activeServiceId) ? this.data.activeServiceId : '';
+    this.setData({ filteredServices, activeServiceId });
   },
 
   handleCategoryTap(event) {
     const activeCategoryId = event.currentTarget.dataset.id || '';
-    this.setData({ activeCategoryId });
+    const state = getApp().globalData;
+    state.catalogSelection = { ...(state.catalogSelection || {}), categoryId: activeCategoryId, serviceId: '', workId: '' };
+    this.setData({ activeCategoryId, activeServiceId: '' });
     this.filterServices(activeCategoryId);
   },
 
@@ -66,6 +88,9 @@ Page({
     const serviceId = event.detail?.service?.id || event.currentTarget.dataset.id || '';
     const service = this.data.services.find((item) => item.id === serviceId);
     if (!service) return;
+    const state = getApp().globalData;
+    state.catalogSelection = { ...(state.catalogSelection || {}), categoryId: service.categoryId, serviceId: service.id, workId: '' };
+    this.setData({ activeServiceId: service.id });
     wx.navigateTo({ url: `/pages/style-select/index?categoryId=${encodeURIComponent(service.categoryId)}&serviceId=${encodeURIComponent(service.id)}` });
   }
 });

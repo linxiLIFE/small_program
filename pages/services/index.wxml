@@ -8,7 +8,7 @@
     </view>
 
     <view wx:if="{{activeCategoryId}}" class="selection-section project-selection"><view class="selection-heading"><text class="section-title">选择小项目</text><text class="selection-count">{{filteredServices.length}} 个项目</text></view>
-      <view wx:if="{{filteredServices.length}}" class="project-list"><service-card wx:for="{{filteredServices}}" wx:key="id" service="{{item}}" compact="{{true}}" bindselect="handleProjectTap"/></view>
+      <view wx:if="{{filteredServices.length}}" class="project-list"><service-card wx:for="{{filteredServices}}" wx:key="id" service="{{item}}" compact="{{true}}" selected="{{activeServiceId === item.id}}" bindselect="handleProjectTap"/></view>
       <empty-state wx:else title="该大项暂未设置小项目"/>
     </view>
   </block>

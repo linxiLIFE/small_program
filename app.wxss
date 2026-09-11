@@ -3,6 +3,7 @@ page {
   color: #332c2b;
   font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", sans-serif;
   font-size: 28rpx;
+  overflow-x: hidden;
 }
 
 page,
@@ -18,13 +19,28 @@ button::after {
   border: none;
 }
 
+button.primary-button,
+button.secondary-button,
+button.ghost-button,
+button.danger-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0;
+  padding-bottom: 0;
+  text-align: center;
+}
+
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
 .page-shell {
   min-height: 100vh;
+  width: 100%;
+  max-width: 100vw;
   padding: 32rpx 32rpx 48rpx;
+  overflow-x: hidden;
 }
 
 .card {

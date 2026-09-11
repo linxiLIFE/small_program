@@ -1,6 +1,25 @@
 const cloudConfig = require('../cloud-config');
 const mock = require('./mock-data');
 
+const responseCache = new Map();
+const pendingRequests = new Map();
+const legacyActions = new Set();
+const CACHE_TTL = {
+  getHome: 45 * 1000,
+  listServices: 45 * 1000,
+  listServiceStyles: 45 * 1000,
+  getBookingContext: 30 * 1000,
+  getService: 60 * 1000,
+  getWork: 60 * 1000,
+  listTechnicians: 60 * 1000,
+  getSettings: 60 * 1000,
+  getProfile: 15 * 1000,
+  listOrders: 10 * 1000,
+  getOrder: 10 * 1000,
+  listPoints: 30 * 1000,
+  staffListOrders: 5 * 1000
+};
+
 function getAppSafe() {
   try {
     return getApp();
@@ -42,8 +61,53 @@ async function call(action, payload = {}, fallback) {
   }
 }
 
+function cacheKey(action, payload) {
+  return `${action}:${JSON.stringify(payload || {})}`;
+}
+
+function cachedCall(action, payload, fallback) {
+  const key = cacheKey(action, payload);
+  const cached = responseCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value);
+
+  const pending = pendingRequests.get(key);
+  if (pending) return pending;
+
+  const request = call(action, payload, fallback).then((value) => {
+    responseCache.set(key, {
+      value,
+      expiresAt: Date.now() + (CACHE_TTL[action] || 30 * 1000)
+    });
+    if (responseCache.size > 80) {
+      const now = Date.now();
+      for (const [cacheKeyValue, entry] of responseCache) {
+        if (entry.expiresAt <= now || responseCache.size > 60) responseCache.delete(cacheKeyValue);
+        if (responseCache.size <= 60) break;
+      }
+    }
+    pendingRequests.delete(key);
+    return value;
+  }, (error) => {
+    pendingRequests.delete(key);
+    throw error;
+  });
+  pendingRequests.set(key, request);
+  return request;
+}
+
+function clearCache(action = '') {
+  if (!action) {
+    responseCache.clear();
+    return;
+  }
+  const prefix = `${action}:`;
+  for (const key of responseCache.keys()) {
+    if (key.startsWith(prefix)) responseCache.delete(key);
+  }
+}
+
 function getHome() {
-  return call('getHome', {}, () => ({
+  return cachedCall('getHome', {}, () => ({
     store: mock.settings,
     banners: [],
     categories: mock.categories,
@@ -54,7 +118,7 @@ function getHome() {
 }
 
 function listServices(categoryId = '') {
-  return call('listServices', { categoryId }, () => ({
+  return cachedCall('listServices', { categoryId }, () => ({
     categories: mock.categories,
     services: (categoryId ? mock.services.filter((item) => item.categoryId === categoryId) : mock.services).map((item) => ({
       ...item,
@@ -64,33 +128,120 @@ function listServices(categoryId = '') {
   }));
 }
 
+function listLegacyServiceStyles(serviceId) {
+  return listServices().then((result) => {
+    const service = (result.services || []).find((item) => item.id === serviceId);
+    return {
+      service: service || null,
+      works: (result.works || []).filter((item) => item.serviceId === serviceId && item.published !== false)
+    };
+  });
+}
+
+function listServiceStyles(serviceId) {
+  if (legacyActions.has('listServiceStyles')) return listLegacyServiceStyles(serviceId);
+  return cachedCall('listServiceStyles', { serviceId }, () => {
+    const service = mock.services.find((item) => item.id === serviceId);
+    return {
+      service: service ? {
+        ...service,
+        styleCount: mock.works.filter((work) => work.serviceId === service.id && work.published !== false).length
+      } : null,
+      works: service ? mock.works.filter((work) => work.serviceId === service.id && work.published !== false) : []
+    };
+  }).catch((error) => {
+    if (error && error.code === 'UNKNOWN_ACTION') {
+      legacyActions.add('listServiceStyles');
+      return listLegacyServiceStyles(serviceId);
+    }
+    throw error;
+  });
+}
+
+function getLegacyBookingContext(serviceId, workId) {
+  return Promise.all([
+    getSettings(),
+    getService(serviceId),
+    listTechnicians(serviceId),
+    getProfile(),
+    getWork(workId)
+  ]).then(([settings, service, technicianResult, profile, work]) => ({
+    settings,
+    service,
+    technicians: technicianResult.technicians || [],
+    profile,
+    work
+  }));
+}
+
+function getBookingContext(serviceId, workId) {
+  const payload = { serviceId, workId };
+  if (legacyActions.has('getBookingContext')) return getLegacyBookingContext(serviceId, workId);
+  return cachedCall('getBookingContext', payload, () => {
+    const service = mock.services.find((item) => item.id === serviceId) || null;
+    const work = mock.works.find((item) => item.id === workId) || null;
+    return {
+      settings: { booking: { openDays: 14 }, points: { maxPercent: mock.settings.pointMaxPercent } },
+      service,
+      technicians: service ? mock.technicians.filter((item) => (item.categoryIds || []).includes(service.categoryId)) : [],
+      profile: mock.profile,
+      work
+    };
+  }).catch((error) => {
+    if (error && error.code === 'UNKNOWN_ACTION') {
+      legacyActions.add('getBookingContext');
+      return getLegacyBookingContext(serviceId, workId);
+    }
+    throw error;
+  });
+}
+
 function getService(serviceId) {
-  return call('getService', { serviceId }, () => mock.services.find((item) => item.id === serviceId) || mock.services[0]);
+  return cachedCall('getService', { serviceId }, () => mock.services.find((item) => item.id === serviceId) || mock.services[0]);
 }
 
 function getWork(workId) {
-  return call('getWork', { workId }, () => mock.works.find((item) => item.id === workId) || mock.works[0]);
+  return cachedCall('getWork', { workId }, () => mock.works.find((item) => item.id === workId) || mock.works[0]);
 }
 
 function listTechnicians(serviceId = '') {
-  return call('listTechnicians', { serviceId }, () => ({
-    technicians: serviceId ? mock.technicians.filter((item) => item.skills.includes(serviceId)) : mock.technicians
+  return cachedCall('listTechnicians', { serviceId }, () => ({
+    technicians: serviceId
+      ? mock.technicians.filter((item) => {
+        const service = mock.services.find((candidate) => candidate.id === serviceId);
+        return service && (item.categoryIds || []).includes(service.categoryId);
+      })
+      : mock.technicians
   }));
 }
 
 function getAvailableSlots(payload) {
   return call('getAvailableSlots', payload, () => ({
     date: payload.date,
+    stepMinutes: 30,
     slots: mock.getSlots(payload.date)
   }));
 }
 
 function getProfile() {
-  return call('getProfile', {}, () => mock.profile);
+  return cachedCall('getProfile', {}, () => mock.profile);
 }
 
-function bindPhone(code) {
-  return call('bindPhone', { code }, () => ({ ...mock.profile, phoneMasked: mock.profile.phoneMasked, demo: true }));
+async function updateProfile(nickname) {
+  const value = String(nickname || '').trim();
+  if (!value || value.length > 20) throw Object.assign(new Error('用户名需填写 1 到 20 个字符'), { code: 'INVALID_NICKNAME' });
+  const result = await call('updateProfile', { nickname: value }, () => ({ ...mock.profile, nickname: value, demo: true }));
+  Object.assign(mock.profile, result);
+  clearCache('getProfile');
+  clearCache('getBookingContext');
+  return result;
+}
+
+async function bindPhone(code) {
+  const result = await call('bindPhone', { code }, () => ({ ...mock.profile, phoneMasked: mock.profile.phoneMasked, demo: true }));
+  clearCache('getProfile');
+  clearCache('getBookingContext');
+  return result;
 }
 
 function createQuote(payload) {
@@ -116,8 +267,8 @@ function createQuote(payload) {
   });
 }
 
-function createOrder(payload) {
-  return call('createOrder', payload, () => {
+async function createOrder(payload) {
+  const result = await call('createOrder', payload, () => {
     const work = mock.works.find((item) => item.id === payload.workId && item.published !== false);
     if (!work) throw Object.assign(new Error('请选择款式后再预约'), { code: 'STYLE_REQUIRED' });
     const service = mock.services.find((item) => item.id === work.serviceId && item.id === payload.serviceId) || mock.services.find((item) => item.id === work.serviceId);
@@ -134,20 +285,26 @@ function createOrder(payload) {
     mock.orders.unshift(order);
     return { order, paymentRequired: order.paidFen > 0, demo: true };
   });
+  clearCache('getProfile');
+  clearCache('getBookingContext');
+  clearCache('listOrders');
+  clearCache('getOrder');
+  clearCache('listPoints');
+  return result;
 }
 
 function listOrders(status = '') {
-  return call('listOrders', { status }, () => ({
+  return cachedCall('listOrders', { status }, () => ({
     orders: status ? mock.orders.filter((item) => item.status === status) : mock.orders
   }));
 }
 
 function getOrder(orderId) {
-  return call('getOrder', { orderId }, () => mock.orders.find((item) => item.id === orderId) || mock.orders[0]);
+  return cachedCall('getOrder', { orderId }, () => mock.orders.find((item) => item.id === orderId) || mock.orders[0]);
 }
 
-function cancelOrder(orderId) {
-  return call('cancelOrder', { orderId }, () => {
+async function cancelOrder(orderId) {
+  const result = await call('cancelOrder', { orderId }, () => {
     const order = mock.orders.find((item) => item.id === orderId);
     if (order) {
       order.status = 'CANCELLED_BY_USER';
@@ -156,10 +313,17 @@ function cancelOrder(orderId) {
     }
     return order;
   });
+  clearCache('listOrders');
+  clearCache('getOrder');
+  clearCache('listPoints');
+  return result;
 }
 
-function queryPayment(orderId) {
-  return call('queryPayment', { orderId }, () => getOrder(orderId));
+async function queryPayment(orderId) {
+  const result = await call('queryPayment', { orderId }, () => getOrder(orderId));
+  clearCache('getOrder');
+  clearCache('listOrders');
+  return result;
 }
 
 function preparePayment(orderId) {
@@ -170,7 +334,7 @@ function preparePayment(orderId) {
 }
 
 function listPoints() {
-  return call('listPoints', {}, () => ({
+  return cachedCall('listPoints', {}, () => ({
     account: { available: mock.profile.points, frozen: 0 },
     ledger: [
       { id: 'point-demo-1', type: 'EARN', amount: 680, description: '历史演示积分', createdAt: Date.now() - 86400000 * 3 },
@@ -180,11 +344,11 @@ function listPoints() {
 }
 
 function staffListOrders(status = '') {
-  return call('staffListOrders', { status }, () => listOrders(status));
+  return cachedCall('staffListOrders', { status }, () => listOrders(status));
 }
 
-function staffTransition(orderId, action) {
-  return call('staffTransition', { orderId, action }, () => {
+async function staffTransition(orderId, action) {
+  const result = await call('staffTransition', { orderId, action }, () => {
     const order = mock.orders.find((item) => item.id === orderId);
     const next = { checkIn: 'ARRIVED', start: 'IN_SERVICE', complete: 'COMPLETED' }[action];
     if (order && next) {
@@ -193,18 +357,25 @@ function staffTransition(orderId, action) {
     }
     return order;
   });
+  clearCache('staffListOrders');
+  clearCache('listOrders');
+  clearCache('getOrder');
+  return result;
 }
 
 module.exports = {
   call,
+  clearCache,
   getHome,
-  getSettings: () => call('getSettings', {}, () => ({booking:{openDays:14},points:{maxPercent:10}})),
+  getSettings: () => cachedCall('getSettings', {}, () => ({ store: { ...mock.settings }, booking: { openDays: mock.settings.openDays, minAdvanceMinutes: mock.settings.minAdvanceMinutes }, points: { maxPercent: mock.settings.pointMaxPercent } })),
   listServices,
+  listServiceStyles,
   getService,
   getWork,
   listTechnicians,
   getAvailableSlots,
   getProfile,
+  updateProfile,
   bindPhone,
   createQuote,
   createOrder,

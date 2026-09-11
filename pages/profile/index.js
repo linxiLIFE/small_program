@@ -3,7 +3,7 @@ const { maskPhone } = require('../../utils/format');
 const { showPhoneAuthFailure, phoneBindFailureMessage } = require('../../utils/phone-auth');
 
 Page({
-  data: { loading: true, profile: {}, isDemo: false },
+  data: { loading: true, profile: {}, storePhone: '', isDemo: false, editingName: false, draftNickname: '' },
 
   onLoad() {
     this.loadProfile();
@@ -15,12 +15,16 @@ Page({
 
   async loadProfile() {
     try {
-      const profile = await api.getProfile();
+      const [profile, settings] = await Promise.all([
+        api.getProfile(),
+        api.getSettings().catch(() => ({ store: {} }))
+      ]);
       getApp().setUser(profile);
       this.hasLoaded = true;
       this.setData({
         loading: false,
         profile: { ...profile, phoneLabel: profile.phoneMasked || maskPhone(profile.phone) },
+        storePhone: settings && settings.store ? settings.store.phone || '' : '',
         isDemo: !!getApp().globalData.isDemo
       });
     } catch (error) {
@@ -39,8 +43,40 @@ Page({
   },
 
   contactService() {
-    if (this.data.profile.storePhone) wx.makePhoneCall({ phoneNumber: this.data.profile.storePhone });
-    else wx.showModal({ title: '联系客服', content: '请在预约成功后通过订单联系门店。', showCancel: false });
+    const phoneNumber = String(this.data.storePhone || '').replace(/[^\d+]/g, '');
+    if (!phoneNumber) {
+      wx.showToast({ title: '门店暂未设置电话', icon: 'none' });
+      return;
+    }
+    wx.makePhoneCall({ phoneNumber, fail: () => wx.showToast({ title: '拨号失败，请稍后重试', icon: 'none' }) });
+  },
+
+  editNickname() {
+    this.setData({ editingName: true, draftNickname: this.data.profile.nickname || '' });
+  },
+
+  inputNickname(event) {
+    this.setData({ draftNickname: event.detail.value || '' });
+  },
+
+  cancelNickname() {
+    this.setData({ editingName: false, draftNickname: '' });
+  },
+
+  async saveNickname() {
+    const nickname = String(this.data.draftNickname || '').trim();
+    if (!nickname || nickname.length > 20) {
+      wx.showToast({ title: '用户名需填写 1 到 20 个字符', icon: 'none' });
+      return;
+    }
+    try {
+      const profile = await api.updateProfile(nickname);
+      getApp().setUser(profile);
+      this.setData({ editingName: false, draftNickname: '', profile: { ...profile, phoneLabel: profile.phoneMasked || maskPhone(profile.phone) } });
+      wx.showToast({ title: '已保存', icon: 'success' });
+    } catch (error) {
+      wx.showToast({ title: error.message || '保存失败', icon: 'none' });
+    }
   },
 
   privacy() {

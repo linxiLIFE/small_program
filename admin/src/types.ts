@@ -34,7 +34,6 @@ export interface Service {
   description: string;
   priceFen: number;
   durationMinutes: number;
-  bufferMinutes: number;
   coverUrl: string;
   styleCount?: number;
   enabled: boolean;
@@ -48,9 +47,11 @@ export interface Technician {
   bio: string;
   avatarUrl?: string;
   avatarFileID?: string;
+  categoryIds: string[];
+  categoryNames?: string[];
+  skills?: string[];
   bound?: boolean;
   loginName?: string;
-  skills: string[];
   enabled: boolean;
   sort?: number;
 }
@@ -97,7 +98,7 @@ export interface ScheduleResponse {
 
 export interface Settings {
   version: number;
-  store: { storeName: string; address: string; phone: string; notice: string;latitude?:number|null;longitude?:number|null };
+  store: { storeName: string; address: string; phone: string; notice: string; latitude?:number|null; longitude?:number|null };
   home?: {banners:Array<{id:string;imageUrl:string;imageFileID?:string}>};
   booking: { openDays: number; minAdvanceMinutes: number; slotStepMinutes: number; unpaidHoldMinutes: number; noShowGraceMinutes: number };
   points: { pointRateFen: number; unit: number; discountFen: number; maxPercent: number };

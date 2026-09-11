@@ -1,5 +1,5 @@
 {
-  "navigationBarTitleText": "拾光美研",
+  "navigationBarTitleText": "四个小姐姐的店",
   "usingComponents": {
     "section-title": "/components/section-title/section-title",
     "service-card": "/components/service-card/service-card",

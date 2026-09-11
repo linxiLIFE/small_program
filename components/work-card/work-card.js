@@ -1,6 +1,7 @@
 Component({
   properties: {
-    work: { type: Object, value: {} }
+    work: { type: Object, value: {} },
+    selected: { type: Boolean, value: false }
   },
   data: { imageError: false },
   observers: { 'work.imageUrl': function() { this.setData({imageError:false}); } },

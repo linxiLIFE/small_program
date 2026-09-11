@@ -1,9 +1,9 @@
 <view class="service-card {{compact ? 'compact' : ''}} {{selected ? 'selected' : ''}}" bindtap="handleTap">
   <view class="cover-wrap">
-    <image wx:if="{{service.coverUrl && !imageError}}" class="cover" mode="aspectFill" src="{{service.coverUrl}}" binderror="handleImageError" />
+    <image wx:if="{{service.coverUrl && !imageError}}" class="cover" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{service.coverUrl}}" binderror="handleImageError" />
     <view wx:else class="cover-fallback">
       <text class="fallback-mark">✦</text>
-      <text>{{service.categoryName || '拾光美研'}}</text>
+      <text>{{service.categoryName || '四个小姐姐的店'}}</text>
     </view>
     <text class="category-pill">{{service.categoryName}}</text>
   </view>

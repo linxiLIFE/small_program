@@ -2,11 +2,11 @@
   <view wx:if="{{loading}}" class="booking-loading">
     <view class="skeleton booking-skeleton"></view><view class="skeleton booking-skeleton short"></view>
   </view>
-  <view wx:elif="{{!service.id}}" class="booking-empty"><text class="booking-empty-title">还没有选择款式</text><button class="primary-button" bindtap="chooseStyle">从大项开始选款</button></view>
+  <view wx:elif="{{!service.id}}" class="booking-empty"><view class="booking-empty-art"><image wx:if="{{emptyImage}}" src="{{emptyImage}}" mode="aspectFill" webp="{{true}}"/><view wx:else class="booking-empty-art-fallback"><text>✦</text><text>{{emptyCategory || '选择喜欢的服务'}}</text></view><view class="booking-empty-art-shade"></view></view><text class="booking-empty-title">先选一个喜欢的款式</text><button class="primary-button" bindtap="chooseStyle">去选款</button></view>
   <block wx:else>
     <view class="booking-heading"><text class="page-title">预约</text></view>
 
-    <view wx:if="{{work}}" class="selected-style card"><image src="{{work.imageUrl}}" mode="aspectFill"/><view class="selected-style-copy"><text class="selected-style-label">已选款式</text><text class="selected-style-title">{{work.title}}</text><text class="selected-style-meta">{{service.categoryName}} · {{service.name}}</text></view><button bindtap="chooseStyle">更换</button></view>
+    <view wx:if="{{work}}" class="selected-style card"><image src="{{work.imageUrl}}" mode="aspectFill" webp="{{true}}"/><view class="selected-style-copy"><text class="selected-style-label">已选款式</text><text class="selected-style-title">{{work.title}}</text><text class="selected-style-meta">{{service.categoryName}} · {{service.name}}</text></view><button bindtap="chooseStyle">更换</button></view>
     <view class="booking-service card">
       <view class="booking-service-copy"><text class="booking-service-label">小项目</text><text class="booking-service-name">{{service.name}}</text><text class="booking-service-meta">{{service.durationText}} 服务时长 · {{service.categoryName}}</text></view>
       <text class="booking-service-price">¥{{service.priceText}}</text>
@@ -17,7 +17,7 @@
       <scroll-view class="technician-scroll" scroll-x="true" show-scrollbar="false">
         <view class="technician-scroll-inner">
           <view wx:for="{{technicians}}" wx:key="id" class="booking-tech {{selectedTechnicianId === item.id ? 'selected' : ''}}" data-id="{{item.id}}" bindtap="selectTechnician">
-            <image wx:if="{{item.avatarUrl}}" class="booking-tech-avatar" mode="aspectFill" src="{{item.avatarUrl}}" />
+            <image wx:if="{{item.avatarUrl}}" class="booking-tech-avatar" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{item.avatarUrl}}" />
             <view wx:else class="booking-tech-avatar avatar-fallback">{{item.initial}}</view>
             <text class="booking-tech-name">{{item.name}}</text><text class="booking-tech-title">{{item.title}}</text>
             <view wx:if="{{selectedTechnicianId === item.id}}" class="tech-check">✓</view>
@@ -36,11 +36,21 @@
     </view>
 
     <view class="booking-step slot-step">
-      <view class="step-heading"><text class="step-number">03</text><view><text class="step-title">选择时间</text></view></view>
-      <view wx:if="{{slots.length}}" class="slot-grid">
-        <view wx:for="{{slots}}" wx:key="id" class="slot-item {{selectedSlotId === item.id ? 'selected' : ''}} {{item.available === false ? 'disabled' : ''}}" data-id="{{item.id}}" bindtap="selectSlot">{{item.label}}</view>
+      <view class="step-heading"><text class="step-number">03</text><view><text class="step-title">选择服务时段</text><text class="step-subtitle">先选大时间段，再选具体服务时间</text></view></view>
+      <view wx:if="{{timePeriods.length}}" class="time-period-list">
+        <view wx:for="{{timePeriods}}" wx:key="id" class="time-period {{selectedPeriodId === item.id ? 'selected' : ''}} {{expandedPeriodId === item.id ? 'expanded' : ''}}" data-id="{{item.id}}" bindtap="selectPeriod">
+          <view class="time-period-main"><text class="time-period-label">{{item.label}}</text><text class="time-period-range">{{item.rangeLabel}}</text></view>
+          <view class="time-period-side"><text>{{item.slotCount}} 个可选服务时段</text><text class="time-period-arrow">{{expandedPeriodId === item.id ? '收起' : '展开'}}</text></view>
+          <view wx:if="{{expandedPeriodId === item.id}}" class="time-period-options" catchtap="noop">
+            <text class="time-options-title">具体服务时间</text>
+            <view class="slot-grid">
+              <view wx:for="{{item.slots}}" wx:key="id" class="slot-item {{selectedSlotId === item.id ? 'selected' : ''}} {{item.available === false ? 'disabled' : ''}}" data-id="{{item.id}}" bindtap="selectSlot">{{item.rangeLabel}}</view>
+            </view>
+          </view>
+        </view>
       </view>
-      <empty-state wx:else title="当天没有合适的时间"></empty-state>
+      <empty-state wx:else title="当天没有合适的时间段"></empty-state>
+      <view wx:if="{{selectedSlot.id}}" class="selected-time"><text>已选服务时段</text><strong>{{selectedSlot.rangeLabel}}</strong></view>
     </view>
 
     <view class="booking-step">

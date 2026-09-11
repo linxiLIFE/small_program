@@ -10,28 +10,28 @@ const services = [
   {
     id: 'svc-nail-french', categoryId: 'nail', categoryName: '美甲', name: '奶油法式美甲',
     description: '低饱和奶油色打底，搭配细线法式与手绘小花，适合日常通勤。',
-    priceFen: 29900, durationMinutes: 90, bufferMinutes: 15,
+    priceFen: 29900, durationMinutes: 90,
     coverUrl: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=900&q=80',
     tags: ['显白', '法式', '含基础护理']
   },
   {
     id: 'svc-nail-jelly', categoryId: 'nail', categoryName: '美甲', name: '玫瑰果冻裸色',
     description: '透亮果冻感与轻薄加固，干净耐看，适合第一次做美甲。',
-    priceFen: 23900, durationMinutes: 75, bufferMinutes: 15,
+    priceFen: 23900, durationMinutes: 75,
     coverUrl: 'https://images.unsplash.com/photo-1610992015732-2449b76344bc?auto=format&fit=crop&w=900&q=80',
     tags: ['裸色', '轻薄', '新手友好']
   },
   {
     id: 'svc-brow-natural', categoryId: 'brow', categoryName: '美眉', name: '自然野生眉设计',
     description: '根据脸型、眉骨和毛流重新设计，保留自然感，日常无需反复描画。',
-    priceFen: 19900, durationMinutes: 60, bufferMinutes: 15,
+    priceFen: 19900, durationMinutes: 60,
     coverUrl: 'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&w=900&q=80',
     tags: ['脸型分析', '自然眉', '含修眉']
   },
   {
     id: 'svc-tattoo-lip', categoryId: 'tattoo', categoryName: '纹绣', name: '轻氧嘟嘟唇',
     description: '按唇色与唇形定制色乳，追求自然提气色，包含术前沟通与术后护理说明。',
-    priceFen: 128000, durationMinutes: 150, bufferMinutes: 30,
+    priceFen: 128000, durationMinutes: 150,
     coverUrl: 'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=900&q=80',
     tags: ['定制色乳', '术后指导', '需提前沟通']
   }
@@ -41,19 +41,19 @@ const technicians = [
   {
     id: 'tech-lin', name: '林老师', title: '主理人 · 美甲师',
     bio: '擅长低饱和、法式与手绘细节，喜欢把每一双手的气质做出来。',
-    skills: ['svc-nail-french', 'svc-nail-jelly'],
+    categoryIds: ['nail'],
     avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=240&q=80'
   },
   {
     id: 'tech-zhou', name: '周老师', title: '高级眉形设计师',
     bio: '以自然毛流和面部比例为优先，擅长通勤眉与原生感眉形设计。',
-    skills: ['svc-brow-natural'],
+    categoryIds: ['brow'],
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&q=80'
   },
   {
     id: 'tech-he', name: '何老师', title: '纹绣师',
     bio: '专注自然纹绣与术后恢复沟通，先充分沟通，再决定最适合你的方案。',
-    skills: ['svc-tattoo-lip'],
+    categoryIds: ['tattoo'],
     avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=240&q=80'
   }
 ];
@@ -151,7 +151,7 @@ const orders = [
 ];
 
 const settings = {
-  storeName: '拾光美研', address: '哈尔滨市南岗区底下商店美甲店', phone: '400-800-2026',
+  storeName: '四个小姐姐的店', address: '哈尔滨市南岗区底下商店美甲店', phone: '400-800-2026',
   notice: '每次预约只安排一位顾客和一位技师，请提前 5 分钟到店。',
   pointUnit: 20, pointDiscountFen: 100, pointMaxPercent: 10,
   minAdvanceMinutes: 60, openDays: 14

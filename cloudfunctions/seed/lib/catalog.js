@@ -26,7 +26,6 @@ function publicService(item) {
     description: item.description || '',
     priceFen: Number(item.priceFen || 0),
     durationMinutes: Number(item.durationMinutes || 0),
-    bufferMinutes: Number(item.bufferMinutes || 0),
     coverUrl: item.coverUrl || '',
     tags: item.tags || [],
     styleCount: Number(item.styleCount || 0),
@@ -34,8 +33,8 @@ function publicService(item) {
   };
 }
 
-function publicWork(item) {
-  return {
+function publicWork(item, { includeBookingCount = true } = {}) {
+  const work = {
     id: item.id || item._id,
     categoryId: item.categoryId,
     categoryName: item.categoryName || '',
@@ -46,9 +45,10 @@ function publicWork(item) {
     serviceName: item.serviceName || '',
     durationMinutes: Number(item.durationMinutes || 0),
     technicianId: item.technicianId || '',
-    featured: item.featured === true,
-    bookingCount: Number(item.bookingCount || 0)
+    featured: item.featured === true
   };
+  if (includeBookingCount) work.bookingCount = Number(item.bookingCount || 0);
+  return work;
 }
 
 function publicTechnician(item) {
@@ -57,6 +57,8 @@ function publicTechnician(item) {
     name: item.name,
     title: item.title || '',
     bio: item.bio || '',
+    categoryIds: Array.isArray(item.categoryIds) ? item.categoryIds : [],
+    // 保留旧字段只用于兼容历史数据；新的管理界面只读写 categoryIds。
     skills: item.skills || [],
     avatarUrl: item.avatarUrl || '',
     sort: Number(item.sort || 0),
@@ -69,45 +71,77 @@ async function listCategories() {
   return records.map(publicCategory);
 }
 
-async function listServices(categoryId = '') {
-  const where = categoryId ? { enabled: true, categoryId } : { enabled: true };
-  const [records, categories, styles] = await Promise.all([
-    find(COLLECTIONS.services, where, { orderBy: { field: 'sort', direction: 'asc' } }),
-    listCategories(),
-    find(COLLECTIONS.works, {}, { limit: 2000 })
-  ]);
-  const styleCounts = styles.reduce((result, item) => {
+function countStyles(styles) {
+  return styles.reduce((result, item) => {
     const serviceId = item.serviceId || '';
     if (item.published !== false && serviceId) result[serviceId] = (result[serviceId] || 0) + 1;
     return result;
   }, {});
-  return records
-    .filter(item => categories.some(c => c.id === item.categoryId))
-    .map(item => {
-      const category = categories.find(c => c.id === item.categoryId);
+}
+
+async function loadCatalog(categoryId = '') {
+  const where = categoryId ? { enabled: true, categoryId } : { enabled: true };
+  const [serviceRecords, categoryRecords, styles] = await Promise.all([
+    find(COLLECTIONS.services, where, { orderBy: { field: 'sort', direction: 'asc' } }),
+    find(COLLECTIONS.categories, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } }),
+    find(COLLECTIONS.works, {}, { limit: 2000 })
+  ]);
+  const categories = categoryRecords.map(publicCategory);
+  const categoryById = new Map(categories.map((item) => [item.id, item]));
+  const styleCounts = countStyles(styles);
+  const services = serviceRecords
+    .filter((item) => categoryById.has(item.categoryId))
+    .map((item) => {
+      const category = categoryById.get(item.categoryId);
       return { ...publicService(item), styleCount: styleCounts[item.id || item._id] || 0, categoryName: category.name };
     });
+  return { categories, services, styles };
+}
+
+async function listServiceCatalog(categoryId = '') {
+  const { categories, services } = await loadCatalog(categoryId);
+  return { categories, services };
+}
+
+async function listServices(categoryId = '') {
+  const { services } = await loadCatalog(categoryId);
+  return services;
+}
+
+function decorateWorks(records, services, counts = {}, { includeBookingCount = true, sortByPopularity = true } = {}) {
+  const serviceById = new Map(services.map((item) => [item.id, item]));
+  const works = records
+    .filter((item) => item.published !== false && serviceById.has(item.serviceId))
+    .map((item) => {
+      const service = serviceById.get(item.serviceId);
+      return {
+        ...publicWork(item, { includeBookingCount }),
+        ...(includeBookingCount ? { bookingCount: counts[item.id || item._id] || 0 } : {}),
+        categoryId: service.categoryId,
+        categoryName: service.categoryName,
+        serviceName: service.name,
+        durationMinutes: service.durationMinutes
+      };
+    });
+  return sortByPopularity ? works.sort(byPopularity) : works;
 }
 
 async function listWorks(categoryId = '') {
-  const records = await find(COLLECTIONS.works, {}, { orderBy: { field: 'sort', direction: 'asc' } });
-  const [services, counts] = await Promise.all([listServices(categoryId), bookingCounts()]);
-  return records.filter(item => item.published !== false && services.some(s => s.id === item.serviceId)).map(item => {
-    const service = services.find(s => s.id === item.serviceId);
-    return {
-      ...publicWork(item),
-      bookingCount: counts[item.id || item._id] || 0,
-      categoryId: service.categoryId,
-      categoryName: service.categoryName,
-      serviceName: service.name,
-      durationMinutes: service.durationMinutes
-    };
-  }).sort(byPopularity);
+  const [{ services, styles }, counts] = await Promise.all([loadCatalog(categoryId), bookingCounts()]);
+  return decorateWorks(styles, services, counts);
 }
 
 async function listTechnicians(serviceId = '') {
   const records = await find(COLLECTIONS.technicians, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } });
-  if (serviceId) return records.filter((item) => (item.skills || []).includes(serviceId)).map(publicTechnician);
+  if (serviceId) {
+    const service = await getOptional(COLLECTIONS.services, serviceId);
+    const categoryId = service && service.categoryId;
+    return records.filter((item) => {
+      const categoryIds = Array.isArray(item.categoryIds) ? item.categoryIds : [];
+      if (categoryId && categoryIds.length) return categoryIds.includes(categoryId);
+      return !categoryIds.length && (item.skills || []).includes(serviceId);
+    }).map(publicTechnician);
+  }
   return records.map(publicTechnician);
 }
 
@@ -115,10 +149,26 @@ async function getService(serviceId) {
   assert(serviceId, 'INVALID_SERVICE', '缺少项目 ID');
   const record = await getOptional(COLLECTIONS.services, serviceId);
   assert(record && record.enabled !== false, 'SERVICE_NOT_FOUND', '项目不存在或已下架', 404);
-  const category = await getOptional(COLLECTIONS.categories, record.categoryId);
+  const [category, styles] = await Promise.all([
+    getOptional(COLLECTIONS.categories, record.categoryId),
+    find(COLLECTIONS.works, { serviceId: record.id || record._id }, { limit: 2000 })
+  ]);
   assert(category && category.enabled !== false, 'SERVICE_NOT_FOUND', '所属大类已停用', 404);
-  const styles = await find(COLLECTIONS.works, { serviceId: record.id || record._id }, { limit: 2000 });
   return { ...publicService(record), styleCount: styles.filter(item => item.published !== false).length, categoryName: category.name };
+}
+
+async function listServiceStyles(serviceId) {
+  assert(serviceId, 'INVALID_SERVICE', '缺少项目 ID');
+  const record = await getOptional(COLLECTIONS.services, serviceId);
+  assert(record && record.enabled !== false, 'SERVICE_NOT_FOUND', '项目不存在或已下架', 404);
+  const serviceKey = record.id || record._id;
+  const [category, styles] = await Promise.all([
+    getOptional(COLLECTIONS.categories, record.categoryId),
+    find(COLLECTIONS.works, { serviceId: serviceKey }, { orderBy: { field: 'sort', direction: 'asc' }, limit: 2000 })
+  ]);
+  assert(category && category.enabled !== false, 'SERVICE_NOT_FOUND', '所属大类已停用', 404);
+  const service = { ...publicService(record), styleCount: styles.filter(item => item.published !== false).length, categoryName: category.name };
+  return { service, works: decorateWorks(styles, [service], {}, { includeBookingCount: false, sortByPopularity: false }) };
 }
 
 async function getWork(workId) {
@@ -128,7 +178,6 @@ async function getWork(workId) {
   const service = await getService(record.serviceId);
   return {
     ...publicWork(record),
-    bookingCount: (await bookingCounts())[record.id || record._id] || 0,
     categoryId: service.categoryId,
     categoryName: service.categoryName,
     serviceName: service.name,
@@ -137,9 +186,8 @@ async function getWork(workId) {
 }
 
 async function getHome(settings) {
-  const [categories, services, works, technicians] = await Promise.all([
-    listCategories(), listServices(), listWorks(), listTechnicians()
-  ]);
+  const [{ categories, services, styles }, counts] = await Promise.all([loadCatalog(), bookingCounts()]);
+  const works = decorateWorks(styles, services, counts);
   const categorySummaries = categories.map((category) => {
     const categoryServices = services.filter((service) => service.categoryId === category.id);
     return {
@@ -152,10 +200,8 @@ async function getHome(settings) {
     store: settings.store,
     banners: settings.home?.banners || [],
     categories: categorySummaries,
-    services: services.slice(0, 6),
-    works: works.filter(item => item.featured).sort(byPopularity),
-    technicians: technicians.slice(0, 8)
+    works: works.filter(item => item.featured).sort(byPopularity)
   };
 }
 
-module.exports = { publicCategory, publicService, publicWork, publicTechnician, listCategories, listServices, listWorks, listTechnicians, getService, getWork, getHome };
+module.exports = { publicCategory, publicService, publicWork, publicTechnician, listCategories, listServiceCatalog, listServices, listServiceStyles, listWorks, listTechnicians, getService, getWork, getHome };

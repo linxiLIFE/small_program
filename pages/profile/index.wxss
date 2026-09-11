@@ -30,7 +30,7 @@
   border-radius: 50%;
   background: #ead0d0;
   color: #a86d72;
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 44rpx;
 }
 
@@ -41,7 +41,15 @@
 
 .profile-copy {
   flex: 1;
+  min-width: 0;
   margin-left: 22rpx;
+}
+
+.profile-name-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12rpx;
 }
 
 .profile-name,
@@ -50,10 +58,67 @@
 }
 
 .profile-name {
+  min-width: 0;
+  overflow: hidden;
   color: #594846;
-  font-family: Georgia, "Songti SC", serif;
+  font-family: inherit;
   font-size: 38rpx;
   font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name-edit-button {
+  flex: 0 0 auto;
+  height: 46rpx;
+  margin: 0;
+  padding: 0 14rpx;
+  border: 1rpx solid #e4c8c5;
+  border-radius: 12rpx;
+  background: #fff8f7;
+  color: #a85d68;
+  font-size: 20rpx;
+  line-height: 44rpx;
+}
+
+.profile-name-editor {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.name-input {
+  flex: 1;
+  min-width: 0;
+  height: 62rpx;
+  padding: 0 14rpx;
+  border: 1rpx solid #dfc4bf;
+  border-radius: 14rpx;
+  background: #fffdfb;
+  color: #594846;
+  font-size: 27rpx;
+}
+
+.name-editor-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6rpx;
+}
+
+.name-editor-actions button {
+  height: 52rpx;
+  margin: 0;
+  padding: 0 10rpx;
+  border-radius: 12rpx;
+  background: #f4e8e4;
+  color: #895b61;
+  font-size: 20rpx;
+  line-height: 52rpx;
+}
+
+.name-editor-actions button:last-child {
+  background: #bb6f79;
+  color: #fff;
 }
 
 .profile-phone {
@@ -88,7 +153,7 @@
 
 .points-number {
   color: #fffaf7;
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 62rpx;
   font-weight: 700;
 }
@@ -203,7 +268,7 @@
   display: block;
   margin-top: 52rpx;
   color: #c3afaa;
-  font-family: Georgia, "Songti SC", serif;
+  font-family: inherit;
   font-size: 22rpx;
   text-align: center;
 }

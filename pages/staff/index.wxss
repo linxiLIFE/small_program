@@ -13,7 +13,7 @@
   display: block;
   margin-top: 12rpx;
   color: #332c2b;
-  font-family: Georgia, "Songti SC", serif;
+  font-family: inherit;
   font-size: 44rpx;
   font-weight: 700;
 }
@@ -31,15 +31,15 @@
 }
 
 .staff-tabs {
-  width: calc(100% + 64rpx);
-  margin: 10rpx -32rpx 26rpx;
+  width: 100%;
+  margin: 10rpx 0 26rpx;
   white-space: nowrap;
 }
 
 .staff-tabs-inner {
   display: inline-flex;
   gap: 12rpx;
-  padding: 8rpx 32rpx;
+  padding: 8rpx 0;
 }
 
 .staff-tab {

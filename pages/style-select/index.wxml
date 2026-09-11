@@ -5,7 +5,7 @@
   <block wx:else>
     <view class="style-service card"><view class="style-service-copy"><text class="style-service-category">{{service.categoryName}}</text><text class="style-service-name">{{service.name}}</text></view><view class="style-service-meta"><text>¥{{service.priceText}}</text><text>{{service.durationText}}</text></view></view>
     <view class="style-heading"><text class="section-title">款式</text><text class="style-count">{{works.length}} 款</text></view>
-    <view wx:if="{{works.length}}" class="works-grid"><work-card wx:for="{{works}}" wx:key="id" work="{{item}}" bindselect="handleWorkTap"/></view>
+    <view wx:if="{{works.length}}" class="works-grid"><work-card wx:for="{{works}}" wx:key="id" work="{{item}}" selected="{{activeWorkId === item.id}}" bindselect="handleWorkTap"/></view>
     <empty-state wx:else title="暂无款式"/>
   </block>
 </view>

@@ -13,21 +13,23 @@ Page({
   },
 
   async loadDetail() {
-    this.setData({loading:true,error:''});
+    const hasData = !!this.data.service.id;
+    this.setData({ loading: !hasData, error: '' });
+    const requestId = (this.requestId || 0) + 1;
+    this.requestId = requestId;
     try {
-    this.setData({ loading: true });
-    const service = await api.getService(this.serviceId);
-    const normalized = {
-      ...service,
-      priceText: formatMoney(service.priceFen, false),
-      durationText: formatDuration(service.durationMinutes),
-      bufferText: service.bufferMinutes ? `含 ${service.bufferMinutes} 分钟整理时间` : ''
-    };
-    this.setData({
-      loading: false,
-      service: normalized,
-    });
-    } catch(error) { this.setData({loading:false,error:error.message||'加载失败'}); }
+      const service = await api.getService(this.serviceId);
+      if (requestId !== this.requestId) return;
+      const normalized = {
+        ...service,
+        priceText: formatMoney(service.priceFen, false),
+        durationText: formatDuration(service.durationMinutes)
+      };
+      this.setData({ loading: false, service: normalized });
+    } catch(error) {
+      if (requestId !== this.requestId) return;
+      this.setData({ loading: false, error: hasData ? '' : (error.message || '加载失败') });
+    }
   },
 
   startBooking() {

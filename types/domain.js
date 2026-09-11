@@ -6,7 +6,6 @@
  * @property {string} name
  * @property {number} priceFen
  * @property {number} durationMinutes
- * @property {number} bufferMinutes
  * @property {string} description
  * @property {string} coverUrl
  */

@@ -172,8 +172,17 @@ async function listOrdersForAdmin(payload = {}) {
 }
 
 async function listAllTechnicians() {
-  const records = await find(COLLECTIONS.technicians, {}, { orderBy: { field: 'sort', direction: 'asc' }, limit: 200 });
-  return records.filter(item => !item.archived).map((item) => ({ ...publicTechnician(item), enabled: item.enabled !== false, sort: Number(item.sort || 0) }));
+  const [records, services] = await Promise.all([
+    find(COLLECTIONS.technicians, {}, { orderBy: { field: 'sort', direction: 'asc' }, limit: 200 }),
+    find(COLLECTIONS.services, {}, { limit: 2000 })
+  ]);
+  const serviceCategoryById = new Map(services.map((service) => [service.id || service._id, service.categoryId]));
+  return records.filter(item => !item.archived).map((item) => {
+    const categoryIds = Array.isArray(item.categoryIds) && item.categoryIds.length
+      ? item.categoryIds
+      : [...new Set((item.skills || []).map((skill) => serviceCategoryById.get(skill)).filter(Boolean))];
+    return { ...publicTechnician(item), categoryIds, enabled: item.enabled !== false, sort: Number(item.sort || 0) };
+  });
 }
 
 async function getAdminDayPlan(technicianId, date, settings, reader = db) {
@@ -312,7 +321,11 @@ async function personalScheduleData(technicianId, payload = {}) {
   }));
   const {record, source} = await getAdminDayPlan(technicianId, date, settings);
   const orders = await find(COLLECTIONS.orders, { technicianId: technicianId, date }, {limit:200});
-  return { technician: publicTechnician(technician), days, plan: publicDayPlan(record,source,orders), orders: orders.filter(activeOccupancy).map(publicOrder) };
+  const services = await find(COLLECTIONS.services, {}, { limit: 2000 });
+  const categoryIds = Array.isArray(technician.categoryIds) && technician.categoryIds.length
+    ? technician.categoryIds
+    : [...new Set((technician.skills || []).map((skill) => services.find((service) => (service.id || service._id) === skill)?.categoryId).filter(Boolean))];
+  return { technician: { ...publicTechnician(technician), categoryIds }, days, plan: publicDayPlan(record,source,orders), orders: orders.filter(activeOccupancy).map(publicOrder) };
 }
 
 async function mySchedule(payload = {}) {

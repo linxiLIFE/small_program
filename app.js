@@ -3,7 +3,12 @@ const cloudConfig = require('./cloud-config');
 App({
   globalData: {
     user: null,
-    isDemo: false
+    isDemo: false,
+    catalogSelection: {
+      categoryId: '',
+      serviceId: '',
+      workId: ''
+    }
   },
 
   onLaunch() {

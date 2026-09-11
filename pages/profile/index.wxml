@@ -1,8 +1,8 @@
 <view class="page-shell profile-page">
 
   <view class="profile-hero">
-    <view class="profile-avatar"><image wx:if="{{profile.avatarUrl}}" mode="aspectFill" src="{{profile.avatarUrl}}" /><text wx:else>拾</text></view>
-    <view class="profile-copy"><text class="profile-name">{{profile.nickname || '拾光访客'}}</text><text class="profile-phone">{{profile.phoneLabel || '未绑定'}}</text></view>
+    <view class="profile-avatar"><image wx:if="{{profile.avatarUrl}}" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{profile.avatarUrl}}" /><text wx:else>拾</text></view>
+    <view class="profile-copy"><view wx:if="{{!editingName}}" class="profile-name-row"><text class="profile-name">{{profile.nickname || '拾光访客'}}</text><button class="name-edit-button" bindtap="editNickname">编辑</button></view><view wx:else class="profile-name-editor"><input class="name-input" value="{{draftNickname}}" maxlength="20" focus="{{true}}" bindinput="inputNickname"/><view class="name-editor-actions"><button bindtap="cancelNickname">取消</button><button bindtap="saveNickname">保存</button></view></view><text class="profile-phone">{{profile.phoneLabel || '未绑定'}}</text></view>
     <text class="profile-star">✦</text>
   </view>
 

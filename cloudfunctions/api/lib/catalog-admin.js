@@ -37,7 +37,7 @@ async function saveService(payload = {}) {
   assert(category && category.enabled !== false, 'INVALID_CATEGORY', '请选择已启用的大类');
   const priceFen = integer(payload.priceFen, '价格'); const durationMinutes = integer(payload.durationMinutes, '时长');
   assert(priceFen > 0 && durationMinutes > 0 && durationMinutes <= 720, 'INVALID_SERVICE', '价格必须大于零，时长须在 1 到 720 分钟之间');
-  const record = await persist(COLLECTIONS.services, idOf(payload, 'svc'), { name: nameOf(payload.name, '项目名称'), categoryId: category.id || category._id, categoryName: category.name, coverUrl: imageOf(payload, 'coverUrl', true), description: String(payload.description || '').slice(0, 1000), tags: Array.isArray(payload.tags) ? payload.tags.slice(0, 12) : [], priceFen, durationMinutes, bufferMinutes: integer(payload.bufferMinutes || 0, '缓冲时长'), sort: 0, enabled: payload.enabled !== false }, account);
+  const record = await persist(COLLECTIONS.services, idOf(payload, 'svc'), { name: nameOf(payload.name, '项目名称'), categoryId: category.id || category._id, categoryName: category.name, coverUrl: imageOf(payload, 'coverUrl', true), description: String(payload.description || '').slice(0, 1000), tags: Array.isArray(payload.tags) ? payload.tags.slice(0, 12) : [], priceFen, durationMinutes, sort: 0, enabled: payload.enabled !== false }, account);
   return { ...publicService(record), enabled: record.enabled, sort: record.sort };
 }
 async function saveWork(payload = {}) {
@@ -51,10 +51,18 @@ async function saveWork(payload = {}) {
 }
 async function saveTechnician(payload = {}) {
   const { account } = await requireRole(['OWNER']);
-  const skills = [...new Set(Array.isArray(payload.skills) ? payload.skills : [])];
-  assert(skills.length || payload.enabled === false, 'INVALID_SKILLS', '请至少选择一个可接待项目');
-  for (const id of skills) assert(await getOptional(COLLECTIONS.services, id), 'INVALID_SKILLS', '所选项目不存在');
-  const record = await persist(COLLECTIONS.technicians, idOf(payload, 'tech'), { name: nameOf(payload.name, '技师姓名'), title: String(payload.title || '').slice(0,80), bio: String(payload.bio || '').slice(0,500), avatarUrl: imageOf(payload,'avatarUrl',true), skills, sort: 0, enabled: payload.enabled !== false }, account);
+  const legacySkills = [...new Set(Array.isArray(payload.skills) ? payload.skills : [])];
+  let categoryIds = [...new Set(Array.isArray(payload.categoryIds) ? payload.categoryIds : [])];
+  if (!categoryIds.length && legacySkills.length) {
+    const services = await find(COLLECTIONS.services, {}, { limit: 2000 });
+    categoryIds = [...new Set(services.filter((service) => legacySkills.includes(service.id || service._id)).map((service) => service.categoryId).filter(Boolean))];
+  }
+  assert(categoryIds.length || payload.enabled === false, 'INVALID_SKILLS', '请至少选择一个可接待大项');
+  for (const id of categoryIds) {
+    const category = await getOptional(COLLECTIONS.categories, id);
+    assert(category && category.enabled !== false, 'INVALID_SKILLS', '所选大项不存在或已停用');
+  }
+  const record = await persist(COLLECTIONS.technicians, idOf(payload, 'tech'), { name: nameOf(payload.name, '技师姓名'), title: String(payload.title || '').slice(0,80), bio: String(payload.bio || '').slice(0,500), avatarUrl: imageOf(payload,'avatarUrl',true), categoryIds, skills: [], sort: 0, enabled: payload.enabled !== false }, account);
   return publicTechnician(record);
 }
 async function listCatalog() {
@@ -76,6 +84,8 @@ async function listCatalog() {
     if (item.categoryId) result[item.categoryId] = (result[item.categoryId] || 0) + Number(styleCounts[item.id || item._id] || 0);
     return result;
   }, {});
+  const serviceCategoryById = new Map(services.map((service) => [service.id || service._id, service.categoryId]));
+  const categoryNameById = new Map(categories.map((category) => [category.id || category._id, category.name]));
   return {
     categories: categories.filter(item => !item.archived).map(item => ({
       ...publicCategory(item),
@@ -92,7 +102,12 @@ async function listCatalog() {
       sort: item.sort || 0
     })),
     works: visibleWorks.map(item => ({ ...publicWork(item), bookingCount: counts[item.id || item._id] || 0, published: item.published !== false, sort: item.sort || 0 })).sort(byPopularity),
-    technicians: technicians.filter(item => !item.archived).map(item => ({ ...publicTechnician(item), bound: staff.some(s => s.role === 'TECHNICIAN' && s.technicianId === (item.id || item._id)), loginName: staff.find(s => s.role === 'TECHNICIAN' && s.technicianId === (item.id || item._id))?.name || '' }))
+    technicians: technicians.filter(item => !item.archived).map(item => {
+      const categoryIds = Array.isArray(item.categoryIds) && item.categoryIds.length
+        ? item.categoryIds
+        : [...new Set((item.skills || []).map((skill) => serviceCategoryById.get(skill)).filter(Boolean))];
+      return { ...publicTechnician(item), categoryIds, categoryNames: categoryIds.map((id) => categoryNameById.get(id)).filter(Boolean), bound: staff.some(s => s.role === 'TECHNICIAN' && s.technicianId === (item.id || item._id)), loginName: staff.find(s => s.role === 'TECHNICIAN' && s.technicianId === (item.id || item._id))?.name || '' };
+    })
   };
 }
 module.exports = { saveCategory, saveService, saveWork, saveTechnician, listCatalog };

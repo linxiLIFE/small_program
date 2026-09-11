@@ -10,7 +10,7 @@
 .page-title {
   display: block;
   color: #332c2b;
-  font-family: Georgia, "Songti SC", serif;
+  font-family: inherit;
   font-size: 44rpx;
   font-weight: 700;
 }
@@ -63,7 +63,7 @@
 
 .style-service-meta text:first-child {
   color: #bb6f79;
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 34rpx;
   font-weight: 700;
 }

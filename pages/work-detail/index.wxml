@@ -3,7 +3,7 @@
   <empty-state wx:elif="{{error}}" title="{{error}}" button-text="重试" bindaction="loadDetail"/>
   <block wx:else>
     <view class="work-hero" bindtap="previewImage">
-      <image wx:if="{{work.imageUrl}}" class="work-hero-image" mode="aspectFill" src="{{work.imageUrl}}" />
+      <image wx:if="{{work.imageUrl}}" class="work-hero-image" mode="aspectFill" webp="{{true}}" src="{{work.imageUrl}}" />
       <view wx:else class="work-hero-fallback"><text>拾光</text></view>
       <view class="work-hero-overlay"></view>
       <view class="work-hero-caption"><text class="work-hero-title">{{work.title}}</text></view>
@@ -11,7 +11,7 @@
     <view class="work-detail-content">
 
       <view class="artist-card card">
-        <image wx:if="{{technician.avatarUrl}}" class="artist-avatar" mode="aspectFill" src="{{technician.avatarUrl}}" />
+        <image wx:if="{{technician.avatarUrl}}" class="artist-avatar" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{technician.avatarUrl}}" />
         <view wx:else class="artist-avatar artist-fallback">{{technician.initial}}</view>
         <view class="artist-copy"><text class="artist-name">{{technician.name}}</text><text class="artist-title">{{technician.title}}</text></view>
       </view>

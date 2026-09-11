@@ -33,16 +33,32 @@ function getRequestContext() {
   }
 }
 
+async function getBookingContext(payload = {}) {
+  const serviceId = payload.serviceId || '';
+  const workId = payload.workId || '';
+  const [settings, service, technicians, profile, work] = await Promise.all([
+    getCurrentSettings(),
+    catalog.getService(serviceId),
+    catalog.listTechnicians(serviceId),
+    booking.getProfile(),
+    catalog.getWork(workId)
+  ]);
+  return { settings: publicSettings(settings), service, technicians, profile, work };
+}
+
 async function route(action, payload) {
   switch (action) {
     case 'getHome': return catalog.getHome(await getCurrentSettings());
-    case 'listServices': return { categories: await catalog.listCategories(), services: await catalog.listServices(payload && payload.categoryId), works: await catalog.listWorks(payload && payload.categoryId) };
+    case 'listServices': return catalog.listServiceCatalog(payload && payload.categoryId);
+    case 'listServiceStyles': return catalog.listServiceStyles(payload && payload.serviceId);
+    case 'getBookingContext': return getBookingContext(payload || {});
     case 'getService': return catalog.getService(payload && payload.serviceId);
     case 'getWork': return catalog.getWork(payload && payload.workId);
     case 'listTechnicians': return { technicians: await catalog.listTechnicians(payload && payload.serviceId) };
     case 'getSettings': return publicSettings(await getCurrentSettings());
     case 'getAvailableSlots': return booking.getAvailableSlots(payload || {});
     case 'getProfile': return booking.getProfile();
+    case 'updateProfile': return booking.updateProfile(payload || {});
     case 'bindPhone': return booking.bindPhone(payload || {});
     case 'createQuote': return booking.createQuote(payload || {});
     case 'createOrder': return booking.createOrder(payload || {});

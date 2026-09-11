@@ -1,14 +1,15 @@
-# 拾光美研预约小程序
+# 四个小姐姐的店预约小程序
 
-原生微信小程序 + CloudBase 云函数 + Vue 3 管理后台的单店美业预约系统。首版包含美甲、美眉、纹绣项目、作品展示、技师选择、14 天预约、全额预付、到店核销、自动退款、积分和经营概览。
+原生微信小程序 + CloudBase 云函数 + Vue 3 管理后台的单店美业预约系统。首版包含美甲、脚部美甲、睫毛、眉毛、纹绣项目、作品展示、技师选择、14 天预约、全额预付、到店核销、自动退款、积分和经营概览。
 
-## 当前状态（2026-09-09）
+## 当前状态（2026-09-11）
 
-- 最后验证时间：2026-09-09
-- 小程序 AppID：`wx334c1641257081ee`
-- CloudBase 环境：`cloud1 免费开发环境`
-- CloudBase Env ID：`cloud1-d5g44sjps7b57763c`
-- 管理后台地址：<https://cloud1-d5g44sjps7b57763c-1483650605.tcloudbaseapp.com/cloud-admin/index.html>
+- 最后验证时间：2026-09-11
+- 小程序 AppID（当前项目配置）：`wxa9eecac18eb834da`
+- CloudBase 环境：`cloud1 微信体验版`
+- CloudBase Env ID：`cloud1-d9g5pfect2ece00fa`
+- 管理后台地址：<https://cloud1-d9g5pfect2ece00fa-1485433457.tcloudbaseapp.com/cloud-admin/index.html>
+- 新环境已部署：MySQL 8.0（19 张表）、`api`、`jobs`、`seed`、`admin-api`、`payment-callback`，并已写入 5 个大类、52 个小项目和 48 个统一占位图款式；4 个叠加项目已标记为可叠加。
 - 已完成：顾客端页面、统一 API 封装、服务端事务/状态机/积分、API v3 支付流程预留、退款回调、后台任务、受控种子函数、Vue 管理后台、CloudBase 用户名密码登录和持久会话、技师每周模板与指定日期排班编辑器、手机号授权失败码诊断和隐私授权耦合。
 - 已验证：`npm test`；`admin/npm run build`；Node.js 语法检查；微信开发者工具模拟器编译首页并切换项目页；管理后台本地预览和线上排班页面；CloudBase MySQL 19 张表、云函数数据库环境变量/VPC、演示数据初始化、`api` SQL 读链路、排班读取和非法排班校验、`jobs` 调用；手机号授权修复代码已在微信开发者工具上传为 1.0.1 并覆盖当前体验版。
 - 尚未验证：使用真实 CloudBase 用户完成登录、首次店主授权后的后台数据读取、微信小程序隐私指引/主体手机号能力配置后的真机授权、微信支付个体工商户资质、真实商户号与 AppID 绑定、真机支付/退款、支付回调公网 HTTPS 的真实通知验签和正式发布。
@@ -20,8 +21,8 @@
 1. 使用微信开发者工具打开本目录，确认 AppID 为上面的 AppID。
 2. 确认项目资源管理器中的 `cloudfunctions` 显示“当前环境: cloud1”。
 3. 首次预览可直接点击“编译”，前端会在 `api` 云函数不可用时显示带提示的演示数据。
-4. 在 CloudBase MySQL 执行 [`docs/mysql-schema.sql`](docs/mysql-schema.sql)，配置云函数的 `DB_*` 服务端环境变量，部署 `seed` 并传入 `confirm=SEED_DEMO_DATA` 初始化演示目录。
-5. 分别部署 `cloudfunctions/api`、`cloudfunctions/jobs`、`cloudfunctions/payment-callback` 和 `cloudfunctions/admin-api`。`jobs`、`payment-callback`、`admin-api` 依赖共享业务模块，部署前执行：
+4. 在新环境执行 `npm run db:schema` 应用 [`docs/mysql-schema.sql`](docs/mysql-schema.sql)，并在云函数服务端配置 `DB_*` 环境变量；部署 `seed` 并传入 `confirm=SEED_DEMO_DATA` 初始化目录和演示规则。
+5. 分别部署 `cloudfunctions/api`、`cloudfunctions/jobs`、`cloudfunctions/seed`、`cloudfunctions/payment-callback` 和 `cloudfunctions/admin-api`。`jobs`、`payment-callback`、`admin-api`、`seed` 依赖共享业务模块，部署前执行：
 
    ```bash
    npm run prepare:functions
@@ -34,7 +35,7 @@
 ```bash
 cd admin
 npm run build
-tcb hosting deploy dist cloud-admin -e cloud1-d5g44sjps7b57763c --safe --verify
+tcb hosting deploy dist cloud-admin -e cloud1-d9g5pfect2ece00fa --safe --verify
 ```
 
 没有微信支付资质时不要填写虚假参数；下单后会保留待付款订单并显示待配置提示。资质完成后的变量和验收步骤见 [`docs/微信支付接入清单.md`](docs/微信支付接入清单.md)。
@@ -49,7 +50,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-后台默认使用 CloudBase Web SDK 的用户名/密码登录、本地持久会话和 `api` 云函数；只有显式设置 `VITE_ADMIN_DEMO=true` 时才启用本地演示数据。首次使用时，在 [CloudBase 身份认证用户管理](https://tcb.cloud.tencent.com/dev?envId=cloud1-d5g44sjps7b57763c#/identity/user-management) 创建一个用户名密码用户，打开上面的后台登录；当环境还没有 `staff_accounts` 时，登录账号会看到“设为首个店主”，确认后即可完成首个 `OWNER` 授权。之后新增员工必须由受控管理流程写入 `staff_accounts`，不开放公众注册。当前免费套餐不允许新增本地安全域名，因此真实登录请优先使用线上静态地址；浏览器端不保存或显示商户私钥、API v3 密钥、支付平台证书和完整令牌。
+后台默认使用 CloudBase Web SDK 的用户名/密码登录、本地持久会话和 `api` 云函数；只有显式设置 `VITE_ADMIN_DEMO=true` 时才启用本地演示数据。首次使用时，在 [CloudBase 身份认证用户管理](https://tcb.cloud.tencent.com/dev?envId=cloud1-d9g5pfect2ece00fa#/identity/user-management) 创建一个用户名密码用户，打开上面的后台登录；当环境还没有 `staff_accounts` 时，登录账号会看到“设为首个店主”，确认后即可完成首个 `OWNER` 授权。之后新增员工必须由受控管理流程写入 `staff_accounts`，不开放公众注册。真实登录请优先使用线上静态地址；浏览器端不保存或显示商户私钥、API v3 密钥、支付平台证书和完整令牌。
 
 ## 目录结构
 

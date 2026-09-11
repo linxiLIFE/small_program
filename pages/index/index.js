@@ -17,10 +17,18 @@ Page({
   },
 
   async loadHome() {
-    this.setData({ loading: true, error: '' });
+    const hasData = this.data.categories.length || this.data.banners.length || this.data.works.length || this.data.store.storeName;
+    this.setData({ loading: !hasData, error: '' });
+    const requestId = (this.requestId || 0) + 1;
+    this.requestId = requestId;
     let result;
     try { result = await api.getHome(); }
-    catch (error) { this.setData({ loading: false, error: error.message || '加载失败' }); return; }
+    catch (error) {
+      if (requestId !== this.requestId) return;
+      this.setData({ loading: false, error: hasData ? '' : (error.message || '加载失败') });
+      return;
+    }
+    if (requestId !== this.requestId) return;
     const services = (result.services || []).map((item) => ({
       ...item,
       priceText: formatMoney(item.priceFen, false),
@@ -32,7 +40,9 @@ Page({
       const styleCount = Number(category.styleCount !== undefined ? category.styleCount : categoryServices.reduce((count, service) => count + Number(service.styleCount || 0), 0));
       return { ...category, serviceCount, styleCount, serviceCountText: `${serviceCount} 个小项目`, styleCountText: `${styleCount} 款式` };
     });
-    const banners = (result.banners || []).filter((item) => item && item.imageUrl);
+    const banners = (result.banners || [])
+      .filter((item) => item && item.imageUrl)
+      .map((item, index) => ({ ...item, lazy: index > 0 }));
     const works = (result.works || []).map((work) => ({
       ...work,
       serviceName: work.serviceName || services.find((service) => service.id === work.serviceId)?.name || ''
@@ -70,6 +80,7 @@ Page({
 
   handleCategoryTap(event) {
     const categoryId = event.currentTarget.dataset.id || '';
+    getApp().globalData.catalogSelection = { ...(getApp().globalData.catalogSelection || {}), categoryId, serviceId: '', workId: '' };
     getApp().globalData.pendingServiceCategoryId = categoryId;
     wx.switchTab({ url: '/pages/services/index' });
   },
@@ -85,8 +96,12 @@ Page({
   },
 
   makePhoneCall() {
-    if (!this.data.store.phone) return;
-    wx.makePhoneCall({ phoneNumber: this.data.store.phone });
+    const phoneNumber = String(this.data.store.phone || '').replace(/[^\d+]/g, '');
+    if (!phoneNumber) {
+      wx.showToast({ title: '门店暂未设置电话', icon: 'none' });
+      return;
+    }
+    wx.makePhoneCall({ phoneNumber, fail: () => wx.showToast({ title: '拨号失败，请稍后重试', icon: 'none' }) });
   },
 
 

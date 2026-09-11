@@ -6,12 +6,18 @@ Page({
     loading: true,
     error: '',
     service: {},
-    works: []
+    works: [],
+    activeWorkId: ''
   },
 
   onLoad(options = {}) {
+    const state = getApp().globalData;
+    const selection = state.catalogSelection || {};
     this.categoryId = options.categoryId || '';
     this.serviceId = options.serviceId || '';
+    this.activeWorkId = options.workId || (selection.serviceId === this.serviceId ? selection.workId : '') || '';
+    state.catalogSelection = { ...selection, categoryId: this.categoryId, serviceId: this.serviceId, workId: this.activeWorkId };
+    this.setData({ activeWorkId: this.activeWorkId });
     return this.loadStyles();
   },
 
@@ -20,14 +26,21 @@ Page({
       this.setData({ loading: false, error: '小项目不存在' });
       return;
     }
-    this.setData({ loading: true, error: '' });
+    const hasData = this.data.service.id && this.data.works.length;
+    this.setData({ loading: !hasData, error: '' });
+    const requestId = (this.requestId || 0) + 1;
+    this.requestId = requestId;
     try {
-      const result = await api.listServices(this.categoryId);
-      const service = (result.services || []).find((item) => item.id === this.serviceId);
+      const result = await api.listServiceStyles(this.serviceId);
+      if (requestId !== this.requestId) return;
+      const service = result.service;
       if (!service) throw new Error('小项目不存在或已下架');
       const works = (result.works || [])
-        .filter((item) => item.serviceId === service.id && item.published !== false)
         .map((item) => ({ ...item, serviceName: '' }));
+      const state = getApp().globalData;
+      const selection = state.catalogSelection || {};
+      const activeWorkId = works.some((item) => item.id === this.activeWorkId) ? this.activeWorkId : '';
+      state.catalogSelection = { ...selection, categoryId: service.categoryId || this.categoryId, serviceId: service.id, workId: activeWorkId };
       this.setData({
         loading: false,
         service: {
@@ -35,15 +48,22 @@ Page({
           priceText: formatMoney(service.priceFen, false),
           durationText: formatDuration(service.durationMinutes)
         },
-        works
+        works,
+        activeWorkId
       });
     } catch (error) {
-      this.setData({ loading: false, error: error.message || '加载失败' });
+      if (requestId !== this.requestId) return;
+      this.setData({ loading: false, error: hasData ? '' : (error.message || '加载失败') });
     }
   },
 
   handleWorkTap(event) {
-    const workId = event.detail?.work?.id;
-    if (workId) wx.navigateTo({ url: `/pages/work-detail/index?workId=${encodeURIComponent(workId)}` });
+    const work = event.detail?.work;
+    const workId = work?.id;
+    if (!workId) return;
+    const state = getApp().globalData;
+    state.catalogSelection = { ...(state.catalogSelection || {}), categoryId: this.data.service.categoryId || this.categoryId, serviceId: this.serviceId, workId };
+    this.setData({ activeWorkId: workId });
+    wx.navigateTo({ url: `/pages/work-detail/index?workId=${encodeURIComponent(workId)}` });
   }
 });

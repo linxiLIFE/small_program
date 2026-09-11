@@ -10,21 +10,21 @@
   display: block;
   margin-top: 12rpx;
   color: #332c2b;
-  font-family: Georgia, "Songti SC", serif;
+  font-family: inherit;
   font-size: 44rpx;
   font-weight: 700;
 }
 
 .status-tabs {
-  width: calc(100% + 64rpx);
-  margin: 10rpx -32rpx 28rpx;
+  width: 100%;
+  margin: 10rpx 0 28rpx;
   white-space: nowrap;
 }
 
 .status-tabs-inner {
   display: inline-flex;
   gap: 12rpx;
-  padding: 8rpx 32rpx;
+  padding: 8rpx 0;
 }
 
 .status-tab {
@@ -47,7 +47,7 @@
 }
 
 .order-skeleton {
-  height: 244rpx;
+  height: 280rpx;
 }
 
 .order-list {
@@ -57,7 +57,41 @@
 }
 
 .order-card {
-  padding: 24rpx;
+  display: grid;
+  grid-template-columns: 190rpx minmax(0, 1fr);
+  gap: 24rpx;
+  min-height: 242rpx;
+  padding: 20rpx;
+}
+
+.order-visual {
+  width: 190rpx;
+  height: 242rpx;
+  overflow: hidden;
+  border-radius: 20rpx;
+  background: #f0e1dd;
+}
+
+.order-visual image,
+.order-visual-fallback {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.order-visual-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aa777b;
+  font-size: 25rpx;
+}
+
+.order-content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 8rpx 2rpx 4rpx 0;
 }
 
 .order-card-top,
@@ -68,7 +102,16 @@
   justify-content: space-between;
 }
 
+.order-card-top {
+  align-items: flex-start;
+}
+
+.order-card-title {
+  min-width: 0;
+}
+
 .order-service,
+.order-style,
 .order-tech,
 .order-id {
   display: block;
@@ -76,8 +119,17 @@
 
 .order-service {
   color: #594846;
-  font-size: 30rpx;
+  font-size: 32rpx;
   font-weight: 700;
+}
+
+.order-style {
+  margin-top: 8rpx;
+  overflow: hidden;
+  color: #9a8581;
+  font-size: 22rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .order-tech {
@@ -88,19 +140,36 @@
 
 .order-time {
   justify-content: flex-start;
-  margin: 24rpx 0 20rpx;
+  flex-wrap: wrap;
+  gap: 8rpx 10rpx;
+  margin: 30rpx 0 12rpx;
   color: #765c58;
-  font-size: 25rpx;
+  font-size: 28rpx;
 }
 
 .time-icon {
-  margin-right: 12rpx;
+  margin-right: 2rpx;
   color: #bb6f79;
   font-size: 30rpx;
 }
 
+.order-duration {
+  width: 100%;
+  padding-left: 40rpx;
+  color: #a08c86;
+  font-size: 22rpx;
+}
+
+.order-tech {
+  margin-top: 8rpx;
+  color: #a08c86;
+  font-size: 22rpx;
+}
+
 .order-card-bottom {
-  margin-top: 18rpx;
+  margin-top: auto;
+  padding-top: 18rpx;
+  border-top: 1rpx solid #f2e9e5;
 }
 
 .order-id {
@@ -116,4 +185,9 @@
   color: #bb6f79;
   font-size: 25rpx;
   font-weight: 600;
+}
+
+@media (max-width: 380px) {
+  .order-card { grid-template-columns: 150rpx minmax(0, 1fr); gap: 18rpx; }
+  .order-visual { width: 150rpx; height: 218rpx; }
 }

@@ -44,7 +44,7 @@
   gap: 16rpx;
   background: linear-gradient(135deg, #edc7c2, #f4e2da 58%, #dcb9ba);
   color: #9f626b;
-  font-family: Georgia, "Songti SC", serif;
+  font-family: inherit;
   font-size: 30rpx;
 }
 
@@ -72,7 +72,7 @@
   display: block;
   margin-top: 10rpx;
   color: #fffaf7;
-  font-family: Georgia, "Songti SC", serif;
+  font-family: inherit;
   font-size: 48rpx;
   font-weight: 700;
 }
@@ -90,7 +90,7 @@
 
 .detail-price {
   color: #bb6f79;
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 46rpx;
   font-weight: 700;
 }
@@ -145,7 +145,7 @@
   margin: 2rpx 12rpx 0 0;
   border: 1rpx solid #d5a866;
   border-radius: 50%;
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 22rpx;
 }
 

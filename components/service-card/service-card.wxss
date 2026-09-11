@@ -110,7 +110,7 @@
 
 .price {
   color: #bb6f79;
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 34rpx;
   font-weight: 700;
 }

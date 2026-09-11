@@ -25,16 +25,21 @@ Page({
   },
 
   async loadOrders(status) {
-    this.setData({ loading: true });
+    const hasData = this.hasLoaded || this.data.orders.length > 0;
+    this.setData({ loading: !hasData });
+    const requestId = (this.requestId || 0) + 1;
+    this.requestId = requestId;
     try {
       const result = await api.staffListOrders(status);
+      if (requestId !== this.requestId) return;
       const orders = (result.orders || []).map((item) => ({ ...item, statusLabel: item.statusLabel || ORDER_STATUS_LABELS[item.status] || '处理中', timeLabel: item.startAtLabel || formatDateTime(item.startAt) }));
       this.hasLoaded = true;
       this.setData({ orders, loading: false });
     } catch (error) {
+      if (requestId !== this.requestId) return;
       this.hasLoaded = true;
-      this.setData({ orders: [], loading: false });
-      wx.showToast({ title: error.message || '订单加载失败', icon: 'none' });
+      this.setData({ orders: hasData ? this.data.orders : [], loading: false });
+      if (!hasData) wx.showToast({ title: error.message || '订单加载失败', icon: 'none' });
     }
   },
 

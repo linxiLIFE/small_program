@@ -14,7 +14,7 @@
 .page-title {
   margin-top: 12rpx;
   color: #332c2b;
-  font-family: Georgia, "Songti SC", serif;
+  font-family: inherit;
   font-size: 44rpx;
   font-weight: 700;
 }
@@ -26,15 +26,15 @@
 }
 
 .category-tabs {
-  width: calc(100% + 64rpx);
-  margin: 12rpx -32rpx 30rpx;
+  width: 100%;
+  margin: 12rpx 0 30rpx;
   white-space: nowrap;
 }
 
 .category-tabs-inner {
   display: inline-flex;
   gap: 14rpx;
-  padding: 10rpx 32rpx;
+  padding: 10rpx 0;
 }
 
 .category-tab {
@@ -87,7 +87,7 @@
 .works-title {
   margin-top: 8rpx;
   color: #684f4b;
-  font-family: Georgia, "Songti SC", serif;
+  font-family: inherit;
   font-size: 36rpx;
   font-weight: 700;
 }
@@ -110,7 +110,7 @@
   text-align: center;
 }
 
-.works-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28rpx 18rpx}.project-tabs{white-space:nowrap;margin: -12rpx -32rpx 30rpx;width:calc(100% + 64rpx)}.project-tab{font-size:24rpx;color:#998780;padding:12rpx 0;margin-right:20rpx;border-bottom:3rpx solid transparent}.project-tab.selected{color:#8d505b;border-color:#8d505b}.page-title{letter-spacing:3rpx}
+.works-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28rpx 18rpx}.project-tabs{white-space:nowrap;margin:12rpx 0 30rpx;width:100%;max-width:100%}.project-tab{font-size:24rpx;color:#998780;padding:12rpx 0;margin-right:20rpx;border-bottom:3rpx solid transparent}.project-tab.selected{color:#8d505b;border-color:#8d505b}.page-title{letter-spacing:1rpx}
 
 .selection-section {
   margin-top: 42rpx;
@@ -172,7 +172,7 @@
   position: relative;
   z-index: 1;
   color: #a76b73;
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 42rpx;
 }
 

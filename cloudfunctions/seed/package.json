@@ -2,7 +2,7 @@
   "name": "shiguang-seed",
   "version": "1.0.0",
   "private": true,
-  "description": "拾光美研受控演示数据初始化函数",
+  "description": "四个小姐姐的店受控演示数据初始化函数",
   "main": "index.js",
   "dependencies": {
     "mysql2": "3.24.4",

@@ -5,6 +5,10 @@
   box-shadow: 0 10rpx 28rpx rgba(104, 69, 63, 0.08);
 }
 
+.work-card.selected {
+  box-shadow: 0 0 0 3rpx #bb6f79, 0 10rpx 28rpx rgba(104, 69, 63, 0.12);
+}
+
 .work-image-wrap {
   position: relative;
   height: 320rpx;
@@ -28,7 +32,7 @@
 }
 
 .work-placeholder text:first-child {
-  font-family: Georgia, serif;
+  font-family: inherit;
   font-size: 56rpx;
 }
 

@@ -85,7 +85,14 @@ async function getTechnician(technicianId) {
   const records = await find(COLLECTIONS.technicians, { enabled: true }, { limit: 200 });
   const technician = records.find((item) => (item.id || item._id) === technicianId);
   assert(technician, 'TECHNICIAN_NOT_FOUND', '技师不存在或已停用', 404);
-  return { ...technician, id: technician.id || technician._id, skills: technician.skills || [] };
+  return { ...technician, id: technician.id || technician._id, categoryIds: Array.isArray(technician.categoryIds) ? technician.categoryIds : [], skills: technician.skills || [] };
+}
+
+function technicianCanServe(technician, service) {
+  const categoryIds = Array.isArray(technician.categoryIds) ? technician.categoryIds : [];
+  if (categoryIds.length) return categoryIds.includes(service.categoryId);
+  // 兼容尚未迁移的历史技师记录。
+  return (technician.skills || []).includes(service.id);
 }
 
 async function getPointsAccount(openid, reader = db) {
@@ -106,9 +113,9 @@ function occupancyIsActive(item) {
 }
 
 function getSlotFromPlan(plan, startAt, service, settings) {
-  const endAt = addMinutes(startAt, Number(service.durationMinutes) + Number(service.bufferMinutes || 0));
+  const endAt = addMinutes(startAt, Number(service.durationMinutes));
   const startMinutes = minutesOfDay(startAt);
-  const endMinutes = startMinutes + Number(service.durationMinutes) + Number(service.bufferMinutes || 0);
+  const endMinutes = startMinutes + Number(service.durationMinutes);
   const insideShift = plan.shifts.some((shift) => {
     const shiftStart = Number(shift.start.slice(0, 2)) * 60 + Number(shift.start.slice(3));
     const shiftEnd = Number(shift.end.slice(0, 2)) * 60 + Number(shift.end.slice(3));
@@ -117,14 +124,14 @@ function getSlotFromPlan(plan, startAt, service, settings) {
   assert(!plan.leave && insideShift, 'SLOT_UNAVAILABLE', '该时段不在营业或排班范围内');
   const conflict = (plan.occupancies || []).find((item) => occupancyIsActive(item) && overlaps(startAt, endAt, item.startAt, item.endAt));
   assert(!conflict, 'SLOT_TAKEN', '该时段刚刚被其他顾客预约了');
-  return { startAt, endAt, durationMinutes: Number(service.durationMinutes), bufferMinutes: Number(service.bufferMinutes || 0), stepMinutes: settings.booking.slotStepMinutes };
+  return { startAt, endAt, durationMinutes: Number(service.durationMinutes), stepMinutes: settings.booking.slotStepMinutes };
 }
 
 async function validateBookingSlot({ serviceId, technicianId, date, startAt, now = Date.now(), reader = db }) {
   const settings = await getCurrentSettings();
   const service = await getService(serviceId);
   const technician = await getTechnician(technicianId);
-  assert(technician.skills.includes(service.id), 'SKILL_MISMATCH', '该技师暂不提供此项目');
+  assert(technicianCanServe(technician, service), 'SKILL_MISMATCH', '该技师暂不提供此大项');
   assertValidStart(date, Number(startAt), settings.booking.minAdvanceMinutes, settings.booking.openDays, now);
   const step = Number(settings.booking.slotStepMinutes || 15);
   const dateStart = dateToTimestamp(date);
@@ -138,7 +145,7 @@ async function getAvailableSlots(payload) {
   const settings = await getCurrentSettings();
   const service = await getService(payload.serviceId);
   const technician = await getTechnician(payload.technicianId);
-  assert(technician.skills.includes(service.id), 'SKILL_MISMATCH', '该技师暂不提供此项目');
+  assert(technicianCanServe(technician, service), 'SKILL_MISMATCH', '该技师暂不提供此大项');
   if (!isWithinDateWindow(payload.date, settings.booking.openDays, 0)) return { date: payload.date, slots: [] };
   const plan = await getDayPlan(payload.technicianId, payload.date, settings);
   const slots = [];
@@ -151,17 +158,17 @@ async function getAvailableSlots(payload) {
       const hour = Math.floor(minute / 60);
       const rest = minute % 60;
       const startAt = dateToTimestamp(payload.date, `${String(hour).padStart(2, '0')}:${String(rest).padStart(2, '0')}`);
-      const endAt = addMinutes(startAt, Number(service.durationMinutes) + Number(service.bufferMinutes || 0));
+      const endAt = addMinutes(startAt, Number(service.durationMinutes));
       const validByWindow = startAt >= addMinutes(now, settings.booking.minAdvanceMinutes);
       const validByShift = endAt <= dateToTimestamp(payload.date, shift.end);
-      const validByBreak = !isBreak(minute, minute + Number(service.durationMinutes) + Number(service.bufferMinutes || 0), shift.breaks || []);
+      const validByBreak = !isBreak(minute, minute + Number(service.durationMinutes), shift.breaks || []);
       const conflict = (plan.occupancies || []).some((item) => occupancyIsActive(item) && overlaps(startAt, endAt, item.startAt, item.endAt));
       if (validByWindow && validByShift && validByBreak && !conflict && !plan.leave) {
         slots.push({ id: `${payload.date}-${hour}-${rest}`, label: `${String(hour).padStart(2, '0')}:${String(rest).padStart(2, '0')}`, startAt, endAt, available: true });
       }
     }
   }
-  return { date: payload.date, serviceId: service.id, technicianId: technician.id, slots };
+  return { date: payload.date, serviceId: service.id, technicianId: technician.id, stepMinutes: step, slots };
 }
 
 async function createQuote(payload) {
@@ -283,7 +290,7 @@ async function createOrder(payload) {
     technicianSnapshot: { id: validation.technician.id, name: validation.technician.name, title: validation.technician.title || '' },
     serviceId: validation.service.id,
     workSnapshot: work ? { id: work.id, title: work.title, imageUrl: work.imageUrl } : null,
-    serviceSnapshot: { id: validation.service.id, name: validation.service.name, categoryId: validation.service.categoryId, categoryName: validation.service.categoryName, priceFen: validation.service.priceFen, durationMinutes: validation.service.durationMinutes, bufferMinutes: validation.service.bufferMinutes },
+    serviceSnapshot: { id: validation.service.id, name: validation.service.name, categoryId: validation.service.categoryId, categoryName: validation.service.categoryName, priceFen: validation.service.priceFen, durationMinutes: validation.service.durationMinutes },
     date: payload.date, startAt: validation.slot.startAt, endAt: validation.slot.endAt,
     totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen,
     pointsUsed: price.pointsToUse, pointsFrozen: price.pointsToUse, pointsEarned: 0,
@@ -348,7 +355,7 @@ async function bindPhone(payload) {
   let phone;
   try {
     const result = await cloud.openapi.phonenumber.getPhoneNumber({ code: payload.code });
-    phone = result && result.phone_info && result.phone_info.phoneNumber;
+    phone = result && result.phoneInfo && result.phoneInfo.phoneNumber;
   } catch (error) {
     console.error('微信手机号换取失败', error);
     throw new AppError('PHONE_EXCHANGE_FAILED', '手机号授权暂时失败，请稍后重试');
@@ -358,6 +365,16 @@ async function bindPhone(payload) {
   const masked = maskPhone(phone);
   const user = await ensureUser(context.openid, context);
   const updated = { ...user, phoneCipher: cipher, phoneMasked: masked, updatedAt: Date.now() };
+  await db.collection(COLLECTIONS.users).doc(context.openid).set({ data: updated });
+  return safeUser(updated, await getPointsAccount(context.openid));
+}
+
+async function updateProfile(payload = {}) {
+  const context = requireOpenId();
+  const nickname = String(payload.nickname || '').trim();
+  assert(nickname && nickname.length <= 20, 'INVALID_NICKNAME', '用户名需填写 1 到 20 个字符');
+  const user = await ensureUser(context.openid, context);
+  const updated = { ...user, nickname, updatedAt: Date.now() };
   await db.collection(COLLECTIONS.users).doc(context.openid).set({ data: updated });
   return safeUser(updated, await getPointsAccount(context.openid));
 }
@@ -600,6 +617,7 @@ module.exports = {
   listOrders,
   getOrder,
   bindPhone,
+  updateProfile,
   getProfile,
   listPoints,
   cancelOrder,

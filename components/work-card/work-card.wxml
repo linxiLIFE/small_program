@@ -1,6 +1,6 @@
-<view class="work-card" bindtap="handleTap">
+<view class="work-card {{selected ? 'selected' : ''}}" bindtap="handleTap">
   <view class="work-image-wrap">
-    <image wx:if="{{work.imageUrl && !imageError}}" class="work-image" mode="aspectFill" src="{{work.imageUrl}}" binderror="handleImageError" />
+    <image wx:if="{{work.imageUrl && !imageError}}" class="work-image" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{work.imageUrl}}" binderror="handleImageError" />
     <view wx:else class="work-placeholder"><text>拾光</text><text>{{work.categoryName}}</text></view>
 
   </view>

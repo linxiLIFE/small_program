@@ -13,9 +13,9 @@ function money(fen: number): string {
 }
 
 const demoServices: Service[] = [
-  { id: 'svc-nail-french', categoryId: 'nail', categoryName: '美甲', name: '奶油法式美甲', description: '低饱和奶油色打底，搭配细线法式与手绘小花。', priceFen: 29900, durationMinutes: 90, bufferMinutes: 15, coverUrl: '', enabled: true, sort: 1 },
-  { id: 'svc-nail-jelly', categoryId: 'nail', categoryName: '美甲', name: '玫瑰果冻裸色', description: '透亮果冻感与轻薄加固。', priceFen: 23900, durationMinutes: 75, bufferMinutes: 15, coverUrl: '', enabled: true, sort: 2 },
-  { id: 'svc-brow-natural', categoryId: 'brow', categoryName: '美眉', name: '自然野生眉设计', description: '根据脸型、眉骨和毛流重新设计。', priceFen: 19900, durationMinutes: 60, bufferMinutes: 15, coverUrl: '', enabled: true, sort: 3 }
+  { id: 'svc-nail-french', categoryId: 'nail', categoryName: '美甲', name: '奶油法式美甲', description: '低饱和奶油色打底，搭配细线法式与手绘小花。', priceFen: 29900, durationMinutes: 90, coverUrl: '', enabled: true, sort: 1 },
+  { id: 'svc-nail-jelly', categoryId: 'nail', categoryName: '美甲', name: '玫瑰果冻裸色', description: '透亮果冻感与轻薄加固。', priceFen: 23900, durationMinutes: 75, coverUrl: '', enabled: true, sort: 2 },
+  { id: 'svc-brow-natural', categoryId: 'brow', categoryName: '美眉', name: '自然野生眉设计', description: '根据脸型、眉骨和毛流重新设计。', priceFen: 19900, durationMinutes: 60, coverUrl: '', enabled: true, sort: 3 }
 ];
 
 let demoOrders: AdminOrder[] = [
@@ -25,14 +25,14 @@ let demoOrders: AdminOrder[] = [
 
 const demoSettings: Settings = {
   version: 1,
-  store: { storeName: '拾光美研', address: '预约成功后展示详细地址', phone: '', notice: '每次预约只安排一位顾客和一位技师，请提前 5 分钟到店。' },
+  store: { storeName: '四个小姐姐的店', address: '预约成功后展示详细地址', phone: '', notice: '每次预约只安排一位顾客和一位技师，请提前 5 分钟到店。' },
   booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, noShowGraceMinutes: 30 },
   points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10 }
 };
 
 const demoTechnicians = [
-  { id: 'tech-lin', name: '林老师', title: '主理人 · 美甲师', bio: '擅长低饱和、法式与手绘细节。', skills: ['svc-nail-french', 'svc-nail-jelly'], enabled: true },
-  { id: 'tech-zhou', name: '周老师', title: '高级眉形设计师', bio: '以自然毛流和面部比例为优先。', skills: ['svc-brow-natural'], enabled: true }
+  { id: 'tech-lin', name: '林老师', title: '主理人 · 美甲师', bio: '擅长低饱和、法式与手绘细节。', categoryIds: ['nail'], enabled: true },
+  { id: 'tech-zhou', name: '周老师', title: '高级眉形设计师', bio: '以自然毛流和面部比例为优先。', categoryIds: ['brow'], enabled: true }
 ];
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -76,11 +76,27 @@ async function request<T>(action: string, payload: Record<string, unknown> = {})
 async function demoRequest<T>(action: string, payload: Record<string, unknown>): Promise<T> {
   if (action === 'adminBootstrapStatus') return { available: false } as T;
   if (action === 'adminBootstrapOwner') return { id: 'demo-owner', role: 'OWNER' } as T;
-  if (action === 'adminSummary') return { date: new Date().toISOString().slice(0, 10), metrics: { paidFen: 49800, refundFen: 0, netFen: 49800, completedFen: 19900, orderCount: 2, completedCount: 1, customerCount: 2, noShowCount: 0 } } as T;
+  if (action === 'adminSummary') {
+    const days = Math.max(1, Number(payload.days) || 30);
+    const end = new Date();
+    const trend = Array.from({ length: days }, (_, index) => {
+      const date = new Date(end);
+      date.setDate(end.getDate() - (days - index - 1));
+      return { date: date.toISOString().slice(0, 10), paidFen: 0, completedCount: 0, customerCount: 0 };
+    });
+    return { date: trend[trend.length - 1].date, days, rangeStart: trend[0].date, metrics: { paidFen: 49800, refundFen: 0, netFen: 49800, completedFen: 19900, orderCount: 2, completedCount: 1, customerCount: 2, noShowCount: 0, newCustomerCount: 2, returningCustomerCount: 0, repeatRate: 0, averageOrderFen: 24900 }, trend, works: [], services: [], technicians: [] } as T;
+  }
   if (action === 'adminListOrders') return { orders: payload.status ? demoOrders.filter((item) => item.status === payload.status) : demoOrders, canRefund: true } as T;
   if (action === 'staffSession') return {role:'OWNER',name:'店主'} as T;
   if (action === 'adminCatalog') return { categories: [{id:'nail',name:'美甲',enabled:true,icon:'✦',color:'#f1ded8',sort:0},{id:'brow',name:'美眉',enabled:true,icon:'⌁',color:'#eee6d9',sort:1}], services: demoServices, works: demoWorks, technicians: demoTechnicians } as T;
   if (action === 'adminSchedule') return demoSchedule(String(payload.date || today())) as T;
+  if (action === 'adminPreviewTechnicianSchedule') {
+    const current = demoSchedule(String(payload.date || today()));
+    const technician = current.technicians.find((item) => item.id === payload.technicianId) || current.technicians[0];
+    const plan = technician?.plan || demoSchedule(String(payload.date || today())).technicians[0]?.plan;
+    if (!technician || !plan) throw new Error('演示技师不存在');
+    return { technician: { ...technician, plan: undefined }, days: [plan], plan, orders: [] } as T;
+  }
   if (action === 'adminSaveScheduleDay') {
     const current = demoSchedule(String(payload.date || today()));
     const technician = current.technicians.find((item) => item.id === payload.technicianId);
@@ -90,6 +106,10 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
   }
   if (action === 'adminSaveWeeklySchedule') return { version: demoSettings.version + 1, weekly: payload.weekly as WeeklySchedule[] } as T;
   if (action === 'adminPaymentStatus') return { configured: false, missing: ['WX_MCH_ID', 'WX_MCH_SERIAL_NO', 'WX_API_V3_KEY', 'WX_PRIVATE_KEY', 'WX_NOTIFY_URL'], callbackCertificateConfigured: false, note: '仅返回状态，不返回密钥。' } as T;
+  if (action === 'adminUploadImage') {
+    const base64 = typeof payload.base64 === 'string' ? payload.base64 : '';
+    return { fileID: `demo-file-${Date.now()}`, url: base64 ? `data:image/jpeg;base64,${base64}` : '' } as T;
+  }
   if (action === 'getSettings') return demoSettings as T;
   if (action === 'adminSaveWork') {
     const work = payload as unknown as Work;

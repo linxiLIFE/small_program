@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import DashboardPanel from './components/DashboardPanel.vue';
 import HomeManager from './components/HomeManager.vue';
 import CatalogManager from './components/CatalogManager.vue';
@@ -30,7 +30,7 @@ const bootstrapBusy = ref(false);
 const metrics = ref({ paidFen: 0, refundFen: 0, netFen: 0, completedFen: 0, orderCount: 0, completedCount: 0, customerCount: 0, noShowCount: 0 });
 const orders = ref<AdminOrder[]>([]);
 const catalog = ref<CatalogResponse>({ categories: [], services: [], works: [], technicians: [] });
-const settings = reactive<Settings>({ version: 1, store: { storeName: '', address: '', phone: '', notice: '' }, booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, noShowGraceMinutes: 30 }, points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10 } });
+const settings = reactive<Settings>({ version: 1, store: { storeName: '四个小姐姐的店', address: '', phone: '', notice: '', latitude: null, longitude: null }, booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, noShowGraceMinutes: 30 }, points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10 } });
 const paymentStatus = ref<{ configured: boolean; missing: string[]; callbackCertificateConfigured: boolean; note: string }>({ configured: false, missing: [], callbackCertificateConfigured: false, note: '' });
 const orderFilter = ref('');
 const editingService = ref<Service | null>(null);
@@ -43,6 +43,11 @@ const selectedTechnicianId = ref('');
 const weeklyDraft = ref<WeeklySchedule[]>([]);
 const dayDraft = reactive<TechnicianDayPlan>({ id: '', technicianId: '', date: scheduleDate.value, weekday: 1, leave: false, shifts: [], source: 'weekly', version: 1, occupancyCount: 0, occupiedIntervals: [] });
 const currentUserLabel = computed(() => sessionInfo.value.name || currentUser.value?.username || currentUser.value?.email || currentUser.value?.uid || '管理员');
+const mapPickerKey = String(import.meta.env.VITE_TENCENT_MAP_KEY || '').trim();
+const mapPickerOpen = ref(false);
+const mapPickerUrl = computed(() => mapPickerKey
+  ? `https://apis.map.qq.com/tools/locpicker?search=1&type=1&key=${encodeURIComponent(mapPickerKey)}&referer=shiguang-admin`
+  : '');
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
@@ -96,6 +101,13 @@ const pageTitle = computed(() => visibleNav.value.find((item) => item.id === pag
 function formatDate(date: string): string { return date ? date.replace(/-/g, '.') : '—'; }
 
 async function restoreSession() {
+  if (demo) {
+    currentUser.value = { uid: 'demo-owner', username: '演示管理员' };
+    authenticated.value = true;
+    authReady.value = true;
+    await loadAll();
+    return;
+  }
   try {
     currentUser.value = await getCurrentUser();
     authenticated.value = !!currentUser.value;
@@ -241,6 +253,47 @@ async function saveSettings() {
   } catch (err) { error.value = err instanceof Error ? err.message : '规则保存失败'; } finally { saving.value = false; }
 }
 
+function openMapPicker() {
+  if (!mapPickerKey) {
+    window.open('https://lbs.qq.com/getPoint/', '_blank', 'noopener,noreferrer');
+    notice.value = '地图选点页已打开；复制经纬度后分别填入经度和纬度。配置 VITE_TENCENT_MAP_KEY 后可直接回填。';
+    return;
+  }
+  mapPickerOpen.value = true;
+}
+
+function useBrowserLocation() {
+  if (!navigator.geolocation) {
+    error.value = '当前浏览器不支持读取位置，请手动选择地图坐标。';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition((position) => {
+    settings.store.latitude = Number(position.coords.latitude.toFixed(6));
+    settings.store.longitude = Number(position.coords.longitude.toFixed(6));
+    notice.value = '已填入当前位置坐标，请确认是否为门店位置后再保存。';
+  }, () => {
+    error.value = '无法读取当前位置，请允许浏览器定位或使用地图选点。';
+  }, { enableHighAccuracy: true, timeout: 10000 });
+}
+
+function handleMapMessage(event: MessageEvent) {
+  if (!mapPickerOpen.value) return;
+  let payload: any = event.data;
+  if (typeof payload === 'string') {
+    try { payload = JSON.parse(payload); } catch { return; }
+  }
+  if (!payload || (payload.module && payload.module !== 'locationPicker')) return;
+  const point = payload.latlng || payload.location || payload;
+  const latitude = Number(point.lat ?? point.latitude);
+  const longitude = Number(point.lng ?? point.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+  settings.store.latitude = Number(latitude.toFixed(6));
+  settings.store.longitude = Number(longitude.toFixed(6));
+  if (payload.poiaddress) settings.store.address = String(payload.poiaddress).trim();
+  mapPickerOpen.value = false;
+  notice.value = '地图位置已回填，请保存设置后在小程序中验证导航。';
+}
+
 function addShift(target: { shifts: Shift[] }) {
   target.shifts.push({ start: '10:00', end: '20:00', breaks: [] });
 }
@@ -305,6 +358,8 @@ watch(page, (nextPage) => {
 });
 
 onMounted(restoreSession);
+onMounted(() => window.addEventListener('message', handleMapMessage));
+onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
 </script>
 
 <template>
@@ -312,7 +367,7 @@ onMounted(restoreSession);
 
   <section v-else-if="!authenticated" class="login-shell">
     <div class="login-card">
-      <div class="login-brand"><span class="brand-mark">✦</span><div><strong>拾光美研</strong></div></div>
+      <div class="login-brand"><span class="brand-mark">✦</span><div><strong>四个小姐姐的店</strong></div></div>
 
       <h1>登录门店后台</h1>
 
@@ -328,14 +383,14 @@ onMounted(restoreSession);
 
   <div v-else class="admin-app">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">✦</span><div><strong>拾光美研</strong></div></div>
+      <div class="brand"><span class="brand-mark">✦</span><div><strong>四个小姐姐的店</strong></div></div>
       <div v-if="demo" class="demo-chip">演示模式</div>
       <nav><button v-for="item in visibleNav" :key="item.id" :class="['nav-item', { active: page === item.id }]" @click="page = item.id"><span class="nav-icon">{{ item.icon }}</span>{{ item.label }}</button></nav>
       <div class="sidebar-foot"><span class="status-dot"></span><span>{{sessionInfo.role === 'TECHNICIAN' ? '技师工作台' : '门店管理'}}</span></div>
     </aside>
 
     <main class="main-content">
-      <header class="topbar"><div><span class="breadcrumb">拾光美研 / </span><strong>{{ pageTitle }}</strong></div><div class="topbar-right"><span class="date-label">今天 · {{ new Date().toLocaleDateString('zh-CN') }}</span><span class="user-label" :title="currentUser?.uid">{{ currentUserLabel }}</span><button class="logout-button" @click="logout">退出</button><span class="avatar">店</span></div></header>
+      <header class="topbar"><div><span class="breadcrumb">四个小姐姐的店 / </span><strong>{{ pageTitle }}</strong></div><div class="topbar-right"><span class="date-label">今天 · {{ new Date().toLocaleDateString('zh-CN') }}</span><span class="user-label" :title="currentUser?.uid">{{ currentUserLabel }}</span><button class="logout-button" @click="logout">退出</button><span class="avatar">店</span></div></header>
 
       <div v-if="error" class="alert error">{{ error }} <button @click="error = ''">×</button></div>
       <div v-if="notice" class="alert success">{{ notice }} <button @click="notice = ''">×</button></div>
@@ -381,7 +436,7 @@ onMounted(restoreSession);
               <div class="team-grid schedule-team-grid">
                 <article v-for="technician in schedule.technicians" :key="technician.id" :class="['team-card', 'panel', { selected: technician.id === selectedTechnicianId }]" @click="selectTechnician(technician.id)">
                   <div class="team-avatar">{{ technician.name.slice(0, 1) }}</div>
-                  <div class="team-copy"><h2>{{ technician.name }}</h2><span>{{ technician.title }}</span><p>{{ technician.plan.leave ? '当天休息 / 请假' : technician.plan.shifts.map((shift) => `${shift.start}—${shift.end}`).join(' · ') || '暂无工作班次' }}</p><div class="skill-list"><i v-for="skill in technician.skills" :key="skill">{{ catalog.services.find((item) => item.id === skill)?.name || skill }}</i></div></div>
+                  <div class="team-copy"><h2>{{ technician.name }}</h2><span>{{ technician.title }}</span><p>{{ technician.plan.leave ? '当天休息 / 请假' : technician.plan.shifts.map((shift) => `${shift.start}—${shift.end}`).join(' · ') || '暂无工作班次' }}</p><div class="skill-list"><i v-for="categoryId in technician.categoryIds" :key="categoryId">{{ catalog.categories.find((item) => item.id === categoryId)?.name || categoryId }}</i></div></div>
                   <span :class="['pill', technician.plan.source === 'override' ? 'rose' : 'green']">{{ technician.plan.source === 'override' ? '当日覆盖' : '每周模板' }}</span>
                   <button class="text-button schedule-edit-button" type="button" @click.stop="selectTechnician(technician.id)">编辑当天</button>
                 </article>
@@ -406,10 +461,11 @@ onMounted(restoreSession);
           </template>
         </section>
 
-        <section v-else-if="page === 'settings'" class="page-section"><div class="page-intro"><div><h1>门店与预约设置</h1></div><span class="version-chip">当前版本 v{{ settings.version }}</span></div><section class="panel settings-panel"><div class="settings-block"><div class="settings-block-heading"><h2>门店资料</h2></div><div class="form-grid"><label>门店名称<input v-model="settings.store.storeName" /></label><label>联系电话<input v-model="settings.store.phone" placeholder="可选" /></label><label class="full">地址<input v-model="settings.store.address" /></label><label>地图经度<input v-model.number="settings.store.longitude" type="number" step="any" min="-180" max="180" placeholder="例如 126.63"/></label><label>地图纬度<input v-model.number="settings.store.latitude" type="number" step="any" min="-90" max="90" placeholder="例如 45.75"/></label><div class="full map-helper"><a href="https://lbs.qq.com/getPoint/" target="_blank" rel="noopener noreferrer">地图选点 ↗</a><span>使用腾讯地图坐标，点击门店位置即可导航</span></div><label class="full">预约须知<textarea v-model="settings.store.notice"></textarea></label></div></div><div class="settings-block"><div class="settings-block-heading"><h2>预约规则</h2></div><div class="form-grid four"><label>开放天数<input v-model.number="settings.booking.openDays" type="number" min="1" max="14" /></label><label>最少提前分钟<input v-model.number="settings.booking.minAdvanceMinutes" type="number" min="1" /></label><label>未支付占位分钟<input v-model.number="settings.booking.unpaidHoldMinutes" type="number" min="1" /></label><label>未核销宽限分钟<input v-model.number="settings.booking.noShowGraceMinutes" type="number" min="1" /></label></div></div><div class="settings-block"><div class="settings-block-heading"><h2>积分规则</h2></div><div class="form-grid four"><label>每满多少分获 1 积分<input v-model.number="settings.points.pointRateFen" type="number" min="1" /></label><label>抵扣单位积分<input v-model.number="settings.points.unit" type="number" min="1" /></label><label>每单位抵扣分<input v-model.number="settings.points.discountFen" type="number" min="1" /></label><label>单笔最高抵扣 %<input v-model.number="settings.points.maxPercent" type="number" min="0" max="100" /></label></div></div><div class="settings-actions"><button class="primary-button" :disabled="saving" @click="saveSettings">{{ saving ? '发布中…' : '保存设置' }}</button></div></section></section>
+        <section v-else-if="page === 'settings'" class="page-section"><div class="page-intro"><div><h1>门店与预约设置</h1></div><span class="version-chip">当前版本 v{{ settings.version }}</span></div><section class="panel settings-panel"><div class="settings-block"><div class="settings-block-heading"><h2>门店资料</h2></div><div class="form-grid"><label>门店名称<input v-model="settings.store.storeName" /></label><label>联系电话<input v-model="settings.store.phone" placeholder="可选" /></label><label class="full">地址<input v-model="settings.store.address" /></label><label>地图经度<input v-model.number="settings.store.longitude" type="number" step="any" min="-180" max="180" placeholder="例如 126.63"/></label><label>地图纬度<input v-model.number="settings.store.latitude" type="number" step="any" min="-90" max="90" placeholder="例如 45.75"/></label><div class="full map-helper"><button class="soft-button" type="button" @click="openMapPicker">地图选点</button><button class="soft-button" type="button" @click="useBrowserLocation">使用当前位置</button><span>{{ mapPickerKey ? '点选后会自动回填地址和坐标。' : '可先用腾讯地图取点页复制坐标；配置地图 Key 后可在此直接点选。' }}</span></div><label class="full">预约须知<textarea v-model="settings.store.notice"></textarea></label></div></div><div class="settings-block"><div class="settings-block-heading"><h2>预约规则</h2></div><div class="form-grid four"><label>开放天数<input v-model.number="settings.booking.openDays" type="number" min="1" max="14" /></label><label>最少提前分钟<input v-model.number="settings.booking.minAdvanceMinutes" type="number" min="1" /></label><label>未支付占位分钟<input v-model.number="settings.booking.unpaidHoldMinutes" type="number" min="1" /></label><label>未核销宽限分钟<input v-model.number="settings.booking.noShowGraceMinutes" type="number" min="1" /></label></div></div><div class="settings-block"><div class="settings-block-heading"><h2>积分规则</h2></div><div class="form-grid four"><label>每满多少分获 1 积分<input v-model.number="settings.points.pointRateFen" type="number" min="1" /></label><label>抵扣单位积分<input v-model.number="settings.points.unit" type="number" min="1" /></label><label>每单位抵扣分<input v-model.number="settings.points.discountFen" type="number" min="1" /></label><label>单笔最高抵扣 %<input v-model.number="settings.points.maxPercent" type="number" min="0" max="100" /></label></div></div><div class="settings-actions"><button class="primary-button" :disabled="saving" @click="saveSettings">{{ saving ? '发布中…' : '保存设置' }}</button></div></section></section>
 
         <section v-else-if="page === 'payment'" class="page-section"><div class="page-intro"><div><h1>微信支付接入</h1></div><span :class="['connection-state', paymentStatus.configured ? 'ready' : 'pending']"><i></i>{{ paymentStatus.configured ? '已配置' : '待配置' }}</span></div><section class="payment-grid"><div class="panel payment-status-panel"><div class="status-illustration">¥</div><h2>{{ paymentStatus.configured ? '支付参数已齐备' : '等待个体工商户资质' }}</h2><p>{{ paymentStatus.configured ? '仍需在真机完成支付、回调、查单和真实退款闭环。' : '你拿到商户号和小程序支付权限后，只需在 CloudBase 服务端补齐参数，前端页面无需改动。' }}</p><div v-if="paymentStatus.missing.length" class="missing-list"><div v-for="item in paymentStatus.missing" :key="item"><span>○</span>{{ item }}</div></div><div class="cert-state"><span :class="paymentStatus.callbackCertificateConfigured ? 'ok' : ''">{{ paymentStatus.callbackCertificateConfigured ? '✓' : '○' }}</span>微信支付平台证书（回调验签）</div></div><div class="panel checklist-panel"><h2>接入前置项</h2><ol><li><span>01</span><div><strong>小程序主体认证</strong><small>使用营业执照完成主体认证，并申请小程序支付权限。</small></div></li><li><span>02</span><div><strong>普通商户直连</strong><small>申请商户号，完成商户号与 小程序绑定。</small></div></li><li><span>03</span><div><strong>服务端密钥</strong><small>配置商户私钥、证书序列号、支付密钥，不进入小程序和浏览器。</small></div></li><li><span>04</span><div><strong>支付回调</strong><small>配置 支付回调入口，保留原始请求体并完成验签解密。</small></div></li><li><span>05</span><div><strong>真机闭环</strong><small>预约、支付、查单、核销、完成、取消和真实退款全部通过后再上线。</small></div></li></ol></div></section><section class="panel env-panel"><div class="panel-heading"><div><h2>需要填写的环境变量</h2></div><span class="security-note">不会在此页面显示值</span></div><div class="env-grid"><code>WX_APPID</code><code>WX_MCH_ID</code><code>WX_MCH_SERIAL_NO</code><code>WX_API_V3_KEY</code><code>WX_PRIVATE_KEY</code><code>WX_NOTIFY_URL</code><code>WX_PLATFORM_CERT_PEM</code><code>CONTACT_ENCRYPTION_KEY</code></div></section></section>
       </template>
     </main>
+    <div v-if="mapPickerOpen" class="map-picker-backdrop" @click.self="mapPickerOpen = false"><section class="map-picker-modal" role="dialog" aria-modal="true" aria-label="地图选点"><header><h2>选择门店位置</h2><button class="icon-button" type="button" @click="mapPickerOpen = false">×</button></header><iframe :src="mapPickerUrl" title="腾讯地图选点" allow="geolocation"></iframe><p>点击地图中的位置后，地址和经纬度会自动回填。</p></section></div>
   </div>
 </template>

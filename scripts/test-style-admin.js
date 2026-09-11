@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const constants = require('../cloudfunctions/api/lib/constants');
 let actor = {role:'OWNER',uid:'owner'};
-const tables = {categories:{nail:{id:'nail',name:'美甲',enabled:true}},services:{service:{id:'service',name:'法式',categoryId:'nail',categoryName:'美甲',enabled:true,priceFen:9900,durationMinutes:60}},works:{},technicians:{tech:{id:'tech',name:'技师',enabled:true,skills:['service']},other:{id:'other',name:'其他',enabled:true,skills:['service']}},orders:{},technician_days:{},staff_accounts:{},audit_logs:{}};
+const tables = {categories:{nail:{id:'nail',name:'美甲',enabled:true},brow:{id:'brow',name:'眉毛',enabled:true}},services:{service:{id:'service',name:'法式',categoryId:'nail',categoryName:'美甲',enabled:true,priceFen:9900,durationMinutes:60}},works:{},technicians:{tech:{id:'tech',name:'技师',enabled:true,skills:['service']},other:{id:'other',name:'其他',enabled:true,skills:['service']}},orders:{},technician_days:{},staff_accounts:{},audit_logs:{}};
 const clone = value=>JSON.parse(JSON.stringify(value));
 const db={ collection: table => ({ doc: id => ({ set: async ({data}) => { (tables[table] ||= {})[id]=clone(data); } }) }) };
 db.runTransaction=async fn=>{const before=clone(tables);try{return await fn(db);}catch(error){Object.keys(tables).forEach(k=>delete tables[k]);Object.assign(tables,before);throw error;}};
@@ -32,6 +32,7 @@ function load(name){if(cache[name])return cache[name];const scope={module:{expor
  await assert.rejects(catalog.saveWork({...work,imageUrl:'javascript:alert(1)'}),/INVALID_IMAGE/);
  await assert.rejects(catalog.saveTechnician({name:'无项目',skills:[],enabled:true}),/INVALID_SKILLS/);
  const tech=await catalog.saveTechnician({name:'新技师',skills:[service.id],enabled:true});assert(tech.id);
+ const multiTech=await catalog.saveTechnician({name:'多能技师',categoryIds:['nail','brow'],enabled:true});assert.deepEqual(multiTech.categoryIds,['nail','brow']);
  await catalog.saveWork({...work,published:false});assert.equal((await load('catalog').getHome(constants.DEFAULT_SETTINGS)).works.length,0);
  actor={role:'TECHNICIAN',uid:'tech-user',technicianId:'tech'};
  await assert.rejects(catalog.saveCategory({name:'越权'}),/FORBIDDEN/);
