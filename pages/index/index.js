@@ -26,21 +26,32 @@ Page({
       priceText: formatMoney(item.priceFen, false),
       durationText: formatDuration(item.durationMinutes)
     }));
+    const categories = (result.categories || []).map((category) => {
+      const categoryServices = services.filter((service) => service.categoryId === category.id);
+      const serviceCount = Number(category.serviceCount !== undefined ? category.serviceCount : categoryServices.length);
+      const styleCount = Number(category.styleCount !== undefined ? category.styleCount : categoryServices.reduce((count, service) => count + Number(service.styleCount || 0), 0));
+      return { ...category, serviceCount, styleCount, serviceCountText: `${serviceCount} 个小项目`, styleCountText: `${styleCount} 款式` };
+    });
+    const banners = (result.banners || []).filter((item) => item && item.imageUrl);
+    const works = (result.works || []).map((work) => ({
+      ...work,
+      serviceName: work.serviceName || services.find((service) => service.id === work.serviceId)?.name || ''
+    }));
     this.setData({
       loading: false,
       isDemo: !!getApp().globalData.isDemo,
       store: result.store || {},
-      banners: result.banners || [],
-      categories: result.categories || [],
+      banners,
+      categories,
       services,
-      works: result.works || [],
+      works,
       technicians: result.technicians || []
     });
   },
 
   previewBanner(event) {
     const urls = this.data.banners.map(item => item.imageUrl).filter(Boolean);
-    wx.previewImage({urls, current: urls[event.currentTarget.dataset.index]});
+    if (urls.length) wx.previewImage({urls, current: urls[event.currentTarget.dataset.index]});
   },
   openLocation() {
     const store=this.data.store;

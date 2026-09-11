@@ -2,13 +2,13 @@
   <view wx:if="{{loading}}" class="booking-loading">
     <view class="skeleton booking-skeleton"></view><view class="skeleton booking-skeleton short"></view>
   </view>
-  <view wx:elif="{{!service.id}}" class="booking-empty"><button class="primary-button" bindtap="chooseStyle">选款预约</button></view>
+  <view wx:elif="{{!service.id}}" class="booking-empty"><text class="booking-empty-title">还没有选择款式</text><button class="primary-button" bindtap="chooseStyle">从大项开始选款</button></view>
   <block wx:else>
     <view class="booking-heading"><text class="page-title">预约</text></view>
 
-    <view wx:if="{{work}}" class="selected-style card"><image src="{{work.imageUrl}}" mode="aspectFill"/><text>{{work.title}}</text><button bindtap="chooseStyle">更换</button></view>
+    <view wx:if="{{work}}" class="selected-style card"><image src="{{work.imageUrl}}" mode="aspectFill"/><view class="selected-style-copy"><text class="selected-style-label">已选款式</text><text class="selected-style-title">{{work.title}}</text><text class="selected-style-meta">{{service.categoryName}} · {{service.name}}</text></view><button bindtap="chooseStyle">更换</button></view>
     <view class="booking-service card">
-      <view class="booking-service-copy"><text class="booking-service-name">{{service.name}}</text><text class="booking-service-meta">{{service.durationText}} · {{service.categoryName}}</text></view>
+      <view class="booking-service-copy"><text class="booking-service-label">小项目</text><text class="booking-service-name">{{service.name}}</text><text class="booking-service-meta">{{service.durationText}} 服务时长 · {{service.categoryName}}</text></view>
       <text class="booking-service-price">¥{{service.priceText}}</text>
     </view>
 

@@ -1,7 +1,8 @@
 Component({
   properties: {
     service: { type: Object, value: {} },
-    compact: { type: Boolean, value: false }
+    compact: { type: Boolean, value: false },
+    selected: { type: Boolean, value: false }
   },
   data: { imageError: false },
   methods: {

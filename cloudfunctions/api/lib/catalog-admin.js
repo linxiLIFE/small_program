@@ -62,10 +62,36 @@ async function listCatalog() {
   const options = { orderBy: { field: 'sort', direction: 'asc' }, limit: 1000 };
   const [categories, services, works, technicians, staff] = await Promise.all([find(COLLECTIONS.categories,{},options),find(COLLECTIONS.services,{},options),find(COLLECTIONS.works,{},options),find(COLLECTIONS.technicians,{},options),find(COLLECTIONS.staff,{ active:true },{limit:1000})]);
   const counts = await bookingCounts();
+  const visibleServices = services.filter(item => !item.archived);
+  const visibleWorks = works.filter(item => !item.archived);
+  const styleCounts = visibleWorks.reduce((result, item) => {
+    if (item.published !== false && item.serviceId) result[item.serviceId] = (result[item.serviceId] || 0) + 1;
+    return result;
+  }, {});
+  const serviceCounts = visibleServices.reduce((result, item) => {
+    if (item.categoryId) result[item.categoryId] = (result[item.categoryId] || 0) + 1;
+    return result;
+  }, {});
+  const categoryStyleCounts = visibleServices.reduce((result, item) => {
+    if (item.categoryId) result[item.categoryId] = (result[item.categoryId] || 0) + Number(styleCounts[item.id || item._id] || 0);
+    return result;
+  }, {});
   return {
-    categories: categories.filter(item => !item.archived).map(item => ({ ...publicCategory(item), coverUrl: item.coverUrl || '', enabled: item.enabled !== false })),
-    services: services.filter(item => !item.archived).map(item => ({ ...publicService(item), categoryName: categories.find(c => (c.id || c._id) === item.categoryId)?.name || item.categoryName, enabled: item.enabled !== false, sort: item.sort || 0 })),
-    works: works.filter(item => !item.archived).map(item => ({ ...publicWork(item), bookingCount: counts[item.id || item._id] || 0, published: item.published !== false, sort: item.sort || 0 })).sort(byPopularity),
+    categories: categories.filter(item => !item.archived).map(item => ({
+      ...publicCategory(item),
+      serviceCount: serviceCounts[item.id || item._id] || 0,
+      styleCount: categoryStyleCounts[item.id || item._id] || 0,
+      coverUrl: item.coverUrl || '',
+      enabled: item.enabled !== false
+    })),
+    services: visibleServices.map(item => ({
+      ...publicService(item),
+      styleCount: styleCounts[item.id || item._id] || 0,
+      categoryName: categories.find(c => (c.id || c._id) === item.categoryId)?.name || item.categoryName,
+      enabled: item.enabled !== false,
+      sort: item.sort || 0
+    })),
+    works: visibleWorks.map(item => ({ ...publicWork(item), bookingCount: counts[item.id || item._id] || 0, published: item.published !== false, sort: item.sort || 0 })).sort(byPopularity),
     technicians: technicians.filter(item => !item.archived).map(item => ({ ...publicTechnician(item), bound: staff.some(s => s.role === 'TECHNICIAN' && s.technicianId === (item.id || item._id)), loginName: staff.find(s => s.role === 'TECHNICIAN' && s.technicianId === (item.id || item._id))?.name || '' }))
   };
 }

@@ -24,20 +24,8 @@
         <text wx:for="{{service.tags}}" wx:key="*this" class="tag">{{item}}</text>
       </view>
 
-
-
-      <view class="technician-heading"><text class="section-title">选择技师</text><text class="muted">{{technicians.length}} 位可预约</text></view>
-      <view wx:if="{{technicians.length}}" class="technician-list">
-        <view wx:for="{{technicians}}" wx:key="id" class="technician-item {{item.selected ? 'selected' : ''}}" data-id="{{item.id}}" bindtap="selectTechnician">
-          <image wx:if="{{item.avatarUrl}}" class="technician-avatar" mode="aspectFill" src="{{item.avatarUrl}}" />
-          <view wx:else class="technician-avatar avatar-fallback">{{item.initial}}</view>
-          <view class="technician-copy"><text class="technician-name">{{item.name}}</text><text class="technician-title">{{item.title}}</text></view>
-          <view class="selected-icon">{{item.selected ? '✓' : ''}}</view>
-        </view>
-      </view>
-      <empty-state wx:else title="暂时没有可预约的技师"></empty-state>
     </view>
 
-    <view class="bottom-bar safe-bottom"><button class="primary-button" bindtap="startBooking">预约</button></view>
+    <view class="bottom-bar safe-bottom"><button class="primary-button" bindtap="startBooking">选择款式</button></view>
   </block>
 </view>

@@ -66,6 +66,18 @@ const works = [
     serviceId: 'svc-nail-french', technicianId: 'tech-lin', published: true
   },
   {
+    id: 'work-005', categoryId: 'nail', categoryName: '美甲', title: '奶油蝴蝶结法式',
+    description: '在经典法式边缘加一枚小小蝴蝶结，温柔又有记忆点。',
+    imageUrl: 'https://images.unsplash.com/photo-1607779097040-26e80aa78e66?auto=format&fit=crop&w=1200&q=85',
+    serviceId: 'svc-nail-french', technicianId: 'tech-lin', published: true
+  },
+  {
+    id: 'work-006', categoryId: 'nail', categoryName: '美甲', title: '珍珠雾感法式',
+    description: '低饱和奶油底色叠加细闪珍珠光，适合想要精致但不张扬的你。',
+    imageUrl: 'https://images.unsplash.com/photo-1610992015732-2449b76344bc?auto=format&fit=crop&w=1200&q=85',
+    serviceId: 'svc-nail-french', technicianId: 'tech-lin', published: true
+  },
+  {
     id: 'work-002', categoryId: 'nail', categoryName: '美甲', title: '玫瑰果冻裸色',
     description: '适合想要干净指尖、又不想太高调的你。',
     imageUrl: 'https://images.unsplash.com/photo-1610992015732-2449b76344bc?auto=format&fit=crop&w=1200&q=85',

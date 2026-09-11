@@ -11,6 +11,12 @@
   margin-bottom: 20rpx;
 }
 
+.service-card.selected {
+  border-color: #bb6f79;
+  background: #fff7f5;
+  box-shadow: 0 12rpx 28rpx rgba(187, 111, 121, .12);
+}
+
 .cover-wrap {
   position: relative;
   height: 300rpx;
@@ -112,4 +118,29 @@
 .duration {
   color: #9a8581;
   font-size: 23rpx;
+}
+
+.service-meta-copy {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.style-count {
+  color: #b07b7d;
+  font-size: 20rpx;
+}
+
+.compact .service-description {
+  height: 44rpx;
+  -webkit-line-clamp: 1;
+}
+
+.compact .service-name {
+  font-size: 28rpx;
+}
+
+.compact .cover-wrap {
+  flex: 0 0 220rpx;
 }

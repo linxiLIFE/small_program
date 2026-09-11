@@ -166,6 +166,9 @@ async function getAvailableSlots(payload) {
 
 async function createQuote(payload) {
   const validation = await validateBookingSlot(payload);
+  assert(payload.workId, 'STYLE_REQUIRED', '请选择款式后再预约');
+  const work = await getWork(payload.workId);
+  assert(work.serviceId === validation.service.id, 'WORK_SERVICE_MISMATCH', '款式与小项目不匹配');
   const openid = requireOpenId().openid;
   const account = await getPointsAccount(openid);
   const rule = {
@@ -175,10 +178,11 @@ async function createQuote(payload) {
   };
   const price = calculatePointsDiscount({ totalFen: validation.service.priceFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
   const expiresAt = Date.now() + 10 * 60 * 1000;
-  const quoteId = createQuoteId({ serviceId: validation.service.id, technicianId: validation.technician.id, date: payload.date, startAt: Number(payload.startAt), pointsToUse: price.pointsToUse, totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen, settingsVersion: validation.settings.version, expiresAt });
+  const quoteId = createQuoteId({ workId: work.id, serviceId: validation.service.id, technicianId: validation.technician.id, date: payload.date, startAt: Number(payload.startAt), pointsToUse: price.pointsToUse, totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen, settingsVersion: validation.settings.version, expiresAt });
   return {
     quoteId,
     expiresAt,
+    workId: work.id,
     serviceId: validation.service.id,
     technicianId: validation.technician.id,
     date: payload.date,
@@ -253,13 +257,14 @@ async function createOrder(payload) {
   const user = await ensureUser(context.openid, context);
   assert(user.phoneCipher, 'PHONE_REQUIRED', '预约前请先授权并绑定手机号');
   const validation = await validateBookingSlot(payload);
-  const work = payload.workId ? await require('./catalog').getWork(payload.workId) : null;
-  assert(!work || work.serviceId === validation.service.id, 'WORK_SERVICE_MISMATCH', '款式与项目不匹配');
+  assert(payload.workId, 'STYLE_REQUIRED', '请选择款式后再预约');
+  const work = await getWork(payload.workId);
+  assert(work.serviceId === validation.service.id, 'WORK_SERVICE_MISMATCH', '款式与小项目不匹配');
   const account = await getPointsAccount(context.openid);
   const rule = { unit: validation.settings.points.unit, discountFen: validation.settings.points.discountFen, maxPercent: validation.settings.points.maxPercent };
   const price = calculatePointsDiscount({ totalFen: validation.service.priceFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
   const claims = readQuoteId(payload.quoteId);
-  assert(claims.serviceId === validation.service.id && claims.technicianId === validation.technician.id && claims.date === payload.date && Number(claims.startAt) === Number(payload.startAt), 'QUOTE_MISMATCH', '预约信息发生变化，请重新报价');
+  assert(claims.workId === work.id && claims.serviceId === validation.service.id && claims.technicianId === validation.technician.id && claims.date === payload.date && Number(claims.startAt) === Number(payload.startAt), 'QUOTE_MISMATCH', '预约信息发生变化，请重新报价');
   assert(Number(claims.pointsToUse) === price.pointsToUse && Number(claims.paidFen) === price.paidFen, 'QUOTE_CHANGED', '价格或积分规则发生变化，请重新报价');
   const now = Date.now();
   const holdMinutes = Number(validation.settings.booking.unpaidHoldMinutes || 5);

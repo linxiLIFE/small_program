@@ -1,4 +1,4 @@
-<view class="service-card {{compact ? 'compact' : ''}}" bindtap="handleTap">
+<view class="service-card {{compact ? 'compact' : ''}} {{selected ? 'selected' : ''}}" bindtap="handleTap">
   <view class="cover-wrap">
     <image wx:if="{{service.coverUrl && !imageError}}" class="cover" mode="aspectFill" src="{{service.coverUrl}}" binderror="handleImageError" />
     <view wx:else class="cover-fallback">
@@ -15,7 +15,7 @@
     <text class="service-description">{{service.description}}</text>
     <view class="service-meta">
       <text class="price">¥{{service.priceText}}</text>
-      <text class="duration">{{service.durationText}}</text>
+      <view class="service-meta-copy"><text class="duration">{{service.durationText}}</text><text class="style-count">{{service.styleCount || 0}} 款式</text></view>
     </view>
   </view>
 </view>

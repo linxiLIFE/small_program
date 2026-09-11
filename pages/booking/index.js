@@ -7,6 +7,7 @@ Page({
   data: {
     loading: true,
     service: {},
+    work: null,
     technicians: [],
     dates: [],
     slots: [],
@@ -24,6 +25,7 @@ Page({
 
   onLoad(options) {
     this.serviceId = options.serviceId || '';
+    this.workId = options.workId || '';
     this.initialTechnicianId = options.technicianId || '';
     this.idempotencyKey = `booking-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   },
@@ -36,10 +38,20 @@ Page({
       this.idempotencyKey = `booking-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       this.setData({ loading: true, canSubmit: false, quote: {}, usePoints: false });
       this.loadBooking();
-    } else if (!this.serviceId) { this.setData({ loading: false, service: {} }); }
+    } else if (this.serviceId && this.workId) {
+      this.loadBooking();
+    } else if (!this.serviceId || !this.workId) {
+      this.setData({ loading: false, service: {}, work: null, canSubmit: false });
+    }
   },
 
-  chooseStyle() { wx.switchTab({ url: '/pages/services/index' }); },
+  chooseStyle() {
+    if (this.serviceId && this.data.service.categoryId) {
+      wx.navigateTo({ url: `/pages/style-select/index?categoryId=${encodeURIComponent(this.data.service.categoryId)}&serviceId=${encodeURIComponent(this.serviceId)}` });
+      return;
+    }
+    wx.switchTab({ url: '/pages/services/index' });
+  },
 
   async loadBooking() {
     try {
@@ -51,8 +63,9 @@ Page({
         api.getService(this.serviceId),
         api.listTechnicians(this.serviceId),
         api.getProfile(),
-        this.workId ? api.getWork(this.workId) : Promise.resolve(null)
+        api.getWork(this.workId)
       ]);
+      if (!work || work.serviceId !== service.id) throw new Error('款式与小项目不匹配，请重新选择');
       const technicians = (technicianResult.technicians || []).map((item) => ({
         ...item,
         initial: item.name ? item.name.slice(0, 1) : '师'
@@ -121,6 +134,7 @@ Page({
     if (!this.data.selectedSlotId) return;
     try {
       const result = await api.createQuote({
+        workId: this.workId,
         serviceId: this.serviceId,
         technicianId: this.data.selectedTechnicianId,
         startAt: this.data.selectedSlot.startAt,
@@ -172,7 +186,7 @@ Page({
     wx.showLoading({ title: '锁定时段中' });
     try {
       const result = await api.createOrder({
-        workId: this.workId || '',
+        workId: this.workId,
         serviceId: this.serviceId,
         technicianId: this.data.selectedTechnicianId,
         date: this.data.selectedDate,

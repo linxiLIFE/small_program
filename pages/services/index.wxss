@@ -111,3 +111,128 @@
 }
 
 .works-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28rpx 18rpx}.project-tabs{white-space:nowrap;margin: -12rpx -32rpx 30rpx;width:calc(100% + 64rpx)}.project-tab{font-size:24rpx;color:#998780;padding:12rpx 0;margin-right:20rpx;border-bottom:3rpx solid transparent}.project-tab.selected{color:#8d505b;border-color:#8d505b}.page-title{letter-spacing:3rpx}
+
+.selection-section {
+  margin-top: 42rpx;
+}
+
+.selection-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin-bottom: 22rpx;
+}
+
+.selection-heading .section-title {
+  display: block;
+  font-size: 35rpx;
+}
+
+.selection-count {
+  flex-shrink: 0;
+  color: #a48c86;
+  font-size: 22rpx;
+}
+
+.category-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16rpx;
+}
+
+.category-choice {
+  position: relative;
+  min-height: 184rpx;
+  padding: 22rpx 20rpx;
+  overflow: hidden;
+  border: 2rpx solid transparent;
+  border-radius: 24rpx;
+  color: #604b47;
+  box-shadow: 0 10rpx 24rpx rgba(104, 69, 63, .04);
+}
+
+.category-choice::after {
+  position: absolute;
+  right: -24rpx;
+  bottom: -36rpx;
+  width: 110rpx;
+  height: 110rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .22);
+  content: '';
+}
+
+.category-choice.selected {
+  border-color: #b66d76;
+  box-shadow: 0 12rpx 26rpx rgba(187, 111, 121, .16);
+}
+
+.category-choice-icon {
+  position: relative;
+  z-index: 1;
+  color: #a76b73;
+  font-family: Georgia, serif;
+  font-size: 42rpx;
+}
+
+.category-choice-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  margin-top: 18rpx;
+}
+
+.category-choice-name {
+  color: #594846;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.category-choice-meta {
+  margin-top: 6rpx;
+  color: #957b76;
+  font-size: 20rpx;
+}
+
+.choice-check {
+  position: absolute;
+  z-index: 1;
+  right: 18rpx;
+  top: 20rpx;
+  color: #a56b72;
+  font-size: 30rpx;
+}
+
+.project-selection {
+  padding-top: 4rpx;
+}
+
+.project-list {
+  display: grid;
+  gap: 18rpx;
+}
+
+.project-list .service-card {
+  margin-bottom: 0;
+}
+
+@media (max-width: 500px) {
+  .category-choice-grid {
+    gap: 12rpx;
+  }
+
+  .category-choice {
+    min-height: 170rpx;
+    padding: 18rpx 14rpx;
+  }
+
+  .category-choice-name {
+    font-size: 25rpx;
+  }
+
+  .category-choice-meta {
+    font-size: 18rpx;
+  }
+}

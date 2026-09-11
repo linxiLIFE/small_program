@@ -1,9 +1,15 @@
 <view class="page-shell services-page">
-  <view class="page-heading"><text class="page-title">选款</text></view>
-  <scroll-view class="category-tabs" scroll-x show-scrollbar="{{false}}"><view class="category-tabs-inner"><view wx:for="{{categories}}" wx:key="id" class="category-tab {{activeCategoryId === item.id ? 'active' : ''}}" data-id="{{item.id}}" bindtap="handleCategoryTap">{{item.name}}</view></view></scroll-view>
-  <scroll-view class="project-tabs" scroll-x show-scrollbar="{{false}}"><view class="category-tabs-inner"><view class="project-tab {{!activeServiceId ? 'selected' : ''}}" data-id="" bindtap="handleProjectTap">全部</view><view wx:for="{{filteredServices}}" wx:key="id" class="project-tab {{activeServiceId === item.id ? 'selected' : ''}}" data-id="{{item.id}}" bindtap="handleProjectTap">{{item.name}}</view></view></scroll-view>
+  <view class="page-heading"><text class="page-title">选款预约</text></view>
   <view wx:if="{{loading}}" class="skeleton service-skeleton"></view>
   <empty-state wx:elif="{{error}}" title="{{error}}" button-text="重试" bindaction="loadServices"/>
-  <view wx:elif="{{visibleWorks.length}}" class="works-grid"><work-card wx:for="{{visibleWorks}}" wx:key="id" work="{{item}}" bindselect="handleWorkTap"/></view>
-  <empty-state wx:else title="暂无款式"/>
+  <block wx:else>
+    <view class="selection-section category-selection"><view class="selection-heading"><text class="section-title">选择大项</text><text class="selection-count">{{categories.length}} 个大项</text></view>
+      <view class="category-choice-grid"><view wx:for="{{categories}}" wx:key="id" class="category-choice {{activeCategoryId === item.id ? 'selected' : ''}}" data-id="{{item.id}}" bindtap="handleCategoryTap" style="background: {{item.color}}"><view class="category-choice-icon">{{item.icon}}</view><view class="category-choice-copy"><text class="category-choice-name">{{item.name}}</text><text class="category-choice-meta">{{item.serviceCountText}}</text><text class="category-choice-meta">{{item.styleCountText}}</text></view><text class="choice-check">{{activeCategoryId === item.id ? '✓' : '›'}}</text></view></view>
+    </view>
+
+    <view wx:if="{{activeCategoryId}}" class="selection-section project-selection"><view class="selection-heading"><text class="section-title">选择小项目</text><text class="selection-count">{{filteredServices.length}} 个项目</text></view>
+      <view wx:if="{{filteredServices.length}}" class="project-list"><service-card wx:for="{{filteredServices}}" wx:key="id" service="{{item}}" compact="{{true}}" bindselect="handleProjectTap"/></view>
+      <empty-state wx:else title="该大项暂未设置小项目"/>
+    </view>
+  </block>
 </view>

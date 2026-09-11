@@ -36,6 +36,7 @@ export interface Service {
   durationMinutes: number;
   bufferMinutes: number;
   coverUrl: string;
+  styleCount?: number;
   enabled: boolean;
   sort: number;
 }
@@ -102,7 +103,7 @@ export interface Settings {
   points: { pointRateFen: number; unit: number; discountFen: number; maxPercent: number };
 }
 
-export interface Category { id:string; name:string; icon:string; color:string; coverUrl?:string; coverFileID?:string; enabled:boolean; sort:number; }
+export interface Category { id:string; name:string; icon:string; color:string; coverUrl?:string; coverFileID?:string; enabled:boolean; sort:number; serviceCount?:number; styleCount?:number; }
 
 export interface CatalogResponse {
   categories: Category[];
@@ -111,7 +112,7 @@ export interface CatalogResponse {
   technicians: Technician[];
 }
 
-export interface Work { id: string; title: string; imageUrl: string; serviceId: string; categoryId?: string; categoryName?: string; published: boolean; sort: number; featured?: boolean; featuredSort?: number; imageFileID?:string; bookingCount?:number; }
+export interface Work { id: string; title: string; imageUrl: string; serviceId: string; serviceName?: string; durationMinutes?: number; categoryId?: string; categoryName?: string; published: boolean; sort: number; featured?: boolean; featuredSort?: number; imageFileID?:string; bookingCount?:number; }
 
 export interface MySchedule { technician:Technician; days:TechnicianDayPlan[]; plan:TechnicianDayPlan; orders:AdminOrder[]; }
 export interface SessionInfo { role:'OWNER'|'STAFF'|'TECHNICIAN'|'UNASSIGNED'; name:string; technicianId?:string; }

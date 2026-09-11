@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "选择款式",
+  "usingComponents": {
+    "work-card": "/components/work-card/work-card",
+    "empty-state": "/components/empty-state/empty-state"
+  }
+}

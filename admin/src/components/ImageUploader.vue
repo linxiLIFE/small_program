@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { adminApi } from '../api';
-const props = defineProps<{ modelValue: string; previewUrl?: string; label?: string }>();
+const props = defineProps<{ modelValue: string; previewUrl?: string; label?: string; cropRatio?: number }>();
 const emit = defineEmits<{ 'update:modelValue': [value: string]; busy: [value: boolean] }>();
 const preview = ref(props.previewUrl || (props.modelValue?.startsWith('cloud://') ? '' : props.modelValue));
 const uploading = ref(false); const error = ref('');
-watch(() => props.previewUrl, value => { preview.value=value||''; });
-watch(() => props.modelValue, value => { if(!uploading.value && !value) preview.value=''; });
+watch(() => props.previewUrl, value => { preview.value=value || (!props.modelValue?.startsWith('cloud://') ? props.modelValue : ''); });
+watch(() => props.modelValue, value => { if(!uploading.value) preview.value=props.previewUrl || (value && !value.startsWith('cloud://') ? value : ''); });
 async function upload(event: Event) {
   const input = event.target as HTMLInputElement; const file = input.files?.[0];
   if (!file) return;
@@ -15,10 +15,22 @@ async function upload(event: Event) {
   uploading.value = true; emit('busy',true);
   try {
     const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1,1600/Math.max(bitmap.width,bitmap.height));
-    const canvas = document.createElement('canvas'); canvas.width = Math.round(bitmap.width*scale); canvas.height = Math.round(bitmap.height*scale);
-    const context = canvas.getContext('2d'); if (!context) throw new Error('浏览器无法处理图片');
-    context.fillStyle='#ffffff'; context.fillRect(0,0,canvas.width,canvas.height); context.drawImage(bitmap,0,0,canvas.width,canvas.height); bitmap.close();
+    const ratio = Number(props.cropRatio || 0);
+    let sourceWidth = bitmap.width; let sourceHeight = bitmap.height; let sourceX = 0; let sourceY = 0;
+    if (Number.isFinite(ratio) && ratio > 0) {
+      const sourceRatio = bitmap.width / bitmap.height;
+      if (sourceRatio > ratio) {
+        sourceWidth = bitmap.height * ratio;
+        sourceX = (bitmap.width - sourceWidth) / 2;
+      } else {
+        sourceHeight = bitmap.width / ratio;
+        sourceY = (bitmap.height - sourceHeight) / 2;
+      }
+    }
+    const scale = Math.min(1,1600/Math.max(sourceWidth,sourceHeight));
+    const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(sourceWidth*scale)); canvas.height = Math.max(1, Math.round(sourceHeight*scale));
+    const context = canvas.getContext('2d'); if (!context) { bitmap.close(); throw new Error('浏览器无法处理图片'); }
+    context.fillStyle='#ffffff'; context.fillRect(0,0,canvas.width,canvas.height); context.drawImage(bitmap,sourceX,sourceY,sourceWidth,sourceHeight,0,0,canvas.width,canvas.height); bitmap.close();
     let data = canvas.toDataURL('image/jpeg',.86);
     if (data.length > 2700000) data = canvas.toDataURL('image/jpeg',.65);
     if (data.length > 2700000) throw new Error('图片过大，请裁剪后重试');
@@ -29,7 +41,7 @@ async function upload(event: Event) {
 }
 </script>
 <template>
-  <div class="image-upload"><label class="upload-drop" :class="{ 'has-image': preview, uploading }">
+  <div class="image-upload"><label class="upload-drop" :class="{ 'has-image': preview, uploading, 'crop-banner': Number(cropRatio) > 0 }">
     <img v-if="preview" :src="preview" alt="图片预览" @error="preview=''"/>
     <span v-else class="upload-empty"><span class="upload-symbol">＋</span><strong>{{ label || '上传款式图片' }}</strong><span>从电脑选择图片</span></span>
     <span v-if="preview" class="upload-replace">{{ uploading ? '上传中…' : '更换图片' }}</span>

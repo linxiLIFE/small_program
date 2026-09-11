@@ -71,3 +71,4 @@
 }
 
 .work-popularity{display:block;margin-top:12rpx;font-size:22rpx;color:#aa737b;font-weight:400}
+.work-service{display:block;margin-top:9rpx;overflow:hidden;color:#9f8982;font-size:21rpx;text-overflow:ellipsis;white-space:nowrap}

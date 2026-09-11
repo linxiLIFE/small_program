@@ -1,33 +1,71 @@
 const api = require('../../utils/api');
+const { formatMoney, formatDuration } = require('../../utils/format');
+
 Page({
-  data: { categories: [], services: [], works: [], visibleWorks: [], activeCategoryId: '', activeServiceId: '', loading: true, error: '' },
+  data: {
+    categories: [],
+    services: [],
+    filteredServices: [],
+    works: [],
+    activeCategoryId: '',
+    loading: true,
+    error: ''
+  },
+
   onShow() {
     const state = getApp().globalData;
-    if (state.pendingServiceCategoryId !== undefined || state.pendingServiceId !== undefined) {
-      this.setData({ activeCategoryId: state.pendingServiceCategoryId || '', activeServiceId: state.pendingServiceId || '' });
-      delete state.pendingServiceCategoryId; delete state.pendingServiceId;
-      this.filterWorks();
-    }
+    this.requestedCategoryId = state.pendingServiceCategoryId !== undefined ? state.pendingServiceCategoryId : this.data.activeCategoryId;
+    this.requestedServiceId = state.pendingServiceId !== undefined ? state.pendingServiceId : '';
+    delete state.pendingServiceCategoryId;
+    delete state.pendingServiceId;
     this.loadServices();
   },
+
   async loadServices() {
     this.setData({ loading: true, error: '' });
     try {
       const result = await api.listServices();
-      const categories=result.categories||[], services=result.services||[];
-      const project=services.find(item=>item.id===this.data.activeServiceId);
-      const categoryId=project?.categoryId || (categories.some(c=>c.id===this.data.activeCategoryId)?this.data.activeCategoryId:categories[0]?.id||'');
-      this.setData({ categories, services, works: result.works || [], activeCategoryId:categoryId, activeServiceId:project?.id || '', loading: false });
-      this.filterWorks();
+    const categories = result.categories || [];
+    const works = result.works || [];
+      const services = (result.services || []).map((item) => ({
+        ...item,
+        priceText: formatMoney(item.priceFen, false),
+        durationText: formatDuration(item.durationMinutes),
+        styleCount: Number(item.styleCount !== undefined ? item.styleCount : works.filter((work) => work.serviceId === item.id && work.published !== false).length)
+      }));
+      const requestedCategory = categories.find((item) => item.id === this.requestedCategoryId);
+      const activeCategoryId = requestedCategory?.id || services.find((item) => item.id === this.requestedServiceId)?.categoryId || '';
+      const categoryOptions = categories.map((category) => {
+        const categoryServices = services.filter((service) => service.categoryId === category.id);
+        return {
+          ...category,
+          serviceCount: categoryServices.length,
+          styleCount: categoryServices.reduce((count, service) => count + service.styleCount, 0),
+          serviceCountText: `${categoryServices.length} 个小项目`,
+          styleCountText: `${categoryServices.reduce((count, service) => count + service.styleCount, 0)} 款式`
+        };
+      });
+      this.setData({ categories: categoryOptions, services, works, activeCategoryId, loading: false });
+      this.filterServices(activeCategoryId);
     } catch (error) { this.setData({ loading: false, error: '加载失败' }); }
   },
-  filterWorks() {
-    const { activeCategoryId, activeServiceId, services, works } = this.data;
-    const filteredServices = services.filter(item => item.categoryId === activeCategoryId);
-    const ids = new Set(filteredServices.map(item => item.id));
-    this.setData({ filteredServices, visibleWorks: works.filter(item => ids.has(item.serviceId) && (!activeServiceId || item.serviceId === activeServiceId)) });
+
+  filterServices(categoryId = this.data.activeCategoryId) {
+    const { services } = this.data;
+    const filteredServices = categoryId ? services.filter((item) => item.categoryId === categoryId) : [];
+    this.setData({ filteredServices });
   },
-  handleCategoryTap(event) { this.setData({ activeCategoryId: event.currentTarget.dataset.id || this.data.categories[0]?.id || '', activeServiceId: '' }); this.filterWorks(); },
-  handleProjectTap(event) { this.setData({ activeServiceId: event.currentTarget.dataset.id || '' }); this.filterWorks(); },
-  handleWorkTap(event) { wx.navigateTo({ url: `/pages/work-detail/index?workId=${encodeURIComponent(event.detail.work.id)}` }); }
+
+  handleCategoryTap(event) {
+    const activeCategoryId = event.currentTarget.dataset.id || '';
+    this.setData({ activeCategoryId });
+    this.filterServices(activeCategoryId);
+  },
+
+  handleProjectTap(event) {
+    const serviceId = event.detail?.service?.id || event.currentTarget.dataset.id || '';
+    const service = this.data.services.find((item) => item.id === serviceId);
+    if (!service) return;
+    wx.navigateTo({ url: `/pages/style-select/index?categoryId=${encodeURIComponent(service.categoryId)}&serviceId=${encodeURIComponent(service.id)}` });
+  }
 });

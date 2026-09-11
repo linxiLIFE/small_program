@@ -56,7 +56,10 @@ function getHome() {
 function listServices(categoryId = '') {
   return call('listServices', { categoryId }, () => ({
     categories: mock.categories,
-    services: categoryId ? mock.services.filter((item) => item.categoryId === categoryId) : mock.services,
+    services: (categoryId ? mock.services.filter((item) => item.categoryId === categoryId) : mock.services).map((item) => ({
+      ...item,
+      styleCount: mock.works.filter((work) => work.serviceId === item.id && work.published !== false).length
+    })),
     works: categoryId ? mock.works.filter((item) => item.categoryId === categoryId) : mock.works
   }));
 }
@@ -92,7 +95,10 @@ function bindPhone(code) {
 
 function createQuote(payload) {
   return call('createQuote', payload, () => {
-    const service = mock.services.find((item) => item.id === payload.serviceId) || mock.services[0];
+    const work = mock.works.find((item) => item.id === payload.workId && item.published !== false);
+    if (!work) throw Object.assign(new Error('请选择款式后再预约'), { code: 'STYLE_REQUIRED' });
+    const service = mock.services.find((item) => item.id === work.serviceId && item.id === payload.serviceId) || mock.services.find((item) => item.id === work.serviceId);
+    if (!service) throw Object.assign(new Error('款式所属小项目已下架'), { code: 'WORK_SERVICE_MISMATCH' });
     const pointsToUse = Math.max(0, Number(payload.pointsToUse || 0));
     const maxDiscountFen = Math.floor(service.priceFen * mock.settings.pointMaxPercent / 100);
     const discountFen = Math.min(maxDiscountFen, Math.floor(pointsToUse / mock.settings.pointUnit) * mock.settings.pointDiscountFen);
@@ -112,12 +118,15 @@ function createQuote(payload) {
 
 function createOrder(payload) {
   return call('createOrder', payload, () => {
-    const service = mock.services.find((item) => item.id === payload.serviceId) || mock.services[0];
+    const work = mock.works.find((item) => item.id === payload.workId && item.published !== false);
+    if (!work) throw Object.assign(new Error('请选择款式后再预约'), { code: 'STYLE_REQUIRED' });
+    const service = mock.services.find((item) => item.id === work.serviceId && item.id === payload.serviceId) || mock.services.find((item) => item.id === work.serviceId);
+    if (!service) throw Object.assign(new Error('款式所属小项目已下架'), { code: 'WORK_SERVICE_MISMATCH' });
     const tech = mock.technicians.find((item) => item.id === payload.technicianId) || mock.technicians[0];
     const quote = payload.quote || {};
     const order = {
       id: `demo-order-${Date.now()}`, status: quote.paidFen > 0 ? 'PENDING_PAYMENT' : 'RESERVED', statusLabel: quote.paidFen > 0 ? '待付款' : '待到店',
-      work: payload.workId ? mock.works.find(item => item.id === payload.workId) : null,
+      work,
       serviceName: service.name, technicianName: tech.name, date: payload.date, startAt: payload.startAt,
       durationMinutes: service.durationMinutes, totalFen: service.priceFen, pointsUsed: quote.pointsToUse || 0,
       discountFen: quote.discountFen || 0, paidFen: quote.paidFen || service.priceFen, refundStatus: '', demo: true
