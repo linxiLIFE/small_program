@@ -1,4 +1,4 @@
-import type { Category, Technician, MySchedule, SessionInfo, Work, AdminOrder, CatalogResponse, MetricSummary, ScheduleResponse, Service, Settings, TechnicianDayPlan, WeeklySchedule } from './types';
+import type { AnalyticsResponse, Category, Technician, MySchedule, SessionInfo, Work, AdminOrder, CatalogResponse, MetricSummary, ScheduleResponse, Service, Settings, TechnicianDayPlan, WeeklySchedule } from './types';
 import { callBusiness } from './cloudbase';
 
 const demoWorks: Work[] = [];
@@ -119,7 +119,7 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
 export const adminApi = {
   bootstrapStatus: () => request<{ available: boolean }>('adminBootstrapStatus'),
   bootstrapOwner: () => request<{ id: string; role: string }>('adminBootstrapOwner'),
-  summary: () => request<{ date: string; metrics: MetricSummary }>('adminSummary'),
+  summary: (days = 30) => request<AnalyticsResponse>('adminSummary',{days}),
   orders: (status = '') => request<{ orders: AdminOrder[]; canRefund: boolean }>('adminListOrders', { status }),
   session: () => request<SessionInfo>('staffSession'),
   uploadImage: (base64:string) => request<{fileID:string;url:string}>('adminUploadImage',{base64}),

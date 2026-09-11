@@ -1,4 +1,4 @@
-export type PageKey = 'team' | 'my-schedule' | 'dashboard' | 'orders' | 'services' | 'technicians' | 'settings' | 'payment';
+export type PageKey = 'home' | 'team' | 'my-schedule' | 'dashboard' | 'orders' | 'services' | 'technicians' | 'settings' | 'payment';
 
 export interface MetricSummary {
   paidFen: number;
@@ -9,6 +9,7 @@ export interface MetricSummary {
   completedCount: number;
   customerCount: number;
   noShowCount: number;
+  newCustomerCount: number; returningCustomerCount:number; repeatRate:number; averageOrderFen:number;
 }
 
 export interface AdminOrder {
@@ -95,7 +96,8 @@ export interface ScheduleResponse {
 
 export interface Settings {
   version: number;
-  store: { storeName: string; address: string; phone: string; notice: string };
+  store: { storeName: string; address: string; phone: string; notice: string;latitude?:number|null;longitude?:number|null };
+  home?: {banners:Array<{id:string;imageUrl:string;imageFileID?:string}>};
   booking: { openDays: number; minAdvanceMinutes: number; slotStepMinutes: number; unpaidHoldMinutes: number; noShowGraceMinutes: number };
   points: { pointRateFen: number; unit: number; discountFen: number; maxPercent: number };
 }
@@ -109,7 +111,10 @@ export interface CatalogResponse {
   technicians: Technician[];
 }
 
-export interface Work { id: string; title: string; imageUrl: string; serviceId: string; categoryId?: string; categoryName?: string; published: boolean; sort: number; featured?: boolean; featuredSort?: number; imageFileID?:string; }
+export interface Work { id: string; title: string; imageUrl: string; serviceId: string; categoryId?: string; categoryName?: string; published: boolean; sort: number; featured?: boolean; featuredSort?: number; imageFileID?:string; bookingCount?:number; }
 
 export interface MySchedule { technician:Technician; days:TechnicianDayPlan[]; plan:TechnicianDayPlan; orders:AdminOrder[]; }
 export interface SessionInfo { role:'OWNER'|'STAFF'|'TECHNICIAN'|'UNASSIGNED'; name:string; technicianId?:string; }
+
+export interface AnalyticsResponse {date:string;days:number;rangeStart:string;metrics:MetricSummary;trend:Array<{date:string;paidFen:number;completedCount:number;customerCount:number}>;works:RankingItem[];services:RankingItem[];technicians:RankingItem[];}
+export interface RankingItem {id:string;name:string;count:number;paidFen:number;}

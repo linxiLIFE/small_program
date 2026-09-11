@@ -17,8 +17,6 @@
     <view class="menu-item" bindtap="contactService"><view class="menu-icon sand">⌁</view><view class="menu-copy"><text>联系客服</text></view><text class="menu-arrow">›</text></view>
     <view class="divider"></view>
     <view class="menu-item" bindtap="privacy"><view class="menu-icon plum">♡</view><view class="menu-copy"><text>隐私与授权</text></view><text class="menu-arrow">›</text></view>
-    <view wx:if="{{profile.role && profile.role !== 'CUSTOMER'}}" class="divider"></view>
-    <view wx:if="{{profile.role && profile.role !== 'CUSTOMER'}}" class="menu-item" bindtap="openStaff"><view class="menu-icon green">✓</view><view class="menu-copy"><text>工作台</text><text>进入{{profile.roleLabel || '工作人员'}}工作台</text></view><text class="menu-arrow">›</text></view>
   </view>
 
   <view wx:if="{{!profile.phone && !profile.phoneMasked}}" class="phone-reminder card"><view><text class="reminder-title">预约前绑定手机号</text></view><button open-type="getPhoneNumber|agreePrivacyAuthorization" phone-number-no-quota-toast="false" bindgetphonenumber="handleGetPhoneNumber" bindagreeprivacyauthorization="handleAgreePrivacyAuthorization">去绑定</button></view>

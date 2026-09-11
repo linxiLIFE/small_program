@@ -20,7 +20,7 @@ const stubs={
  './booking':{publicOrder:item=>item}
 };
 const cache={};
-function load(name){if(cache[name])return cache[name];const scope={module:{exports:{}},require:ref=>ref==='crypto'?crypto:stubs[ref]||(['./catalog','./catalog-admin'].includes(ref)?load(ref.slice(2)):{}),console,Buffer};vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../cloudfunctions/api/lib',name+'.js'),'utf8'),scope);return cache[name]=scope.module.exports;}
+function load(name){if(cache[name])return cache[name];const scope={module:{exports:{}},require:ref=>ref==='crypto'?crypto:stubs[ref]||(['./catalog','./catalog-admin','./analytics','./settings-validation'].includes(ref)?load(ref.slice(2)):{}),console,Buffer};vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../cloudfunctions/api/lib',name+'.js'),'utf8'),scope);return cache[name]=scope.module.exports;}
 (async()=>{
  assert.equal(stubs['./time'].weekday('2026-09-07'),1); assert.equal(stubs['./time'].weekday('2026-09-13'),7);
  const catalog=load('catalog-admin');

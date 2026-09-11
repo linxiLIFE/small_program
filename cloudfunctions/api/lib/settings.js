@@ -7,6 +7,7 @@ function mergeSettings(base, override) {
     ...base,
     ...source,
     store: { ...base.store, ...(source.store || {}) },
+    home: { banners: [], ...(base.home || {}), ...(source.home || {}) },
     booking: { ...base.booking, ...(source.booking || {}) },
     points: { ...base.points, ...(source.points || {}) },
     schedule: { ...base.schedule, ...(source.schedule || {}) }
@@ -14,13 +15,8 @@ function mergeSettings(base, override) {
 }
 
 async function getCurrentSettings() {
-  try {
-    const result = await db.collection(COLLECTIONS.settings).where({ published: true }).orderBy('version', 'desc').limit(1).get();
-    return mergeSettings(DEFAULT_SETTINGS, result.data && result.data[0]);
-  } catch (error) {
-    console.warn('读取 settings_versions 失败，使用默认规则', error.message || error);
-    return mergeSettings(DEFAULT_SETTINGS);
-  }
+  const result = await db.collection(COLLECTIONS.settings).where({ published: true }).orderBy('version', 'desc').limit(1).get();
+  return mergeSettings(DEFAULT_SETTINGS, result.data && result.data[0]);
 }
 
 async function getSettingsByVersion(version) {
@@ -34,6 +30,7 @@ function publicSettings(settings) {
     version: settings.version,
     timezone: settings.timezone,
     store: settings.store,
+    home: settings.home || { banners: [] },
     booking: settings.booking,
     points: settings.points
   };

@@ -5,7 +5,7 @@
 
   </view>
   <view class="work-content">
-    <text class="work-title">{{work.title}}</text>
+    <text class="work-title">{{work.title}}</text><text class="work-popularity">♡ {{work.bookingCount || 0}} 次预约</text>
 
   </view>
 </view>

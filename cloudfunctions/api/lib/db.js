@@ -25,9 +25,12 @@ function getPool() {
     password,
     database: process.env.DB_NAME || 'tcb',
     waitForConnections: true,
-    connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 5),
+    connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 3),
+    maxIdle: 1,
+    idleTimeout: 30000,
+    enableKeepAlive: true,
     queueLimit: 0,
-    connectTimeout: 60000,
+    connectTimeout: 10000,
     charset: 'utf8mb4',
     timezone: '+08:00'
   });
@@ -178,7 +181,12 @@ class SQLReader {
 
   async query(sql, params = []) {
     if (this.connection) return this.connection.query(sql, params);
-    return getPool().query(sql, params);
+    try { return await getPool().query(sql, params); }
+    catch(error) {
+      // Only retry reads. A disconnected write may already have committed.
+      if (/^SELECT\b/i.test(sql) && ['ECONNRESET','EPIPE','PROTOCOL_CONNECTION_LOST'].includes(error.code)) return getPool().query(sql, params);
+      throw error;
+    }
   }
 
   async rows(table, lock = false) {

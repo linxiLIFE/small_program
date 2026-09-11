@@ -1,7 +1,8 @@
 <view class="page-shell work-detail-page">
   <view wx:if="{{loading}}" class="skeleton work-detail-skeleton"></view>
+  <empty-state wx:elif="{{error}}" title="{{error}}" button-text="重试" bindaction="loadDetail"/>
   <block wx:else>
-    <view class="work-hero">
+    <view class="work-hero" bindtap="previewImage">
       <image wx:if="{{work.imageUrl}}" class="work-hero-image" mode="aspectFill" src="{{work.imageUrl}}" />
       <view wx:else class="work-hero-fallback"><text>拾光</text></view>
       <view class="work-hero-overlay"></view>

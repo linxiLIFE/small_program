@@ -3,7 +3,7 @@ const { formatMoney, formatDuration } = require('../../utils/format');
 
 Page({
   data: {
-    loading: true,
+    loading: true, error: '',
     service: {},
     technicians: [],
     selectedTechnicianId: ''
@@ -15,6 +15,8 @@ Page({
   },
 
   async loadDetail() {
+    this.setData({loading:true,error:''});
+    try {
     this.setData({ loading: true });
     const [service, technicianResult] = await Promise.all([
       api.getService(this.serviceId),
@@ -37,6 +39,7 @@ Page({
       technicians,
       selectedTechnicianId: technicians[0] ? technicians[0].id : ''
     });
+    } catch(error) { this.setData({loading:false,error:error.message||'加载失败'}); }
   },
 
   selectTechnician(event) {

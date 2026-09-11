@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "款式详情"
+  "navigationBarTitleText": "款式详情",
+  "usingComponents": {
+    "empty-state": "/components/empty-state/empty-state"
+  }
 }

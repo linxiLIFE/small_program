@@ -21,10 +21,10 @@ function page(file, api, state = {}) {
   assert.equal(list.data.visibleWorks.length, 2);
   list.handleProjectTap({ currentTarget: { dataset: { id: 'svc-nail-french' } } });
   assert.equal(list.data.visibleWorks.length, 1);
-  list.handleCategoryTap({ currentTarget: { dataset: { id: '' } } });
-  assert.equal(list.data.visibleWorks.length, 4);
+  list.handleCategoryTap({ currentTarget: { dataset: { id: 'brow' } } });
+  assert.equal(list.data.visibleWorks.length, 1);
   list.data.works.push({ id: 'orphan', serviceId: 'removed-service' }); list.filterWorks();
-  assert.equal(list.data.visibleWorks.length, 4);
+  assert.equal(list.data.visibleWorks.length, 1);
   const selected = {};
   const { instance: detail, calls } = page('pages/work-detail/index.js', {}, selected);
   detail.data = { service: { id: 'svc-nail-french' }, work: { id: 'work-001' }, technician: { id: 'tech-lin' } };

@@ -44,7 +44,7 @@ export async function callBusiness<T>(action: string, payload: Record<string, un
     data: { action, payload },
     parse: true
   });
-  const result = response.result as { ok?: boolean; data?: T; error?: { message?: string } };
-  if (!result || !result.ok) throw new Error(result?.error?.message || '业务请求失败');
+  const result = response.result as { ok?: boolean; data?: T; requestId?:string; error?: { message?: string;code?:string } };
+  if (!result || !result.ok) throw new Error((result?.error?.message || '业务请求失败') + (['INTERNAL_ERROR','SERVICE_UNAVAILABLE'].includes(result?.error?.code||'') && result?.requestId ? `（${result.requestId}）` : ''));
   return result.data as T;
 }

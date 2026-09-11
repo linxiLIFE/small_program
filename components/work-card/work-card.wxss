@@ -69,3 +69,5 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
+
+.work-popularity{display:block;margin-top:12rpx;font-size:22rpx;color:#aa737b;font-weight:400}

@@ -33,13 +33,11 @@ async function call(action, payload = {}, fallback) {
       error.isBusinessError = !!(result && result.ok === false);
       throw error;
     }
+    getAppSafe().globalData.isDemo = false;
     return result.data;
   } catch (error) {
     if (error && error.isBusinessError) throw error;
-    console.warn(`CloudBase api/${action} 调用失败，将使用演示数据`, error);
-    markDemo();
-    if (typeof fallback === 'function') return fallback(error);
-    if (fallback !== undefined) return fallback;
+    console.warn(`CloudBase api/${action} 调用失败`, {code:error.code || error.errCode});
     throw error;
   }
 }
@@ -47,6 +45,7 @@ async function call(action, payload = {}, fallback) {
 function getHome() {
   return call('getHome', {}, () => ({
     store: mock.settings,
+    banners: [],
     categories: mock.categories,
     services: mock.services.slice(0, 3),
     works: mock.works.filter(item => item.featured === true),
@@ -190,6 +189,7 @@ function staffTransition(orderId, action) {
 module.exports = {
   call,
   getHome,
+  getSettings: () => call('getSettings', {}, () => ({booking:{openDays:14},points:{maxPercent:10}})),
   listServices,
   getService,
   getWork,

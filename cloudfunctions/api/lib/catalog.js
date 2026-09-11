@@ -1,6 +1,7 @@
 const { COLLECTIONS } = require('./constants');
 const { db, getOptional, find } = require('./db');
 const { assert } = require('./errors');
+const { bookingCounts, byPopularity } = require('./analytics');
 
 function publicCategory(item) {
   return { id: item.id || item._id, name: item.name, coverUrl: item.coverUrl || '', subtitle: item.subtitle || '', icon: item.icon || '✦', color: item.color || '#f7d9d3', sort: item.sort || 0 };
@@ -33,7 +34,7 @@ function publicWork(item) {
     serviceId: item.serviceId || '',
     technicianId: item.technicianId || '',
     featured: item.featured === true,
-    featuredSort: Number(item.featuredSort || 0)
+    bookingCount: Number(item.bookingCount || 0)
   };
 }
 
@@ -65,8 +66,8 @@ async function listServices(categoryId = '') {
 async function listWorks(categoryId = '') {
   const where = { published: true };
   const records = await find(COLLECTIONS.works, where, { orderBy: { field: 'sort', direction: 'asc' } });
-  const services = await listServices(categoryId);
-  return records.filter(item => services.some(s => s.id === item.serviceId)).map(item => { const service = services.find(s => s.id === item.serviceId); return { ...publicWork(item), categoryId: service.categoryId, categoryName: service.categoryName }; });
+  const [services, counts] = await Promise.all([listServices(categoryId), bookingCounts()]);
+  return records.filter(item => services.some(s => s.id === item.serviceId)).map(item => { const service = services.find(s => s.id === item.serviceId); return { ...publicWork(item), bookingCount: counts[item.id || item._id] || 0, categoryId: service.categoryId, categoryName: service.categoryName }; }).sort(byPopularity);
 }
 
 async function listTechnicians(serviceId = '') {
@@ -89,7 +90,7 @@ async function getWork(workId) {
   const record = await getOptional(COLLECTIONS.works, workId);
   assert(record && record.published !== false, 'WORK_NOT_FOUND', '作品不存在或已下架', 404);
   const service = await getService(record.serviceId);
-  return { ...publicWork(record), categoryId: service.categoryId, categoryName: service.categoryName };
+  return { ...publicWork(record), bookingCount: (await bookingCounts())[record.id || record._id] || 0, categoryId: service.categoryId, categoryName: service.categoryName };
 }
 
 async function getHome(settings) {
@@ -98,9 +99,10 @@ async function getHome(settings) {
   ]);
   return {
     store: settings.store,
+    banners: settings.home?.banners || [],
     categories,
     services: services.slice(0, 6),
-    works: works.filter(item => item.featured).sort((a,b) => a.featuredSort - b.featuredSort),
+    works: works.filter(item => item.featured).sort(byPopularity),
     technicians: technicians.slice(0, 8)
   };
 }

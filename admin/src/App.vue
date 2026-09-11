@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import DashboardPanel from './components/DashboardPanel.vue';
+import HomeManager from './components/HomeManager.vue';
 import CatalogManager from './components/CatalogManager.vue';
 import TeamManager from './components/TeamManager.vue';
 import MySchedulePanel from './components/MySchedulePanel.vue';
@@ -80,6 +82,7 @@ function selectTechnician(technicianId: string) {
 const navItems: Array<{ id: PageKey; label: string; icon: string }> = [
   { id: 'dashboard', label: '经营概览', icon: '◒' },
   { id: 'orders', label: '预约订单', icon: '◷' },
+  { id: 'home', label: '首页宣传', icon: '▧' },
   { id: 'services', label: '项目与款式', icon: '✦' },
   { id: 'team', label: '技师管理', icon: '♧' },
   { id: 'technicians', label: '技师排班', icon: '♧' },
@@ -152,16 +155,16 @@ async function loadAll() {
     const bootstrap = await adminApi.bootstrapStatus();
     bootstrapAvailable.value = bootstrap.available;
     if (bootstrap.available) return;
-    const [summary, orderResult, catalogResult, settingsResult, paymentResult, scheduleResult] = await Promise.all([adminApi.summary(), adminApi.orders(), adminApi.catalog(), adminApi.settings(), adminApi.paymentStatus(), adminApi.schedule(scheduleDate.value)]);
-    metrics.value = summary.metrics;
-    orders.value = orderResult.orders;
-    catalog.value = catalogResult;
-    Object.assign(settings, settingsResult);
-    paymentStatus.value = paymentResult;
-    schedule.value = scheduleResult;
-    weeklyDraft.value = clone(scheduleResult.weekly);
-    if (!scheduleResult.technicians.some((item) => item.id === selectedTechnicianId.value)) selectedTechnicianId.value = scheduleResult.technicians[0]?.id || '';
-    syncDayDraft();
+    const tasks = [
+      async()=>{catalog.value=await adminApi.catalog();},
+      async()=>{Object.assign(settings,await adminApi.settings());},
+      async()=>{orders.value=(await adminApi.orders()).orders;},
+      async()=>{if(sessionInfo.value.role==='OWNER')paymentStatus.value=await adminApi.paymentStatus();},
+      async()=>{const result=await adminApi.schedule(scheduleDate.value);schedule.value=result;weeklyDraft.value=clone(result.weekly);syncDayDraft();}
+    ];
+    const failures:string[]=[];
+    for(let i=0;i<tasks.length;i+=2){const results=await Promise.allSettled(tasks.slice(i,i+2).map(task=>task()));for(const result of results)if(result.status==='rejected')failures.push(result.reason instanceof Error?result.reason.message:'加载失败');}
+    if(failures.length)error.value=Array.from(new Set(failures)).join('；');
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载失败';
   } finally {
@@ -229,6 +232,7 @@ async function saveService() {
 }
 
 async function saveSettings() {
+  error.value='';notice.value='';
   saving.value = true;
   try {
     const saved = await adminApi.saveSettings({ ...settings, reason: '管理后台发布门店与预约设置' });
@@ -296,6 +300,7 @@ watch(scheduleDate, () => {
 });
 
 watch(page, (nextPage) => {
+  if (authenticated.value && ['services','team'].includes(nextPage)) refreshCatalog();
   if (authenticated.value && nextPage === 'technicians' && !schedule.value.technicians.length) loadSchedule();
 });
 
@@ -340,11 +345,8 @@ onMounted(restoreSession);
       <div v-else-if="loading" class="loading-state"><div class="loader"></div><span>正在整理门店数据…</span></div>
 
       <template v-else>
-        <section v-if="page === 'dashboard'" class="page-section">
-          <div class="page-intro"><div><h1>经营概览</h1></div><button class="soft-button" @click="loadAll">刷新数据 ↻</button></div>
-          <div class="metric-grid"><article class="metric-card accent"><span>微信收款</span><strong>{{ money(metrics.paidFen) }}</strong><small>今日支付成功</small></article><article class="metric-card"><span>净收款</span><strong>{{ money(metrics.netFen) }}</strong><small>收款 − 退款</small></article><article class="metric-card"><span>完成服务</span><strong>{{ money(metrics.completedFen) }}</strong><small>{{ metrics.completedCount }} 笔完成订单</small></article><article class="metric-card"><span>到店顾客</span><strong>{{ metrics.customerCount }}</strong><small>{{ metrics.noShowCount }} 笔未到店</small></article></div>
-          <div class="split-grid"><section class="panel"><div class="panel-heading"><div><h2>接下来要接待</h2></div><button class="text-button" @click="page = 'orders'">查看全部 ›</button></div><div v-if="orders.filter((item) => item.status === 'RESERVED').length" class="mini-order-list"><div v-for="order in orders.filter((item) => item.status === 'RESERVED').slice(0, 4)" :key="order.id" class="mini-order"><div class="mini-time">{{ order.startAtLabel }}</div><div class="mini-main"><strong>{{ order.serviceName }}</strong><small v-if="order.work">{{ order.work.title }}</small><span>{{ order.technicianName }} · {{ order.customerName || '预约顾客' }}</span></div><span class="pill rose">{{ order.statusLabel }}</span></div></div><div v-else class="empty-inline">今天暂时没有待到店订单。</div></section></div>
-        </section>
+        <DashboardPanel v-if="page === 'dashboard'"/>
+        <HomeManager v-else-if="page === 'home'" :settings="settings" @saved="Object.assign(settings,$event)"/>
 
         <section v-else-if="page === 'orders'" class="page-section"><div class="page-intro"><div><h1>预约订单</h1></div><div class="filter-row"><select v-model="orderFilter" @change="loadOrders"><option value="">全部状态</option><option value="PENDING_PAYMENT">待付款</option><option value="RESERVED">待到店</option><option value="ARRIVED">已到店</option><option value="IN_SERVICE">服务中</option><option value="COMPLETED">已完成</option><option value="CANCELLED_BY_USER">已取消</option></select></div></div><section class="panel table-panel"><table><thead><tr><th>预约时间</th><th>项目 / 技师</th><th>顾客</th><th>状态</th><th>实付</th><th>操作</th></tr></thead><tbody><tr v-for="order in orders" :key="order.id"><td><strong>{{ order.startAtLabel }}</strong><small>{{ order.id }}</small></td><td><strong>{{ order.serviceName }}</strong><small v-if="order.work">{{ order.work.title }}</small><small>{{ order.technicianName }}</small></td><td><strong>{{ order.customerName || '—' }}</strong><small>{{ order.phoneMasked || '按权限展示' }}</small></td><td><span :class="['pill', order.status === 'COMPLETED' ? 'green' : order.status === 'RESERVED' ? 'rose' : 'sand']">{{ order.statusLabel }}</span><small v-if="order.refundStatus">{{ order.refundStatus }}</small></td><td class="money-cell">{{ money(order.paidFen) }}</td><td><button v-if="['RESERVED', 'ARRIVED', 'IN_SERVICE'].includes(order.status)" class="link-action" @click="page = 'orders'">工作台处理</button><button v-if="order.status === 'RESERVED' && !order.refundStatus" class="link-action danger-link" @click="refund(order)">整单退款</button><span v-if="!['RESERVED', 'ARRIVED', 'IN_SERVICE'].includes(order.status) && !order.refundStatus" class="muted-cell">—</span></td></tr></tbody></table><div v-if="!orders.length" class="empty-inline">没有符合条件的订单。</div></section></section>
 
@@ -404,7 +406,7 @@ onMounted(restoreSession);
           </template>
         </section>
 
-        <section v-else-if="page === 'settings'" class="page-section"><div class="page-intro"><div><h1>门店与预约设置</h1></div><span class="version-chip">当前版本 v{{ settings.version }}</span></div><section class="panel settings-panel"><div class="settings-block"><div class="settings-block-heading"><h2>门店资料</h2></div><div class="form-grid"><label>门店名称<input v-model="settings.store.storeName" /></label><label>联系电话<input v-model="settings.store.phone" placeholder="可选" /></label><label class="full">地址<input v-model="settings.store.address" /></label><label class="full">预约须知<textarea v-model="settings.store.notice"></textarea></label></div></div><div class="settings-block"><div class="settings-block-heading"><h2>预约规则</h2></div><div class="form-grid four"><label>开放天数<input v-model.number="settings.booking.openDays" type="number" min="1" max="14" /></label><label>最少提前分钟<input v-model.number="settings.booking.minAdvanceMinutes" type="number" min="1" /></label><label>未支付占位分钟<input v-model.number="settings.booking.unpaidHoldMinutes" type="number" min="1" /></label><label>未核销宽限分钟<input v-model.number="settings.booking.noShowGraceMinutes" type="number" min="1" /></label></div></div><div class="settings-block"><div class="settings-block-heading"><h2>积分规则</h2></div><div class="form-grid four"><label>每满多少分获 1 积分<input v-model.number="settings.points.pointRateFen" type="number" min="1" /></label><label>抵扣单位积分<input v-model.number="settings.points.unit" type="number" min="1" /></label><label>每单位抵扣分<input v-model.number="settings.points.discountFen" type="number" min="1" /></label><label>单笔最高抵扣 %<input v-model.number="settings.points.maxPercent" type="number" min="0" max="100" /></label></div></div><div class="settings-actions"><button class="primary-button" :disabled="saving" @click="saveSettings">{{ saving ? '发布中…' : '保存设置' }}</button></div></section></section>
+        <section v-else-if="page === 'settings'" class="page-section"><div class="page-intro"><div><h1>门店与预约设置</h1></div><span class="version-chip">当前版本 v{{ settings.version }}</span></div><section class="panel settings-panel"><div class="settings-block"><div class="settings-block-heading"><h2>门店资料</h2></div><div class="form-grid"><label>门店名称<input v-model="settings.store.storeName" /></label><label>联系电话<input v-model="settings.store.phone" placeholder="可选" /></label><label class="full">地址<input v-model="settings.store.address" /></label><label>地图经度<input v-model.number="settings.store.longitude" type="number" step="any" min="-180" max="180" placeholder="例如 126.63"/></label><label>地图纬度<input v-model.number="settings.store.latitude" type="number" step="any" min="-90" max="90" placeholder="例如 45.75"/></label><div class="full map-helper"><a href="https://lbs.qq.com/getPoint/" target="_blank" rel="noopener noreferrer">地图选点 ↗</a><span>使用腾讯地图坐标，点击门店位置即可导航</span></div><label class="full">预约须知<textarea v-model="settings.store.notice"></textarea></label></div></div><div class="settings-block"><div class="settings-block-heading"><h2>预约规则</h2></div><div class="form-grid four"><label>开放天数<input v-model.number="settings.booking.openDays" type="number" min="1" max="14" /></label><label>最少提前分钟<input v-model.number="settings.booking.minAdvanceMinutes" type="number" min="1" /></label><label>未支付占位分钟<input v-model.number="settings.booking.unpaidHoldMinutes" type="number" min="1" /></label><label>未核销宽限分钟<input v-model.number="settings.booking.noShowGraceMinutes" type="number" min="1" /></label></div></div><div class="settings-block"><div class="settings-block-heading"><h2>积分规则</h2></div><div class="form-grid four"><label>每满多少分获 1 积分<input v-model.number="settings.points.pointRateFen" type="number" min="1" /></label><label>抵扣单位积分<input v-model.number="settings.points.unit" type="number" min="1" /></label><label>每单位抵扣分<input v-model.number="settings.points.discountFen" type="number" min="1" /></label><label>单笔最高抵扣 %<input v-model.number="settings.points.maxPercent" type="number" min="0" max="100" /></label></div></div><div class="settings-actions"><button class="primary-button" :disabled="saving" @click="saveSettings">{{ saving ? '发布中…' : '保存设置' }}</button></div></section></section>
 
         <section v-else-if="page === 'payment'" class="page-section"><div class="page-intro"><div><h1>微信支付接入</h1></div><span :class="['connection-state', paymentStatus.configured ? 'ready' : 'pending']"><i></i>{{ paymentStatus.configured ? '已配置' : '待配置' }}</span></div><section class="payment-grid"><div class="panel payment-status-panel"><div class="status-illustration">¥</div><h2>{{ paymentStatus.configured ? '支付参数已齐备' : '等待个体工商户资质' }}</h2><p>{{ paymentStatus.configured ? '仍需在真机完成支付、回调、查单和真实退款闭环。' : '你拿到商户号和小程序支付权限后，只需在 CloudBase 服务端补齐参数，前端页面无需改动。' }}</p><div v-if="paymentStatus.missing.length" class="missing-list"><div v-for="item in paymentStatus.missing" :key="item"><span>○</span>{{ item }}</div></div><div class="cert-state"><span :class="paymentStatus.callbackCertificateConfigured ? 'ok' : ''">{{ paymentStatus.callbackCertificateConfigured ? '✓' : '○' }}</span>微信支付平台证书（回调验签）</div></div><div class="panel checklist-panel"><h2>接入前置项</h2><ol><li><span>01</span><div><strong>小程序主体认证</strong><small>使用营业执照完成主体认证，并申请小程序支付权限。</small></div></li><li><span>02</span><div><strong>普通商户直连</strong><small>申请商户号，完成商户号与 小程序绑定。</small></div></li><li><span>03</span><div><strong>服务端密钥</strong><small>配置商户私钥、证书序列号、支付密钥，不进入小程序和浏览器。</small></div></li><li><span>04</span><div><strong>支付回调</strong><small>配置 支付回调入口，保留原始请求体并完成验签解密。</small></div></li><li><span>05</span><div><strong>真机闭环</strong><small>预约、支付、查单、核销、完成、取消和真实退款全部通过后再上线。</small></div></li></ol></div></section><section class="panel env-panel"><div class="panel-heading"><div><h2>需要填写的环境变量</h2></div><span class="security-note">不会在此页面显示值</span></div><div class="env-grid"><code>WX_APPID</code><code>WX_MCH_ID</code><code>WX_MCH_SERIAL_NO</code><code>WX_API_V3_KEY</code><code>WX_PRIVATE_KEY</code><code>WX_NOTIFY_URL</code><code>WX_PLATFORM_CERT_PEM</code><code>CONTACT_ENCRYPTION_KEY</code></div></section></section>
       </template>

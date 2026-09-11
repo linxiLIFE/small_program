@@ -3,9 +3,10 @@ import { ref, watch } from 'vue';
 import { adminApi } from '../api';
 const props = defineProps<{ modelValue: string; previewUrl?: string; label?: string }>();
 const emit = defineEmits<{ 'update:modelValue': [value: string]; busy: [value: boolean] }>();
-const preview = ref(props.previewUrl || (props.modelValue.startsWith('cloud://') ? '' : props.modelValue));
+const preview = ref(props.previewUrl || (props.modelValue?.startsWith('cloud://') ? '' : props.modelValue));
 const uploading = ref(false); const error = ref('');
-watch(() => props.previewUrl, value => { if (value) preview.value = value; });
+watch(() => props.previewUrl, value => { preview.value=value||''; });
+watch(() => props.modelValue, value => { if(!uploading.value && !value) preview.value=''; });
 async function upload(event: Event) {
   const input = event.target as HTMLInputElement; const file = input.files?.[0];
   if (!file) return;
@@ -29,7 +30,7 @@ async function upload(event: Event) {
 </script>
 <template>
   <div class="image-upload"><label class="upload-drop" :class="{ 'has-image': preview, uploading }">
-    <img v-if="preview" :src="preview" alt="图片预览"/>
+    <img v-if="preview" :src="preview" alt="图片预览" @error="preview=''"/>
     <span v-else class="upload-empty"><span class="upload-symbol">＋</span><strong>{{ label || '上传款式图片' }}</strong><span>从电脑选择图片</span></span>
     <span v-if="preview" class="upload-replace">{{ uploading ? '上传中…' : '更换图片' }}</span>
     <span v-else-if="uploading" class="upload-progress">上传中…</span>

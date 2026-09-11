@@ -16,7 +16,8 @@ function publicError(error) {
   if (error instanceof AppError) {
     return { code: error.code, message: error.message, details: error.details };
   }
-  console.error('未处理的业务异常', error);
+  console.error('未处理的业务异常', {code:error.code, message:error.message, stack:error.stack});
+  if (['ETIMEDOUT','ECONNRESET','ECONNREFUSED','PROTOCOL_CONNECTION_LOST','ER_CON_COUNT_ERROR'].includes(error.code)) return {code:'SERVICE_UNAVAILABLE',message:'连接暂时中断，请重试'};
   return { code: 'INTERNAL_ERROR', message: '服务暂时繁忙，请稍后重试' };
 }
 

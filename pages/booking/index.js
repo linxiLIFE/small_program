@@ -43,7 +43,9 @@ Page({
 
   async loadBooking() {
     try {
-      const dates = mock.getDates();
+      const settings = await api.getSettings();
+      const dates = mock.getDates().slice(0, Number(settings.booking.openDays));
+      this.bookingSettings = settings;
       const selectedDate = dates[0] ? dates[0].value : '';
       const [service, technicianResult, profile, work] = await Promise.all([
         api.getService(this.serviceId),
@@ -78,6 +80,7 @@ Page({
   async loadSlots() {
     if (!this.data.selectedTechnicianId || !this.data.selectedDate) return;
     this.setData({ slots: [], selectedSlotId: '', selectedSlot: {}, canSubmit: false });
+    try {
     const result = await api.getAvailableSlots({
       serviceId: this.serviceId,
       technicianId: this.data.selectedTechnicianId,
@@ -89,6 +92,7 @@ Page({
       this.setData({ selectedSlotId: slots[0].id, selectedSlot: slots[0] });
       await this.refreshQuote();
     }
+    } catch(error) { this.setData({canSubmit:false,slots:[],pointHint:error.message||'时段加载失败'});wx.showToast({title:'时段加载失败，请重试',icon:'none'}); }
   },
 
   async selectTechnician(event) {
@@ -130,7 +134,7 @@ Page({
           paidText: formatMoney(result.paidFen || 0)
         },
         canSubmit: true,
-        pointHint: result.pointsToUse ? `本单使用 ${result.pointsToUse} 积分，抵扣 ${formatMoney(result.discountFen)}` : '开启后按本单 10% 上限抵扣'
+        pointHint: result.pointsToUse ? `本单使用 ${result.pointsToUse} 积分，抵扣 ${formatMoney(result.discountFen)}` : `开启后按本单 ${this.bookingSettings?.points?.maxPercent || 0}% 上限抵扣`
       });
     } catch (error) {
       this.setData({ canSubmit: false, pointHint: error.message || '报价暂时不可用' });

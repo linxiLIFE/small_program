@@ -38,10 +38,6 @@ Page({
     wx.navigateTo({ url: '/pages/points/index' });
   },
 
-  openStaff() {
-    wx.navigateTo({ url: '/pages/staff/index' });
-  },
-
   contactService() {
     if (this.data.profile.storePhone) wx.makePhoneCall({ phoneNumber: this.data.profile.storePhone });
     else wx.showModal({ title: '联系客服', content: '请在预约成功后通过订单联系门店。', showCancel: false });

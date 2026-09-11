@@ -5,6 +5,7 @@
     <view class="skeleton detail-line"></view>
   </view>
 
+  <empty-state wx:elif="{{error}}" title="{{error}}" button-text="重试" bindaction="loadDetail"/>
   <block wx:else>
     <view class="detail-cover-wrap">
       <image wx:if="{{service.coverUrl}}" class="detail-cover" mode="aspectFill" src="{{service.coverUrl}}" />

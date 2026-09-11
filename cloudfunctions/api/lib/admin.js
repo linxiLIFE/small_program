@@ -129,24 +129,17 @@ function publicDayPlan(record, source, orders = []) {
   };
 }
 
-async function audit(account, action, objectType, objectId, summary, reason) {
+async function audit(account, action, objectType, objectId, summary, reason, reader = db) {
   const id = `audit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  await db.collection(COLLECTIONS.auditLogs).doc(id).set({ data: { _id: id, id, operatorId: account.uid || account.openid || account.id || '', operatorRole: account.role, action, objectType, objectId, summary, reason: reason || '', requestId: '', createdAt: Date.now() } });
+  await reader.collection(COLLECTIONS.auditLogs).doc(id).set({ data: { _id: id, id, operatorId: account.uid || account.openid || account.id || '', operatorRole: account.role, action, objectType, objectId, summary, reason: reason || '', requestId: '', createdAt: Date.now() } });
 }
 
-async function summary() {
+async function summary(payload = {}) {
   await requireRole(['OWNER', 'STAFF']);
-  const today = toDateString();
-  const orders = await find(COLLECTIONS.orders, {}, { orderBy: { field: 'createdAt', direction: 'desc' }, limit: 500 });
-  const todayOrders = orders.filter((item) => toDateString(item.createdAt) === today);
-  const paidOrders = todayOrders.filter((item) => item.paymentStatus === 'SUCCESS');
-  const completed = todayOrders.filter((item) => item.status === ORDER_STATUS.COMPLETED);
-  const refunds = await find(COLLECTIONS.refunds, {}, { orderBy: { field: 'createdAt', direction: 'desc' }, limit: 500 });
-  const todayRefunds = refunds.filter((item) => toDateString(item.createdAt) === today && item.status === REFUND_STATUS.SUCCESS);
-  const total = paidOrders.reduce((sum, item) => sum + Number(item.paidFen || 0), 0);
-  const refundTotal = todayRefunds.reduce((sum, item) => sum + Number(item.amountFen || 0), 0);
-  const userIds = new Set(completed.map((item) => item.userId));
-  return { date: today, metrics: { paidFen: total, refundFen: refundTotal, netFen: total - refundTotal, completedFen: completed.reduce((sum, item) => sum + Number(item.paidFen || 0), 0), orderCount: todayOrders.length, completedCount: completed.length, customerCount: userIds.size, noShowCount: todayOrders.filter((item) => item.status === ORDER_STATUS.CANCELLED_NO_SHOW).length }, updatedAt: Date.now() };
+  const days = Number(payload.days || 30);
+  assert([7,30,90].includes(days), 'INVALID_RANGE', '请选择 7、30 或 90 天');
+  const [orders,refunds] = await Promise.all([find(COLLECTIONS.orders,{}),find(COLLECTIONS.refunds,{})]);
+  return require('./analytics').analyze(orders,refunds,days);
 }
 
 async function bootstrapStatus() {
@@ -260,30 +253,34 @@ async function assertWeeklyScheduleDoesNotBreakOrders(transaction, weekly) {
 async function saveWeeklySchedule(payload = {}) {
   const { account } = await requireRole(['OWNER']);
   const weekly = normalizeWeekly(payload.weekly);
-  const previous = await getCurrentSettings();
-  const version = Number(previous.version || 0) + 1;
-  const now = Date.now();
-  const record = { ...mergeSettings(previous, { schedule: { weekly } }), _id: `v${version}`, id: `v${version}`, version, published: true, createdAt: now, createdBy: account.uid || account.openid };
-  await db.runTransaction(async (transaction) => {
-    await assertWeeklyScheduleDoesNotBreakOrders(transaction, weekly);
-    await transaction.collection(COLLECTIONS.settings).doc(record._id).set({ data: record });
-    await transaction.collection(COLLECTIONS.scheduleTemplates).doc(`v${version}`).set({ data: { _id: `v${version}`, id: `v${version}`, weekly, version, published: true, createdAt: now, createdBy: record.createdBy } });
+  return db.runTransaction(async (transaction) => {
+    const versions=await find(COLLECTIONS.settings,{published:true},{orderBy:{field:'version',direction:'desc'},limit:1},transaction);
+    const previous=mergeSettings(DEFAULT_SETTINGS,versions[0]);
+    const version=Number(previous.version||0)+1;const now=Date.now();
+    const record={...mergeSettings(previous,{schedule:{weekly}}),_id:`v${version}`,id:`v${version}`,version,published:true,createdAt:now,createdBy:account.uid||account.openid};
+    await assertWeeklyScheduleDoesNotBreakOrders(transaction,weekly);
+    await transaction.collection(COLLECTIONS.settings).doc(record.id).set({data:record});
+    await transaction.collection(COLLECTIONS.scheduleTemplates).doc(record.id).set({data:{id:record.id,weekly,version,published:true,createdAt:now,createdBy:record.createdBy}});
+    await audit(account,'PUBLISH_SCHEDULE_TEMPLATE','schedule_templates',record.id,{previousVersion:previous.version,version},payload.reason,transaction);
+    return {version,weekly};
   });
-  await audit({ ...account, openid: account.openid }, 'PUBLISH_SCHEDULE_TEMPLATE', 'schedule_templates', `v${version}`, { previousVersion: previous.version, version }, payload.reason);
-  return { version, weekly };
 }
 
-async function saveSettings(payload) {
+async function saveSettings(payload = {}) {
   const { account } = await requireRole(['OWNER']);
-  const previous = await getCurrentSettings();
-  const settingsPayload = { ...(payload || {}) };
-  delete settingsPayload.schedule;
-  delete settingsPayload.reason;
-  const next = mergeSettings(previous, settingsPayload);
-  const version = Number(previous.version || 0) + 1;
-  const record = { ...next, _id: `v${version}`, version, published: true, createdAt: Date.now(), createdBy: account.uid || account.openid };
-  await db.collection(COLLECTIONS.settings).doc(record._id).set({ data: record });
-  await audit({ ...account, openid: account.openid }, 'PUBLISH_SETTINGS', 'settings_versions', record._id, { previousVersion: previous.version, version }, payload && payload.reason);
+  const record = await db.runTransaction(async transaction => {
+    const versions = await find(COLLECTIONS.settings, {published:true}, {orderBy:{field:'version',direction:'desc'},limit:1}, transaction);
+    const previous = mergeSettings(DEFAULT_SETTINGS,versions[0]);
+    assert(!payload.version || Number(payload.version)===Number(previous.version), 'SETTINGS_CONFLICT', '设置已更新，请刷新页面后重新保存',409);
+    const allowed = {};
+    for(const key of ['store','home','booking','points'])if(payload[key]!==undefined)allowed[key]=payload[key];
+    const next = require('./settings-validation').validateSettings(mergeSettings(previous,allowed));
+    const version=Number(previous.version)+1;
+    const data={...next,_id:`v${version}`,id:`v${version}`,version,published:true,createdAt:Date.now(),createdBy:account.uid||account.openid};
+    await transaction.collection(COLLECTIONS.settings).doc(data.id).set({data});
+    await audit(account,'PUBLISH_SETTINGS','settings_versions',data.id,{version:data.version},payload.reason,transaction);
+    return data;
+  });
   return publicSettings(record);
 }
 
