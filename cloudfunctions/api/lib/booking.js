@@ -8,6 +8,7 @@ const { getService, listServices, listWorks, listCategories, listTechnicians, ge
 const { dateToTimestamp, weekday, minutesOfDay, addMinutes, isWithinDateWindow, assertValidStart, overlaps, toDateString, formatParts } = require('./time');
 const { calculatePointsDiscount, earnPoints, rebalancePoints, awardPoints } = require('./money');
 const { encryptPhone, maskPhone } = require('./contact-crypto');
+const { buildBookingTimeline } = require('./booking-timeline');
 
 function idempotencyId(openid, key) {
   return `idem_${crypto.createHash('sha256').update(`${openid}:${key}`).digest('hex').slice(0, 48)}`;
@@ -146,7 +147,9 @@ async function getAvailableSlots(payload) {
   const service = await getService(payload.serviceId);
   const technician = await getTechnician(payload.technicianId);
   assert(technicianCanServe(technician, service), 'SKILL_MISMATCH', '该技师暂不提供此大项');
-  if (!isWithinDateWindow(payload.date, settings.booking.openDays, 0)) return { date: payload.date, slots: [] };
+  if (!isWithinDateWindow(payload.date, settings.booking.openDays, 0)) {
+    return { date: payload.date, serviceId: service.id, technicianId: technician.id, slots: [], timeline: { date: payload.date, startAt: null, endAt: null, totalMinutes: 0, durationMinutes: Number(service.durationMinutes), stepMinutes: Number(settings.booking.slotStepMinutes || 15), segments: [] } };
+  }
   const plan = await getDayPlan(payload.technicianId, payload.date, settings);
   const slots = [];
   const now = Date.now();
@@ -168,7 +171,16 @@ async function getAvailableSlots(payload) {
       }
     }
   }
-  return { date: payload.date, serviceId: service.id, technicianId: technician.id, stepMinutes: step, slots };
+  const timeline = buildBookingTimeline({
+    date: payload.date,
+    plan,
+    now,
+    minAdvanceMinutes: settings.booking.minAdvanceMinutes,
+    serviceDurationMinutes: service.durationMinutes,
+    stepMinutes: step,
+    isActive: occupancyIsActive
+  });
+  return { date: payload.date, serviceId: service.id, technicianId: technician.id, stepMinutes: step, slots, timeline };
 }
 
 async function createQuote(payload) {

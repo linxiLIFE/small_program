@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { adminApi } from '../api';
 
-const props = defineProps<{ modelValue: string; previewUrl?: string; label?: string; cropRatio?: number }>();
+const props = defineProps<{ modelValue: string; previewUrl?: string; label?: string; cropRatio?: number; cropLabel?: string }>();
 const emit = defineEmits<{ 'update:modelValue': [value: string]; busy: [value: boolean] }>();
 
 const MAX_EDGE = 1280;
@@ -27,6 +27,8 @@ const cropRatio = computed(() => {
   const value = Number(props.cropRatio || 0);
   return Number.isFinite(value) && value > 0 ? value : 1;
 });
+
+const cropContext = computed(() => props.cropLabel || props.label || '图片');
 
 const cropSize = computed(() => {
   const width = viewportSize.value.width || 640;
@@ -274,7 +276,7 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <div class="image-upload">
-    <label class="upload-drop" :class="{ 'has-image': preview, uploading, 'crop-banner': Number(cropRatio) > 0 }">
+    <label class="upload-drop" :class="{ 'has-image': preview, uploading, 'crop-banner': Number(props.cropRatio || 0) > 0, 'crop-square': Number(props.cropRatio || 0) === 1 }">
       <img v-if="preview" :src="preview" alt="图片预览" @error="preview=''"/>
       <span v-else class="upload-empty"><span class="upload-symbol">＋</span><strong>{{ label || '上传款式图片' }}</strong><span>从电脑选择图片</span></span>
       <span v-if="preview" class="upload-replace">{{ uploading ? (cropSource ? '调整裁切' : '上传中…') : '更换图片' }}</span>
@@ -284,8 +286,8 @@ onBeforeUnmount(() => {
     <p v-if="error && !cropSource" class="field-error" role="alert">{{ error }}</p>
 
     <div v-if="cropSource" class="crop-backdrop" @click.self="cancelCrop" @keydown.esc="cancelCrop">
-      <section class="crop-modal" role="dialog" aria-modal="true" aria-label="裁切宣传图">
-        <header class="crop-header"><div><span class="modal-context">宣传图</span><h2>调整图片</h2></div><button class="icon-button" type="button" :disabled="cropSaving" @click="cancelCrop" aria-label="取消裁切">×</button></header>
+      <section class="crop-modal" role="dialog" aria-modal="true" :aria-label="`裁切${cropContext}`">
+        <header class="crop-header"><div><span class="modal-context">{{ cropContext }}</span><h2>调整图片</h2></div><button class="icon-button" type="button" :disabled="cropSaving" @click="cancelCrop" aria-label="取消裁切">×</button></header>
         <div class="crop-workbench">
           <div ref="cropViewport" class="crop-viewport" :style="{ aspectRatio: String(cropRatio) }" @pointerdown="beginDrag" @pointermove="drag" @pointerup="endDrag" @pointercancel="endDrag" @pointerleave="endDrag" @wheel.prevent="handleWheel">
             <img :src="cropSource.src" alt="待裁切图片" :style="cropImageStyle" draggable="false"/>

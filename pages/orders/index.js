@@ -8,6 +8,9 @@ Page({
       { id: '', label: '全部' },
       { id: 'PENDING_PAYMENT', label: '待付款' },
       { id: 'RESERVED', label: '待到店' },
+      { id: 'ACTIVE_SERVICE', label: '进行中' },
+      { id: 'ARRIVED', label: '已到店' },
+      { id: 'IN_SERVICE', label: '服务中' },
       { id: 'COMPLETED', label: '已完成' }
     ],
     activeStatus: '',
@@ -31,7 +34,11 @@ Page({
     const requestId = (this.requestId || 0) + 1;
     this.requestId = requestId;
     try {
-      const result = await api.listOrders(status);
+      const result = status === 'ACTIVE_SERVICE'
+        ? await Promise.all([api.listOrders('ARRIVED'), api.listOrders('IN_SERVICE')]).then(([arrived, inService]) => ({
+          orders: [...(arrived.orders || []), ...(inService.orders || [])].sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
+        }))
+        : await api.listOrders(status);
       if (requestId !== this.requestId) return;
       const orders = (result.orders || []).map((item) => ({
         ...item,

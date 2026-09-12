@@ -8,12 +8,15 @@
 
   <view class="points-card" bindtap="openPoints">
     <view><text class="points-number">{{profile.points || 0}}</text><text class="points-unit">积分</text></view>
-    <view class="points-right"><text>查看积分明细</text><text class="points-arrow">›</text></view>
+    <view class="points-right"><text>积分明细</text><text class="points-arrow">›</text></view>
+  </view>
+
+  <view class="orders-overview card">
+    <view class="profile-section-heading"><text>我的订单</text><text bindtap="openOrders">全部 ›</text></view>
+    <view class="order-summary-grid"><view wx:for="{{orderSummary}}" wx:key="id" class="order-summary-item" data-status="{{item.id}}" bindtap="openOrdersStatus"><view class="order-summary-icon {{item.id === 'PENDING_PAYMENT' ? 'rose' : item.id === 'RESERVED' ? 'sand' : item.id === 'ACTIVE_SERVICE' ? 'plum' : 'green'}}">{{item.icon}}</view><text class="order-summary-count">{{item.count}}</text><text class="order-summary-label">{{item.label}}</text></view></view>
   </view>
 
   <view class="menu-card card">
-    <view class="menu-item" bindtap="openOrders"><view class="menu-icon rose">◷</view><view class="menu-copy"><text>预约记录</text></view><text class="menu-arrow">›</text></view>
-    <view class="divider"></view>
     <view class="menu-item" bindtap="contactService"><view class="menu-icon sand">⌁</view><view class="menu-copy"><text>联系客服</text></view><text class="menu-arrow">›</text></view>
     <view class="divider"></view>
     <view class="menu-item" bindtap="privacy"><view class="menu-icon plum">♡</view><view class="menu-copy"><text>隐私与授权</text></view><text class="menu-arrow">›</text></view>

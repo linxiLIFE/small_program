@@ -2,7 +2,7 @@
   <view wx:if="{{loading}}" class="booking-loading">
     <view class="skeleton booking-skeleton"></view><view class="skeleton booking-skeleton short"></view>
   </view>
-  <view wx:elif="{{!service.id}}" class="booking-empty"><view class="booking-empty-art"><image wx:if="{{emptyImage}}" src="{{emptyImage}}" mode="aspectFill" webp="{{true}}"/><view wx:else class="booking-empty-art-fallback"><text>✦</text><text>{{emptyCategory || '选择喜欢的服务'}}</text></view><view class="booking-empty-art-shade"></view></view><text class="booking-empty-title">先选一个喜欢的款式</text><button class="primary-button" bindtap="chooseStyle">去选款</button></view>
+  <view wx:elif="{{!service.id}}" class="booking-empty"><view class="booking-empty-art"><image wx:if="{{emptyImage}}" src="{{emptyImage}}" mode="aspectFill" webp="{{true}}"/><view wx:else class="booking-empty-art-fallback"><view class="booking-art-orbit orbit-one"></view><view class="booking-art-orbit orbit-two"></view><view class="booking-art-core"><text>拾</text></view><text class="booking-art-spark spark-one">✦</text><text class="booking-art-spark spark-two">·</text></view><view class="booking-empty-art-shade"></view></view><text class="booking-empty-title">先选一个喜欢的款式</text><button class="primary-button" bindtap="chooseStyle">去选款</button></view>
   <block wx:else>
     <view class="booking-heading"><text class="page-title">预约</text></view>
 
@@ -36,21 +36,26 @@
     </view>
 
     <view class="booking-step slot-step">
-      <view class="step-heading"><text class="step-number">03</text><view><text class="step-title">选择服务时段</text><text class="step-subtitle">先选大时间段，再选具体服务时间</text></view></view>
-      <view wx:if="{{timePeriods.length}}" class="time-period-list">
-        <view wx:for="{{timePeriods}}" wx:key="id" class="time-period {{selectedPeriodId === item.id ? 'selected' : ''}} {{expandedPeriodId === item.id ? 'expanded' : ''}}" data-id="{{item.id}}" bindtap="selectPeriod">
-          <view class="time-period-main"><text class="time-period-label">{{item.label}}</text><text class="time-period-range">{{item.rangeLabel}}</text></view>
-          <view class="time-period-side"><text>{{item.slotCount}} 个可选服务时段</text><text class="time-period-arrow">{{expandedPeriodId === item.id ? '收起' : '展开'}}</text></view>
-          <view wx:if="{{expandedPeriodId === item.id}}" class="time-period-options" catchtap="noop">
-            <text class="time-options-title">具体服务时间</text>
-            <view class="slot-grid">
-              <view wx:for="{{item.slots}}" wx:key="id" class="slot-item {{selectedSlotId === item.id ? 'selected' : ''}} {{item.available === false ? 'disabled' : ''}}" data-id="{{item.id}}" bindtap="selectSlot">{{item.rangeLabel}}</view>
+      <view class="step-heading"><text class="step-number">03</text><view><text class="step-title">选择服务时段</text><text class="step-subtitle">拖动两端，选择 {{service.durationText}} 服务时间</text></view></view>
+      <view wx:if="{{timeline.segments.length}}" class="timeline-card card" data-time-periods="{{timePeriods.length}}">
+        <view class="timeline-heading"><view><text class="timeline-title">从早到晚</text><text class="timeline-date">{{selectedDate}}</text></view><text class="timeline-duration">{{service.durationText}}</text></view>
+        <view class="timeline-stage">
+          <view class="timeline-ticks"><text wx:for="{{timeline.ticks}}" wx:key="label" style="{{item.leftStyle}}">{{item.label}}</text></view>
+          <movable-area class="timeline-area">
+            <view id="timeline-track" class="timeline-track">
+              <view wx:for="{{timeline.segments}}" wx:key="id" class="timeline-segment {{item.kind}}" style="{{item.leftStyle}}{{item.widthStyle}}"></view>
+              <view wx:if="{{timelineSelectionStyle}}" class="timeline-selection {{selectedSlotId ? 'confirmed' : 'preview'}}" style="{{timelineSelectionStyle}}"></view>
             </view>
-          </view>
+            <movable-view wx:if="{{timelineHasOptions}}" class="timeline-handle handle-start" direction="horizontal" x="{{timelineStartX}}" y="0" disabled="{{!timelineHasOptions}}" data-edge="start" bindchange="handleTimelineChange"><view class="timeline-handle-cap"></view></movable-view>
+            <movable-view wx:if="{{timelineHasOptions}}" class="timeline-handle handle-end" direction="horizontal" x="{{timelineEndX}}" y="0" disabled="{{!timelineHasOptions}}" data-edge="end" bindchange="handleTimelineChange"><view class="timeline-handle-cap"></view></movable-view>
+          </movable-area>
         </view>
+        <view class="timeline-legend"><view><i class="legend-dot available"></i>可预约</view><view><i class="legend-dot occupied"></i>已占用</view><view><i class="legend-dot blocked"></i>休息或不可预约</view></view>
+        <view wx:if="{{selectedSlot.id}}" class="selected-time"><text>已选服务时段</text><strong>{{selectedSlot.rangeLabel}}</strong></view>
+        <view wx:elif="{{timelineHasOptions}}" class="timeline-instruction">拖动两端后自动对齐可预约时段</view>
+        <view wx:else class="timeline-no-options">当天没有可预约时段</view>
       </view>
-      <empty-state wx:else title="当天没有合适的时间段"></empty-state>
-      <view wx:if="{{selectedSlot.id}}" class="selected-time"><text>已选服务时段</text><strong>{{selectedSlot.rangeLabel}}</strong></view>
+      <empty-state wx:else title="当天没有可预约的时段"></empty-state>
     </view>
 
     <view class="booking-step">

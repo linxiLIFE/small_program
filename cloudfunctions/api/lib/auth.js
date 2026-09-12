@@ -8,17 +8,25 @@ function requireOpenId() {
   return context;
 }
 
+function userIdentityKey(openid) {
+  const value = String(openid || '').trim();
+  assert(value, 'UNAUTHENTICATED', '请先登录微信账号', 401);
+  // 手机号只是预约联系方式，不能作为用户主键，也不能触发账号合并。
+  return value;
+}
+
 async function getUser(openid, reader = db) {
-  return getOptional(COLLECTIONS.users, openid, reader);
+  return getOptional(COLLECTIONS.users, userIdentityKey(openid), reader);
 }
 
 async function ensureUser(openid, context = {}, writer = db) {
-  const existing = await getUser(openid, writer);
+  const identityKey = userIdentityKey(openid);
+  const existing = await getUser(identityKey, writer);
   if (existing) return existing;
   const now = Date.now();
   const user = {
-    _id: openid,
-    openid,
+    _id: identityKey,
+    openid: identityKey,
     appid: context.appid || '',
     unionid: context.unionid || '',
     nickname: '拾光访客',
@@ -30,7 +38,7 @@ async function ensureUser(openid, context = {}, writer = db) {
     createdAt: now,
     updatedAt: now
   };
-  await writer.collection(COLLECTIONS.users).doc(openid).set({ data: user });
+  await writer.collection(COLLECTIONS.users).doc(identityKey).set({ data: user });
   return user;
 }
 
@@ -69,4 +77,4 @@ function safeUser(user, points = {}) {
   };
 }
 
-module.exports = { requireOpenId, getUser, ensureUser, getStaffAccount, requireRole, safeUser };
+module.exports = { requireOpenId, userIdentityKey, getUser, ensureUser, getStaffAccount, requireRole, safeUser };

@@ -20,10 +20,6 @@
         <text class="detail-duration">约 {{service.durationText}}</text>
       </view>
 
-      <view class="tag-list">
-        <text wx:for="{{service.tags}}" wx:key="*this" class="tag">{{item}}</text>
-      </view>
-
     </view>
 
     <view class="bottom-bar safe-bottom"><button class="primary-button" bindtap="startBooking">选择款式</button></view>

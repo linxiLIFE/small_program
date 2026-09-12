@@ -2,6 +2,7 @@ const assert = require('assert');
 const { calculatePointsDiscount, earnPoints, rebalancePoints, awardPoints } = require('../cloudfunctions/api/lib/money');
 const { overlaps, dateToTimestamp, isWithinDateWindow, toDateString, addMinutes } = require('../cloudfunctions/api/lib/time');
 const { buildTimePeriods } = require('../utils/booking-time');
+const { buildBookingTimeline } = require('../cloudfunctions/api/lib/booking-timeline');
 
 const rule = { unit: 20, discountFen: 100, maxPercent: 10 };
 const fullLimit = calculatePointsDiscount({ totalFen: 20000, availablePoints: 1000, requestedPoints: 1000, rule });
@@ -33,6 +34,25 @@ const dayPartPeriods = buildTimePeriods([
   { id: 'afternoon-slot', startAt: Date.parse('2026-09-12T12:00:00+08:00'), available: true }
 ], 30, 60);
 assert.deepStrictEqual(dayPartPeriods.map((period) => period.label), ['上午', '下午']);
+
+const timelineDate = '2026-09-12';
+const bookingTimeline = buildBookingTimeline({
+  date: timelineDate,
+  now: dateToTimestamp(timelineDate, '09:00'),
+  minAdvanceMinutes: 60,
+  serviceDurationMinutes: 60,
+  stepMinutes: 30,
+  plan: {
+    leave: false,
+    shifts: [
+      { start: '10:00', end: '12:00', breaks: [] },
+      { start: '13:00', end: '20:00', breaks: [{ start: '17:00', end: '18:00' }] }
+    ],
+    occupancies: [{ startAt: dateToTimestamp(timelineDate, '14:00'), endAt: dateToTimestamp(timelineDate, '15:00'), status: 'RESERVED' }]
+  }
+});
+assert.deepStrictEqual(bookingTimeline.segments.map(item => item.kind), ['available', 'closed', 'available', 'occupied', 'available', 'break', 'available']);
+assert.equal(bookingTimeline.segments.find(item => item.kind === 'occupied').startAt, dateToTimestamp(timelineDate, '14:00'));
 
 const today = new Date().toISOString().slice(0, 10);
 const todayAtNoon = dateToTimestamp(today, '12:00');

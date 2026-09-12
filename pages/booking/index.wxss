@@ -436,3 +436,302 @@
   color: #9f626b;
   font-size: 25rpx;
 }
+
+.booking-empty-art-fallback {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(circle at 35% 28%, #f9eee3 0, #f5e3dc 30%, transparent 31%), linear-gradient(145deg, #ead0cb, #f6e9df 55%, #d9bdc0);
+}
+
+.booking-empty-art-fallback::before,
+.booking-empty-art-fallback::after {
+  position: absolute;
+  border: 1rpx solid rgba(255, 250, 247, .64);
+  border-radius: 50%;
+  content: '';
+}
+
+.booking-empty-art-fallback::before {
+  top: 56rpx;
+  right: -46rpx;
+  width: 310rpx;
+  height: 310rpx;
+}
+
+.booking-empty-art-fallback::after {
+  bottom: -122rpx;
+  left: -90rpx;
+  width: 420rpx;
+  height: 420rpx;
+  border-color: rgba(175, 113, 119, .28);
+}
+
+.booking-art-orbit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border: 2rpx solid rgba(171, 105, 113, .55);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) rotate(-24deg);
+}
+
+.orbit-one {
+  width: 260rpx;
+  height: 150rpx;
+}
+
+.orbit-two {
+  width: 150rpx;
+  height: 260rpx;
+  border-color: rgba(255, 250, 247, .72);
+  transform: translate(-50%, -50%) rotate(35deg);
+}
+
+.booking-art-core {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 112rpx;
+  height: 112rpx;
+  border: 2rpx solid rgba(255, 250, 247, .78);
+  border-radius: 50%;
+  background: rgba(255, 250, 247, .3);
+  color: #a76e75;
+  box-shadow: 0 10rpx 30rpx rgba(130, 81, 83, .12);
+  transform: translate(-50%, -50%);
+}
+
+.booking-art-core text {
+  font-family: Georgia, serif;
+  font-size: 52rpx;
+}
+
+.booking-art-spark {
+  position: absolute;
+  color: #fffaf7;
+  font-family: Georgia, serif;
+}
+
+.spark-one { top: 84rpx; left: 24%; font-size: 46rpx; }
+.spark-two { right: 24%; bottom: 100rpx; font-size: 58rpx; }
+.booking-empty-art-fallback text.booking-art-spark { display: block; margin: 0; font-size: inherit; }
+
+.timeline-card {
+  margin-top: 24rpx;
+  padding: 24rpx 20rpx 18rpx;
+  overflow: hidden;
+  background: #fffdfb;
+}
+
+.timeline-heading,
+.timeline-legend,
+.timeline-legend view,
+.timeline-instruction,
+.timeline-no-options {
+  display: flex;
+  align-items: center;
+}
+
+.timeline-heading {
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.timeline-title,
+.timeline-date {
+  display: block;
+}
+
+.timeline-title {
+  color: #594846;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.timeline-date {
+  margin-top: 6rpx;
+  color: #aa9189;
+  font-size: 20rpx;
+}
+
+.timeline-duration {
+  flex: 0 0 auto;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: #f7e7e4;
+  color: #a7646d;
+  font-size: 21rpx;
+}
+
+.timeline-stage {
+  position: relative;
+  margin-top: 18rpx;
+  padding-top: 42rpx;
+}
+
+.timeline-ticks {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 30rpx;
+}
+
+.timeline-ticks text {
+  position: absolute;
+  color: #b09b94;
+  font-size: 19rpx;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.timeline-ticks text:first-child {
+  transform: none;
+}
+
+.timeline-area {
+  position: relative;
+  width: 100%;
+  height: 112rpx;
+}
+
+.timeline-track {
+  position: absolute;
+  top: 24rpx;
+  right: 0;
+  left: 0;
+  height: 64rpx;
+  overflow: hidden;
+  border: 1rpx solid #eee1dc;
+  border-radius: 34rpx;
+  background: #faf3ef;
+  box-shadow: inset 0 2rpx 8rpx rgba(106, 73, 66, .06);
+}
+
+.timeline-segment {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  box-sizing: border-box;
+  border-right: 1rpx solid rgba(151, 112, 106, .1);
+}
+
+.timeline-segment.available {
+  background: #fff;
+}
+
+.timeline-segment.occupied {
+  background: repeating-linear-gradient(135deg, #d49da3 0, #d49da3 10rpx, #c58691 10rpx, #c58691 18rpx);
+}
+
+.timeline-segment.break,
+.timeline-segment.unavailable {
+  background: repeating-linear-gradient(135deg, #ead9d1 0, #ead9d1 9rpx, #dfc8c0 9rpx, #dfc8c0 15rpx);
+}
+
+.timeline-segment.closed,
+.timeline-segment.leave {
+  background: repeating-linear-gradient(135deg, #f3eae6 0, #f3eae6 8rpx, #e8dcd7 8rpx, #e8dcd7 14rpx);
+}
+
+.timeline-selection {
+  position: absolute;
+  z-index: 2;
+  top: -2rpx;
+  height: 64rpx;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.timeline-selection.confirmed {
+  border: 3rpx solid #b96875;
+  border-radius: 34rpx;
+  background: rgba(255, 250, 248, .26);
+  box-shadow: 0 0 0 5rpx rgba(185, 104, 117, .1), 0 7rpx 16rpx rgba(172, 95, 106, .18);
+  animation: timeline-pulse 2.8s ease-in-out infinite;
+}
+
+.timeline-selection.preview {
+  border: 2rpx dashed #bd7b83;
+  border-radius: 34rpx;
+  background: rgba(255, 255, 255, .5);
+}
+
+.timeline-handle {
+  z-index: 4;
+  width: 56rpx;
+  height: 112rpx;
+}
+
+.timeline-handle-cap {
+  position: absolute;
+  top: 14rpx;
+  left: 0;
+  width: 56rpx;
+  height: 84rpx;
+  box-sizing: border-box;
+  border: 3rpx solid #b96875;
+  border-radius: 30rpx;
+  background: #fffaf8;
+  box-shadow: 0 5rpx 14rpx rgba(133, 83, 80, .18);
+}
+
+.timeline-handle-cap::after {
+  position: absolute;
+  top: 26rpx;
+  left: 22rpx;
+  width: 6rpx;
+  height: 28rpx;
+  border-radius: 8rpx;
+  background: #c78187;
+  content: '';
+}
+
+.timeline-legend {
+  flex-wrap: wrap;
+  gap: 12rpx 22rpx;
+  margin-top: 4rpx;
+  color: #a18b84;
+  font-size: 20rpx;
+}
+
+.timeline-legend view {
+  gap: 7rpx;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+}
+
+.legend-dot.available { border: 1rpx solid #eaded9; background: #fff; }
+.legend-dot.occupied { background: #ca9099; }
+.legend-dot.blocked { background: repeating-linear-gradient(135deg, #ead9d1 0, #ead9d1 4rpx, #d6bdb5 4rpx, #d6bdb5 8rpx); }
+
+.timeline-instruction,
+.timeline-no-options {
+  justify-content: center;
+  min-height: 56rpx;
+  margin-top: 14rpx;
+  border-radius: 14rpx;
+  background: #faf1ed;
+  color: #9d7b76;
+  font-size: 21rpx;
+}
+
+.timeline-no-options {
+  color: #ab928b;
+}
+
+@keyframes timeline-pulse {
+  0%, 100% { box-shadow: 0 0 0 5rpx rgba(185, 104, 117, .1), 0 7rpx 16rpx rgba(172, 95, 106, .18); }
+  50% { box-shadow: 0 0 0 9rpx rgba(185, 104, 117, .04), 0 9rpx 20rpx rgba(172, 95, 106, .13); }
+}

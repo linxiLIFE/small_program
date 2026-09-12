@@ -58,4 +58,91 @@ function buildTimePeriods(slots, stepMinutes = 15, defaultDurationMinutes = 60) 
   }));
 }
 
-module.exports = { buildTimePeriods, timeLabel };
+function timelineClock(timestamp) {
+  return timeLabel(timestamp);
+}
+
+function percentage(value, startAt, endAt) {
+  const total = Math.max(1, Number(endAt) - Number(startAt));
+  return Math.min(100, Math.max(0, ((Number(value) - Number(startAt)) / total) * 100));
+}
+
+function buildFallbackTimeline(slots, durationMinutes) {
+  const valid = (Array.isArray(slots) ? slots : [])
+    .filter((item) => item && Number.isFinite(Number(item.startAt)))
+    .map((item) => ({
+      ...item,
+      startAt: Number(item.startAt),
+      endAt: Number(item.endAt) > Number(item.startAt)
+        ? Number(item.endAt)
+        : Number(item.startAt) + Math.max(1, Number(durationMinutes) || 60) * 60 * 1000
+    }))
+    .sort((left, right) => left.startAt - right.startAt);
+  if (!valid.length) return { startAt: null, endAt: null, totalMinutes: 0, segments: [] };
+  const startAt = valid[0].startAt;
+  const endAt = valid[valid.length - 1].endAt;
+  return {
+    startAt,
+    endAt,
+    totalMinutes: Math.round((endAt - startAt) / 60000),
+    segments: [{ kind: 'available', startAt, endAt }]
+  };
+}
+
+function decorateBookingTimeline(rawTimeline, slots, durationMinutes = 60, stepMinutes = 15) {
+  const fallback = buildFallbackTimeline(slots, durationMinutes);
+  const source = rawTimeline && Number(rawTimeline.startAt) < Number(rawTimeline.endAt)
+    ? rawTimeline
+    : fallback;
+  const startAt = Number(source.startAt);
+  const endAt = Number(source.endAt);
+  if (!Number.isFinite(startAt) || !Number.isFinite(endAt) || endAt <= startAt) {
+    return { ...source, startAt: null, endAt: null, totalMinutes: 0, segments: [], ticks: [] };
+  }
+  const segments = (Array.isArray(source.segments) ? source.segments : [])
+    .filter((item) => Number(item.endAt) > Number(item.startAt))
+    .map((item, index) => ({
+      ...item,
+      id: item.id || `timeline-segment-${index}`,
+      leftStyle: `left:${percentage(item.startAt, startAt, endAt)}%;`,
+      widthStyle: `width:${Math.max(.2, percentage(item.endAt, startAt, endAt) - percentage(item.startAt, startAt, endAt))}%;`
+    }));
+  const totalMinutes = Math.max(1, Math.round((endAt - startAt) / 60000));
+  const everyMinutes = totalMinutes > 480 ? 120 : totalMinutes > 240 ? 60 : 30;
+  const firstDate = new Date(startAt);
+  const firstMinutes = firstDate.getHours() * 60 + firstDate.getMinutes();
+  const firstTick = Math.floor(firstMinutes / everyMinutes) * everyMinutes;
+  const ticks = [];
+  for (let minute = firstTick; minute <= firstMinutes + totalMinutes; minute += everyMinutes) {
+    const timestamp = startAt + (minute - firstMinutes) * 60000;
+    if (timestamp < startAt || timestamp > endAt) continue;
+    ticks.push({ label: timelineClock(timestamp), leftStyle: `left:${percentage(timestamp, startAt, endAt)}%;` });
+  }
+  if (!ticks.length || ticks[ticks.length - 1].label !== timelineClock(endAt)) {
+    ticks.push({ label: timelineClock(endAt), leftStyle: 'left:100%;' });
+  }
+  const availableSlots = (Array.isArray(slots) ? slots : [])
+    .filter((item) => item && item.available !== false && Number.isFinite(Number(item.startAt)))
+    .map((item) => ({
+      ...item,
+      startAt: Number(item.startAt),
+      endAt: Number(item.endAt) > Number(item.startAt)
+        ? Number(item.endAt)
+        : Number(item.startAt) + Math.max(1, Number(durationMinutes) || 60) * 60000,
+      rangeLabel: item.rangeLabel || `${timelineClock(item.startAt)}—${timelineClock(Number(item.endAt) > Number(item.startAt) ? item.endAt : Number(item.startAt) + Math.max(1, Number(durationMinutes) || 60) * 60000)}`
+    }))
+    .sort((left, right) => left.startAt - right.startAt);
+  return {
+    ...source,
+    startAt,
+    endAt,
+    totalMinutes,
+    durationMinutes: Number(source.durationMinutes) || Number(durationMinutes) || 60,
+    stepMinutes: Number(source.stepMinutes) || Number(stepMinutes) || 15,
+    segments,
+    ticks,
+    availableSlots
+  };
+}
+
+module.exports = { buildTimePeriods, decorateBookingTimeline, timeLabel };

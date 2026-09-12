@@ -34,6 +34,5 @@
     <view wx:if="{{actions.length}}" class="action-bar safe-bottom">
       <button wx:for="{{actions}}" wx:key="id" class="action-button {{item.type}}" data-action="{{item.id}}" bindtap="handleAction">{{item.text}}</button>
     </view>
-    <view class="order-footnote">订单号：{{order.id}} · 点击可复制</view>
   </block>
 </view>

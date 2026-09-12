@@ -3,7 +3,7 @@
     <image wx:if="{{service.coverUrl && !imageError}}" class="cover" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{service.coverUrl}}" binderror="handleImageError" />
     <view wx:else class="cover-fallback">
       <text class="fallback-mark">✦</text>
-      <text>{{service.categoryName || '四个小姐姐的店'}}</text>
+      <text>{{service.categoryName || '拾光'}}</text>
     </view>
     <text class="category-pill">{{service.categoryName}}</text>
   </view>
@@ -12,7 +12,6 @@
       <text class="service-name">{{service.name}}</text>
       <text class="arrow">›</text>
     </view>
-    <text class="service-description">{{service.description}}</text>
     <view class="service-meta">
       <text class="price">¥{{service.priceText}}</text>
       <view class="service-meta-copy"><text class="duration">{{service.durationText}}</text><text class="style-count">{{service.styleCount || 0}} 款式</text></view>

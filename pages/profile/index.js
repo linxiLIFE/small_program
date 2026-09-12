@@ -2,8 +2,23 @@ const api = require('../../utils/api');
 const { maskPhone } = require('../../utils/format');
 const { showPhoneAuthFailure, phoneBindFailureMessage } = require('../../utils/phone-auth');
 
+const ORDER_SUMMARY_ITEMS = [
+  { id: 'PENDING_PAYMENT', label: '待付款', icon: '¥' },
+  { id: 'RESERVED', label: '待到店', icon: '⌖' },
+  { id: 'ACTIVE_SERVICE', label: '服务中', icon: '✦' },
+  { id: 'COMPLETED', label: '已完成', icon: '✓' }
+];
+
+function buildOrderSummary(orders) {
+  const list = Array.isArray(orders) ? orders : [];
+  return ORDER_SUMMARY_ITEMS.map((item) => ({
+    ...item,
+    count: list.filter((order) => (item.id === 'ACTIVE_SERVICE' ? ['ARRIVED', 'IN_SERVICE'].includes(order.status) : order.status === item.id)).length
+  }));
+}
+
 Page({
-  data: { loading: true, profile: {}, storePhone: '', isDemo: false, editingName: false, draftNickname: '' },
+  data: { loading: true, profile: {}, storePhone: '', isDemo: false, editingName: false, draftNickname: '', orderSummary: buildOrderSummary([]) },
 
   onLoad() {
     this.loadProfile();
@@ -15,9 +30,10 @@ Page({
 
   async loadProfile() {
     try {
-      const [profile, settings] = await Promise.all([
+      const [profile, settings, orderResult] = await Promise.all([
         api.getProfile(),
-        api.getSettings().catch(() => ({ store: {} }))
+        api.getSettings().catch(() => ({ store: {} })),
+        api.listOrders().catch(() => ({ orders: [] }))
       ]);
       getApp().setUser(profile);
       this.hasLoaded = true;
@@ -25,17 +41,23 @@ Page({
         loading: false,
         profile: { ...profile, phoneLabel: profile.phoneMasked || maskPhone(profile.phone) },
         storePhone: settings && settings.store ? settings.store.phone || '' : '',
-        isDemo: !!getApp().globalData.isDemo
+        isDemo: !!getApp().globalData.isDemo,
+        orderSummary: buildOrderSummary(orderResult && orderResult.orders)
       });
     } catch (error) {
       this.hasLoaded = true;
-      this.setData({ loading: false, profile: {}, isDemo: false });
+      this.setData({ loading: false, profile: {}, isDemo: false, orderSummary: buildOrderSummary([]) });
       wx.showToast({ title: error.message || '用户资料加载失败', icon: 'none' });
     }
   },
 
   openOrders() {
     wx.navigateTo({ url: '/pages/orders/index' });
+  },
+
+  openOrdersStatus(event) {
+    const status = event.currentTarget.dataset.status || '';
+    wx.navigateTo({ url: status ? `/pages/orders/index?status=${status}` : '/pages/orders/index' });
   },
 
   openPoints() {

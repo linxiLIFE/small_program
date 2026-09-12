@@ -11,7 +11,8 @@
 
 .work-image-wrap {
   position: relative;
-  height: 320rpx;
+  height: auto;
+  aspect-ratio: 1 / 1;
 }
 
 .work-image,

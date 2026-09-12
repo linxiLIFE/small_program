@@ -19,7 +19,8 @@
 
 .cover-wrap {
   position: relative;
-  height: 300rpx;
+  height: auto;
+  aspect-ratio: 1 / 1;
 }
 
 .compact .cover-wrap {

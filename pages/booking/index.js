@@ -2,7 +2,7 @@ const api = require('../../utils/api');
 const mock = require('../../utils/mock-data');
 const { formatMoney, formatDuration, formatDateLabel, maskPhone } = require('../../utils/format');
 const { showPhoneAuthFailure, phoneBindFailureMessage } = require('../../utils/phone-auth');
-const { buildTimePeriods } = require('../../utils/booking-time');
+const { buildTimePeriods, decorateBookingTimeline, timeLabel } = require('../../utils/booking-time');
 
 function loadBookingContext(serviceId, workId) {
   return Promise.all([
@@ -29,6 +29,13 @@ Page({
     dates: [],
     slots: [],
     timePeriods: [],
+    timeline: {},
+    timelineHasOptions: false,
+    timelineTrackWidth: 0,
+    timelineStartX: 0,
+    timelineEndX: 0,
+    timelineSelectionStyle: '',
+    timelineSelectionLabel: '',
     selectedPeriodId: '',
     expandedPeriodId: '',
     selectedTechnicianId: '',
@@ -184,6 +191,7 @@ Page({
     if (!force && this.data.slots.length) {
       const timePeriods = buildTimePeriods(this.data.slots, this.bookingSettings?.booking?.slotStepMinutes, this.data.service.durationMinutes);
       const normalizedSlots = timePeriods.reduce((all, period) => all.concat(period.slots), []);
+      const timeline = decorateBookingTimeline(this.data.timeline, normalizedSlots, this.data.service.durationMinutes, this.bookingSettings?.booking?.slotStepMinutes);
       const currentSlot = slotId
         ? normalizedSlots.find((item) => item.id === slotId && item.available !== false)
         : null;
@@ -197,12 +205,15 @@ Page({
           this.setData({
             slots: normalizedSlots,
             timePeriods,
+            timeline,
+            timelineHasOptions: !!(timeline.availableSlots && timeline.availableSlots.length),
             selectedSlotId,
             selectedSlot: currentSlot || {},
             selectedPeriodId: currentPeriod?.id || '',
             expandedPeriodId
           });
         }
+        this.updateTimelineSelection(currentSlot || timeline.availableSlots?.[0]);
         if (currentSlot && !this.data.quote.quoteId) await this.refreshQuote();
         return;
       }
@@ -210,7 +221,7 @@ Page({
     const previousSlotId = preserve ? slotId : '';
     const requestId = (this.slotRequestId || 0) + 1;
     this.slotRequestId = requestId;
-    this.setData({ slots: [], timePeriods: [], selectedPeriodId: '', expandedPeriodId: '', selectedSlotId: '', selectedSlot: {}, quote: {}, canSubmit: false });
+    this.setData({ slots: [], timePeriods: [], timeline: {}, timelineHasOptions: false, timelineTrackWidth: 0, timelineStartX: 0, timelineEndX: 0, timelineSelectionStyle: '', timelineSelectionLabel: '', selectedPeriodId: '', expandedPeriodId: '', selectedSlotId: '', selectedSlot: {}, quote: {}, canSubmit: false });
     try {
       const result = await api.getAvailableSlots({
         serviceId: this.serviceId,
@@ -221,6 +232,7 @@ Page({
       const slots = result.slots || [];
       const timePeriods = buildTimePeriods(slots, result.stepMinutes || this.bookingSettings?.booking?.slotStepMinutes, this.data.service.durationMinutes);
       const normalizedSlots = timePeriods.reduce((all, period) => all.concat(period.slots), []);
+      const timeline = decorateBookingTimeline(result.timeline, normalizedSlots, this.data.service.durationMinutes, result.stepMinutes || this.bookingSettings?.booking?.slotStepMinutes);
       const selectedSlot = normalizedSlots.find((item) => item.id === previousSlotId && item.available !== false) || {};
       const selectedPeriod = timePeriods.find((period) => period.slots.some((item) => item.id === selectedSlot.id));
       const previousExpandedPeriodId = preserve ? this.data.expandedPeriodId : '';
@@ -230,15 +242,24 @@ Page({
       this.setData({
         slots: normalizedSlots,
         timePeriods,
+        timeline,
+        timelineHasOptions: !!(timeline.availableSlots && timeline.availableSlots.length),
+        timelineTrackWidth: 0,
+        timelineStartX: 0,
+        timelineEndX: 0,
+        timelineSelectionStyle: '',
+        timelineSelectionLabel: '',
         selectedSlotId: selectedSlot.id || '',
         selectedSlot,
         selectedPeriodId: selectedPeriod?.id || '',
         expandedPeriodId
       });
+      this.updateTimelineSelection(selectedSlot.id ? selectedSlot : timeline.availableSlots?.[0]);
+      this.measureTimeline();
       if (selectedSlot.id) await this.refreshQuote();
     } catch(error) {
       if (requestId !== this.slotRequestId) return;
-      this.setData({ canSubmit: false, slots: [], pointHint: error.message || '时段加载失败' });
+      this.setData({ canSubmit: false, slots: [], timeline: {}, timelineHasOptions: false, pointHint: error.message || '时段加载失败' });
       wx.showToast({ title: '时段加载失败，请重试', icon: 'none' });
     }
   },
@@ -266,9 +287,66 @@ Page({
   async selectSlot(event) {
     const slot = this.data.slots.find((item) => item.id === event.currentTarget.dataset.id);
     if (!slot || slot.available === false) return;
+    await this.applySelectedSlot(slot);
+  },
+
+  async applySelectedSlot(slot) {
+    if (!slot || slot.available === false) return;
     const period = this.data.timePeriods.find((item) => item.slots.some((candidate) => candidate.id === slot.id));
     this.setData({ selectedSlotId: slot.id, selectedSlot: slot, selectedPeriodId: period?.id || '', expandedPeriodId: period?.id || '', quote: {}, canSubmit: false });
+    this.updateTimelineSelection(slot);
     await this.refreshQuote();
+  },
+
+  updateTimelineSelection(slot) {
+    const timeline = this.data.timeline || {};
+    if (!slot || !timeline.startAt || !timeline.endAt) {
+      this.setData({ timelineSelectionStyle: '', timelineSelectionLabel: '' });
+      return;
+    }
+    const startAt = Number(slot.startAt);
+    const endAt = Number(slot.endAt) > startAt ? Number(slot.endAt) : startAt + Number(this.data.service.durationMinutes || 60) * 60000;
+    const range = Math.max(1, Number(timeline.endAt) - Number(timeline.startAt));
+    const left = Math.max(0, Math.min(100, ((startAt - Number(timeline.startAt)) / range) * 100));
+    const right = Math.max(left, Math.min(100, ((endAt - Number(timeline.startAt)) / range) * 100));
+    const width = Math.max(1, this.data.timelineTrackWidth || 1);
+    const handleWidth = 28;
+    const startX = Math.max(0, Math.min(Math.max(0, width - handleWidth), (left / 100) * width - handleWidth / 2));
+    const endX = Math.max(0, Math.min(Math.max(0, width - handleWidth), (right / 100) * width - handleWidth / 2));
+    this.setData({
+      timelineStartX: startX,
+      timelineEndX: endX,
+      timelineSelectionStyle: `left:${left}%;width:${Math.max(0, right - left)}%;`,
+      timelineSelectionLabel: `${timeLabel(startAt)}—${timeLabel(endAt)}`
+    });
+  },
+
+  measureTimeline() {
+    if (typeof wx.createSelectorQuery !== 'function') return;
+    wx.createSelectorQuery().select('#timeline-track').boundingClientRect((rect) => {
+      if (!rect || !rect.width) return;
+      this.setData({ timelineTrackWidth: rect.width });
+      this.updateTimelineSelection(this.data.selectedSlot.id ? this.data.selectedSlot : this.data.timeline.availableSlots?.[0]);
+    }).exec();
+  },
+
+  async handleTimelineChange(event) {
+    const timeline = this.data.timeline || {};
+    const availableSlots = timeline.availableSlots || [];
+    if (!availableSlots.length || !timeline.startAt || !timeline.endAt) return;
+    const width = Math.max(1, Number(this.data.timelineTrackWidth || 0));
+    const handleWidth = 28;
+    const x = Number(event.detail && event.detail.x || 0) + handleWidth / 2;
+    const position = Number(timeline.startAt) + Math.max(0, Math.min(1, x / width)) * (Number(timeline.endAt) - Number(timeline.startAt));
+    const edge = event.currentTarget.dataset.edge;
+    const slot = availableSlots.reduce((closest, item) => {
+      const target = edge === 'end' ? Number(item.endAt) : Number(item.startAt);
+      if (!closest || Math.abs(target - position) < Math.abs(Number(closest.target) - position)) return { ...item, target };
+      return closest;
+    }, null);
+    if (!slot) return;
+    delete slot.target;
+    await this.applySelectedSlot(slot);
   },
 
   async togglePoints(event) {
