@@ -218,7 +218,7 @@ function listTechnicians(serviceId = '') {
 function getAvailableSlots(payload) {
   return call('getAvailableSlots', payload, () => ({
     date: payload.date,
-    stepMinutes: 30,
+    stepMinutes: 15,
     slots: mock.getSlots(payload.date)
   }));
 }

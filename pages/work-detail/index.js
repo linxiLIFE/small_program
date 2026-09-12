@@ -2,7 +2,15 @@ const api = require('../../utils/api');
 const { formatMoney, formatDuration } = require('../../utils/format');
 
 Page({
-  data: { loading: true, error: '', work: {}, service: {}, technician: {} },
+  data: {
+    loading: true,
+    error: '',
+    work: {},
+    service: {},
+    technician: {},
+    technicians: [],
+    selectedTechnicianId: ''
+  },
 
   onLoad(options) {
     this.workId = options.workId || '';
@@ -23,14 +31,20 @@ Page({
         api.listTechnicians(work.serviceId)
       ]);
       if (requestId !== this.requestId) return;
-      const technician = (technicianResult.technicians || []).find((item) => item.id === work.technicianId) || (technicianResult.technicians || [])[0] || {};
+      const technicians = (technicianResult.technicians || []).map((item) => ({
+        ...item,
+        initial: item.name ? item.name.slice(0, 1) : '师'
+      }));
+      const technician = technicians.find((item) => item.id === work.technicianId) || technicians[0] || {};
       const state = getApp().globalData;
       state.catalogSelection = { ...(state.catalogSelection || {}), categoryId: service.categoryId, serviceId: service.id, workId: work.id };
       this.setData({
         loading: false,
         work,
         service: { ...service, priceText: formatMoney(service.priceFen, false), durationText: formatDuration(service.durationMinutes) },
-        technician: { ...technician, initial: technician.name ? technician.name.slice(0, 1) : '师' }
+        technicians,
+        selectedTechnicianId: technician.id || '',
+        technician
       });
     } catch(error) {
       if (requestId !== this.requestId) return;
@@ -39,10 +53,17 @@ Page({
   },
 
   previewImage() { if(this.data.work.imageUrl)wx.previewImage({urls:[this.data.work.imageUrl]}); },
+  selectTechnician(event) {
+    const technicianId = event.currentTarget.dataset.id;
+    const technician = this.data.technicians.find((item) => item.id === technicianId);
+    if (!technician) return;
+    this.setData({ selectedTechnicianId: technicianId, technician });
+  },
   startBooking() {
     const state = getApp().globalData;
     state.catalogSelection = { ...(state.catalogSelection || {}), categoryId: this.data.service.categoryId, serviceId: this.data.service.id, workId: this.data.work.id };
-    getApp().globalData.pendingBooking = { serviceId: this.data.service.id, technicianId: this.data.technician.id || '', workId: this.data.work.id };
+    const selectedTechnician = this.data.technicians.find((item) => item.id === this.data.selectedTechnicianId) || this.data.technician || {};
+    getApp().globalData.pendingBooking = { serviceId: this.data.service.id, technicianId: selectedTechnician.id || '', workId: this.data.work.id };
     wx.switchTab({ url: '/pages/booking/index' });
   }
 });

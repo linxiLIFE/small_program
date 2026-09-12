@@ -9,15 +9,22 @@
       <view class="work-hero-caption"><text class="work-hero-title">{{work.title}}</text></view>
     </view>
     <view class="work-detail-content">
-
-      <view class="artist-card card">
-        <image wx:if="{{technician.avatarUrl}}" class="artist-avatar" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{technician.avatarUrl}}" />
-        <view wx:else class="artist-avatar artist-fallback">{{technician.initial}}</view>
-        <view class="artist-copy"><text class="artist-name">{{technician.name}}</text><text class="artist-title">{{technician.title}}</text></view>
+      <view wx:if="{{technicians.length}}" class="artist-section card">
+        <view class="artist-section-heading"><view><text class="artist-kicker">服务技师</text><text class="artist-heading-title">选择技师</text></view><text class="artist-count">{{technicians.length}}位</text></view>
+        <view class="artist-grid">
+          <view wx:for="{{technicians}}" wx:key="id" class="artist-option {{selectedTechnicianId === item.id ? 'selected' : ''}}" data-id="{{item.id}}" bindtap="selectTechnician">
+            <view class="artist-option-top"><image wx:if="{{item.avatarUrl}}" class="artist-avatar" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{item.avatarUrl}}" /><view wx:else class="artist-avatar artist-fallback">{{item.initial}}</view><view wx:if="{{selectedTechnicianId === item.id}}" class="artist-check">✓</view></view>
+            <text class="artist-name">{{item.name}}</text><text class="artist-title">{{item.title}}</text>
+          </view>
+        </view>
       </view>
+      <view wx:else class="artist-empty card">暂无可预约技师</view>
       <view class="related-service card">
-        <view class="related-copy"><text class="related-name">{{service.name}}</text><text class="related-meta">{{service.durationText}} · ¥{{service.priceText}}</text></view>
-        <button class="small-book-button" bindtap="startBooking">去预约</button>
+        <view class="related-copy">
+          <text class="related-name">{{service.name}}</text>
+          <view class="related-meta"><text>{{service.durationText}}</text><text class="related-meta-dot">·</text><text class="related-price">¥{{service.priceText}}</text></view>
+        </view>
+        <button class="small-book-button" bindtap="startBooking">预约</button>
       </view>
     </view>
   </block>

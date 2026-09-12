@@ -8,7 +8,7 @@ function mergeSettings(base, override) {
     ...source,
     store: { ...base.store, ...(source.store || {}) },
     home: { banners: [], ...(base.home || {}), ...(source.home || {}) },
-    booking: { ...base.booking, ...(source.booking || {}) },
+    booking: { ...base.booking, ...(source.booking || {}), slotStepMinutes: 15 },
     points: { ...base.points, ...(source.points || {}) },
     schedule: { ...base.schedule, ...(source.schedule || {}) }
   };

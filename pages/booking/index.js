@@ -4,6 +4,9 @@ const { formatMoney, formatDuration, formatDateLabel, maskPhone } = require('../
 const { showPhoneAuthFailure, phoneBindFailureMessage } = require('../../utils/phone-auth');
 const { buildTimePeriods, decorateBookingTimeline, timeLabel } = require('../../utils/booking-time');
 
+const TIMELINE_STEP_MINUTES = 15;
+const TIMELINE_HANDLE_WIDTH_PX = 28;
+
 function loadBookingContext(serviceId, workId) {
   return Promise.all([
     api.getSettings(),
@@ -36,6 +39,7 @@ Page({
     timelineEndX: 0,
     timelineSelectionStyle: '',
     timelineSelectionLabel: '',
+    timelineDragging: false,
     selectedPeriodId: '',
     expandedPeriodId: '',
     selectedTechnicianId: '',
@@ -221,7 +225,7 @@ Page({
     const previousSlotId = preserve ? slotId : '';
     const requestId = (this.slotRequestId || 0) + 1;
     this.slotRequestId = requestId;
-    this.setData({ slots: [], timePeriods: [], timeline: {}, timelineHasOptions: false, timelineTrackWidth: 0, timelineStartX: 0, timelineEndX: 0, timelineSelectionStyle: '', timelineSelectionLabel: '', selectedPeriodId: '', expandedPeriodId: '', selectedSlotId: '', selectedSlot: {}, quote: {}, canSubmit: false });
+    this.setData({ slots: [], timePeriods: [], timeline: {}, timelineHasOptions: false, timelineTrackWidth: 0, timelineStartX: 0, timelineEndX: 0, timelineSelectionStyle: '', timelineSelectionLabel: '', timelineDragging: false, selectedPeriodId: '', expandedPeriodId: '', selectedSlotId: '', selectedSlot: {}, quote: {}, canSubmit: false });
     try {
       const result = await api.getAvailableSlots({
         serviceId: this.serviceId,
@@ -249,6 +253,7 @@ Page({
         timelineEndX: 0,
         timelineSelectionStyle: '',
         timelineSelectionLabel: '',
+        timelineDragging: false,
         selectedSlotId: selectedSlot.id || '',
         selectedSlot,
         selectedPeriodId: selectedPeriod?.id || '',
@@ -293,7 +298,7 @@ Page({
   async applySelectedSlot(slot) {
     if (!slot || slot.available === false) return;
     const period = this.data.timePeriods.find((item) => item.slots.some((candidate) => candidate.id === slot.id));
-    this.setData({ selectedSlotId: slot.id, selectedSlot: slot, selectedPeriodId: period?.id || '', expandedPeriodId: period?.id || '', quote: {}, canSubmit: false });
+    this.setData({ selectedSlotId: slot.id, selectedSlot: slot, selectedPeriodId: period?.id || '', expandedPeriodId: period?.id || '', timelineDragging: false, quote: {}, canSubmit: false });
     this.updateTimelineSelection(slot);
     await this.refreshQuote();
   },
@@ -306,19 +311,37 @@ Page({
     }
     const startAt = Number(slot.startAt);
     const endAt = Number(slot.endAt) > startAt ? Number(slot.endAt) : startAt + Number(this.data.service.durationMinutes || 60) * 60000;
+    this.updateTimelineSelectionRange(startAt, endAt);
+  },
+
+  updateTimelineSelectionRange(startAtValue, endAtValue, dragging, labelStartAtValue = startAtValue, labelEndAtValue = endAtValue) {
+    const timeline = this.data.timeline || {};
+    const timelineStart = Number(timeline.startAt);
+    const timelineEnd = Number(timeline.endAt);
+    if (!Number.isFinite(timelineStart) || !Number.isFinite(timelineEnd) || timelineEnd <= timelineStart) return;
+    const startAt = Math.max(timelineStart, Math.min(timelineEnd, Number(startAtValue)));
+    const endAt = Math.max(startAt, Math.min(timelineEnd, Number(endAtValue)));
     const range = Math.max(1, Number(timeline.endAt) - Number(timeline.startAt));
     const left = Math.max(0, Math.min(100, ((startAt - Number(timeline.startAt)) / range) * 100));
     const right = Math.max(left, Math.min(100, ((endAt - Number(timeline.startAt)) / range) * 100));
-    const width = Math.max(1, this.data.timelineTrackWidth || 1);
-    const handleWidth = 28;
-    const startX = Math.max(0, Math.min(Math.max(0, width - handleWidth), (left / 100) * width - handleWidth / 2));
-    const endX = Math.max(0, Math.min(Math.max(0, width - handleWidth), (right / 100) * width - handleWidth / 2));
-    this.setData({
-      timelineStartX: startX,
-      timelineEndX: endX,
+    const labelStartAt = Number.isFinite(Number(labelStartAtValue)) ? Number(labelStartAtValue) : startAt;
+    const labelEndAt = Number.isFinite(Number(labelEndAtValue)) ? Number(labelEndAtValue) : endAt;
+    const width = Number(this.data.timelineTrackWidth || 0);
+    const handleWidth = TIMELINE_HANDLE_WIDTH_PX;
+    const changes = {
       timelineSelectionStyle: `left:${left}%;width:${Math.max(0, right - left)}%;`,
-      timelineSelectionLabel: `${timeLabel(startAt)}—${timeLabel(endAt)}`
-    });
+      timelineSelectionLabel: `${timeLabel(labelStartAt)}—${timeLabel(labelEndAt)}`
+    };
+    if (width > 0) {
+      const startX = (left / 100) * width - handleWidth / 2;
+      const endX = (right / 100) * width - handleWidth / 2;
+      const minHandleX = -handleWidth / 2;
+      const maxHandleX = Math.max(minHandleX, width - handleWidth / 2);
+      changes.timelineStartX = Math.max(minHandleX, Math.min(maxHandleX, startX));
+      changes.timelineEndX = Math.max(minHandleX, Math.min(maxHandleX, endX));
+    }
+    if (typeof dragging === 'boolean') changes.timelineDragging = dragging;
+    this.setData(changes);
   },
 
   measureTimeline() {
@@ -330,23 +353,125 @@ Page({
     }).exec();
   },
 
-  async handleTimelineChange(event) {
+  timelineRangeFromX(edge, value, snapToStep = false) {
+    const timeline = this.data.timeline || {};
+    const timelineStart = Number(timeline.startAt);
+    const timelineEnd = Number(timeline.endAt);
+    const width = Number(this.data.timelineTrackWidth || 0);
+    if (!width || !Number.isFinite(timelineStart) || !Number.isFinite(timelineEnd) || timelineEnd <= timelineStart) return null;
+    const handleWidth = TIMELINE_HANDLE_WIDTH_PX;
+    const rawHandleX = Number(value);
+    const handleX = Number.isFinite(rawHandleX) ? rawHandleX : 0;
+    const x = Math.max(0, Math.min(width, handleX + handleWidth / 2));
+    const rawPosition = timelineStart + (x / width) * (timelineEnd - timelineStart);
+    const step = TIMELINE_STEP_MINUTES * 60 * 1000;
+    const steppedPosition = timelineStart + Math.round((rawPosition - timelineStart) / step) * step;
+    const snappedPosition = rawPosition <= timelineStart + step / 2
+      ? timelineStart
+      : rawPosition >= timelineEnd - step / 2
+        ? timelineEnd
+        : Math.max(timelineStart, Math.min(timelineEnd, steppedPosition));
+    const position = snapToStep ? snappedPosition : rawPosition;
+    const duration = Math.min(Math.max(1, Number(this.data.service.durationMinutes || timeline.durationMinutes || 60)) * 60000, timelineEnd - timelineStart);
+    if (edge === 'end') {
+      const endAt = Math.max(timelineStart + duration, Math.min(timelineEnd, position));
+      return { startAt: endAt - duration, endAt };
+    }
+    const startAt = Math.max(timelineStart, Math.min(timelineEnd - duration, position));
+    return { startAt, endAt: startAt + duration };
+  },
+
+  getTimelineTouchX(event) {
+    const touch = (event.touches && event.touches[0]) || (event.changedTouches && event.changedTouches[0]);
+    if (!touch) return null;
+    const value = touch.clientX !== undefined ? touch.clientX : touch.pageX;
+    const x = Number(value);
+    return Number.isFinite(x) ? x : null;
+  },
+
+  handleTimelineTouchStart(event) {
     const timeline = this.data.timeline || {};
     const availableSlots = timeline.availableSlots || [];
     if (!availableSlots.length || !timeline.startAt || !timeline.endAt) return;
-    const width = Math.max(1, Number(this.data.timelineTrackWidth || 0));
-    const handleWidth = 28;
-    const x = Number(event.detail && event.detail.x || 0) + handleWidth / 2;
-    const position = Number(timeline.startAt) + Math.max(0, Math.min(1, x / width)) * (Number(timeline.endAt) - Number(timeline.startAt));
     const edge = event.currentTarget.dataset.edge;
+    const touchX = this.getTimelineTouchX(event);
+    const width = Number(this.data.timelineTrackWidth || 0);
+    if (!edge || touchX === null) return;
+    if (!width) {
+      this.measureTimeline();
+      return;
+    }
+    const handleX = edge === 'end' ? Number(this.data.timelineEndX) : Number(this.data.timelineStartX);
+    this.timelineTouch = { edge, startTouchX: touchX, startHandleX: handleX, lastHandleX: handleX };
+    this.timelineDraggingEdge = edge;
+    const range = this.timelineRangeFromX(edge, handleX);
+    const snappedRange = this.timelineRangeFromX(edge, handleX, true);
+    if (range) this.updateTimelineSelectionRange(range.startAt, range.endAt, true, snappedRange?.startAt, snappedRange?.endAt);
+  },
+
+  handleTimelineTouchMove(event) {
+    const touchState = this.timelineTouch;
+    if (!touchState) return;
+    const touchX = this.getTimelineTouchX(event);
+    const width = Number(this.data.timelineTrackWidth || 0);
+    if (touchX === null || !width) return;
+    const minHandleX = -TIMELINE_HANDLE_WIDTH_PX / 2;
+    const maxHandleX = Math.max(minHandleX, width - TIMELINE_HANDLE_WIDTH_PX / 2);
+    const handleX = Math.max(minHandleX, Math.min(maxHandleX, touchState.startHandleX + touchX - touchState.startTouchX));
+    touchState.lastHandleX = handleX;
+    const range = this.timelineRangeFromX(touchState.edge, handleX);
+    const snappedRange = this.timelineRangeFromX(touchState.edge, handleX, true);
+    if (!range) return;
+    this.updateTimelineSelectionRange(range.startAt, range.endAt, true, snappedRange?.startAt, snappedRange?.endAt);
+  },
+
+  async handleTimelineTouchEnd(event) {
+    const touchState = this.timelineTouch;
+    if (!touchState) return;
+    const timeline = this.data.timeline || {};
+    const availableSlots = timeline.availableSlots || [];
+    if (!availableSlots.length) {
+      this.timelineTouch = null;
+      this.timelineDraggingEdge = '';
+      this.setData({ timelineDragging: false });
+      return;
+    }
+    const touchX = this.getTimelineTouchX(event);
+    const width = Number(this.data.timelineTrackWidth || 0);
+    const minHandleX = -TIMELINE_HANDLE_WIDTH_PX / 2;
+    const maxHandleX = Math.max(minHandleX, width - TIMELINE_HANDLE_WIDTH_PX / 2);
+    let handleX = touchState.lastHandleX;
+    if (touchX !== null && width) {
+      handleX = Math.max(minHandleX, Math.min(maxHandleX, touchState.startHandleX + touchX - touchState.startTouchX));
+    }
+    const range = this.timelineRangeFromX(touchState.edge, handleX, true);
+    this.timelineTouch = null;
+    this.timelineDraggingEdge = '';
+    if (!range) {
+      this.setData({ timelineDragging: false });
+      return;
+    }
+    this.updateTimelineSelectionRange(range.startAt, range.endAt, false);
+    const position = touchState.edge === 'end' ? range.endAt : range.startAt;
     const slot = availableSlots.reduce((closest, item) => {
-      const target = edge === 'end' ? Number(item.endAt) : Number(item.startAt);
+      const target = touchState.edge === 'end' ? Number(item.endAt) : Number(item.startAt);
       if (!closest || Math.abs(target - position) < Math.abs(Number(closest.target) - position)) return { ...item, target };
       return closest;
     }, null);
-    if (!slot) return;
+    if (!slot) {
+      this.setData({ timelineDragging: false });
+      return;
+    }
     delete slot.target;
     await this.applySelectedSlot(slot);
+  },
+
+  handleTimelineTouchCancel() {
+    if (!this.timelineTouch) return;
+    this.timelineTouch = null;
+    this.timelineDraggingEdge = '';
+    this.setData({ timelineDragging: false });
+    this.updateTimelineSelection(this.data.selectedSlot.id ? this.data.selectedSlot : this.data.timeline.availableSlots?.[0]);
   },
 
   async togglePoints(event) {

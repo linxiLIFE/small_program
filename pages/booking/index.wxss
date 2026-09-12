@@ -92,8 +92,7 @@
   font-weight: 700;
 }
 
-.step-title,
-.step-subtitle {
+.step-title {
   display: block;
 }
 
@@ -101,12 +100,6 @@
   color: #594846;
   font-size: 32rpx;
   font-weight: 700;
-}
-
-.step-subtitle {
-  margin-top: 6rpx;
-  color: #a08c86;
-  font-size: 21rpx;
 }
 
 .technician-scroll,
@@ -532,7 +525,6 @@
 .timeline-heading,
 .timeline-legend,
 .timeline-legend view,
-.timeline-instruction,
 .timeline-no-options {
   display: flex;
   align-items: center;
@@ -543,19 +535,11 @@
   gap: 18rpx;
 }
 
-.timeline-title,
 .timeline-date {
   display: block;
 }
 
-.timeline-title {
-  color: #594846;
-  font-size: 28rpx;
-  font-weight: 700;
-}
-
 .timeline-date {
-  margin-top: 6rpx;
   color: #aa9189;
   font-size: 20rpx;
 }
@@ -654,7 +638,6 @@
   border-radius: 34rpx;
   background: rgba(255, 250, 248, .26);
   box-shadow: 0 0 0 5rpx rgba(185, 104, 117, .1), 0 7rpx 16rpx rgba(172, 95, 106, .18);
-  animation: timeline-pulse 2.8s ease-in-out infinite;
 }
 
 .timeline-selection.preview {
@@ -664,9 +647,13 @@
 }
 
 .timeline-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
   z-index: 4;
   width: 56rpx;
   height: 112rpx;
+  box-sizing: border-box;
 }
 
 .timeline-handle-cap {
@@ -716,7 +703,6 @@
 .legend-dot.occupied { background: #ca9099; }
 .legend-dot.blocked { background: repeating-linear-gradient(135deg, #ead9d1 0, #ead9d1 4rpx, #d6bdb5 4rpx, #d6bdb5 8rpx); }
 
-.timeline-instruction,
 .timeline-no-options {
   justify-content: center;
   min-height: 56rpx;
@@ -728,10 +714,7 @@
 }
 
 .timeline-no-options {
+  padding: 24rpx 20rpx;
   color: #ab928b;
-}
-
-@keyframes timeline-pulse {
-  0%, 100% { box-shadow: 0 0 0 5rpx rgba(185, 104, 117, .1), 0 7rpx 16rpx rgba(172, 95, 106, .18); }
-  50% { box-shadow: 0 0 0 9rpx rgba(185, 104, 117, .04), 0 9rpx 20rpx rgba(172, 95, 106, .13); }
+  text-align: center;
 }

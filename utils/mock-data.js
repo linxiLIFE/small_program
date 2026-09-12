@@ -123,7 +123,7 @@ function getSlots(dateString) {
   const today = new Date();
   const slots = [];
   for (let hour = 10; hour < 20; hour += 1) {
-    for (const minute of [0, 30]) {
+    for (const minute of [0, 15, 30, 45]) {
       if (dateString === toDateString(today) && hour * 60 + minute < today.getHours() * 60 + today.getMinutes() + 60) continue;
       slots.push({
         id: `${dateString}-${hour}-${minute}`,

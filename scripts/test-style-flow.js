@@ -40,9 +40,18 @@ function page(file, api, state = {}) {
   assert.equal(styleState.catalogSelection.workId, 'work-001');
   const selected = {};
   const { instance: detail, calls } = page('pages/work-detail/index.js', {}, selected);
-  detail.data = { service: { id: 'svc-nail-french' }, work: { id: 'work-001' }, technician: { id: 'tech-lin' } };
+  detail.data = {
+    service: { id: 'svc-nail-french', categoryId: 'nail' },
+    work: { id: 'work-001' },
+    technician: { id: 'tech-lin' },
+    technicians: [{ id: 'tech-lin', name: '林老师' }, { id: 'tech-zhou', name: '周老师' }],
+    selectedTechnicianId: 'tech-lin'
+  };
+  detail.selectTechnician({ currentTarget: { dataset: { id: 'tech-zhou' } } });
+  assert.equal(detail.data.selectedTechnicianId, 'tech-zhou');
   detail.startBooking();
   assert.equal(calls[0].url, '/pages/booking/index'); assert.equal(selected.pendingBooking.workId, 'work-001');
+  assert.equal(selected.pendingBooking.technicianId, 'tech-zhou');
   const { instance: booking } = page('pages/booking/index.js', {}, selected);
   let loaded = false; booking.loadBooking = () => { loaded = true; }; booking.onShow();
   assert(loaded); assert.equal(booking.workId, 'work-001'); assert.equal(booking.serviceId, 'svc-nail-french'); assert(!selected.pendingBooking);
@@ -50,17 +59,17 @@ function page(file, api, state = {}) {
   const bookingDate = mock.getDates()[1].value;
   const bookingApi = {
     getBookingContext: async () => ({
-      settings: { booking: { openDays: 14, slotStepMinutes: 30 }, points: { maxPercent: 10 } },
+      settings: { booking: { openDays: 14, slotStepMinutes: 15 }, points: { maxPercent: 10 } },
       service: mock.services[0],
       technicians: [mock.technicians[0]],
       profile: mock.profile,
       work: mock.works[0]
     }),
     getAvailableSlots: async () => ({
-      stepMinutes: 30,
+      stepMinutes: 15,
       slots: [
         { id: 'booking-10', startAt: Date.parse(`${bookingDate}T10:00:00+08:00`), available: true },
-        { id: 'booking-1030', startAt: Date.parse(`${bookingDate}T10:30:00+08:00`), available: true },
+        { id: 'booking-1015', startAt: Date.parse(`${bookingDate}T10:15:00+08:00`), available: true },
         { id: 'booking-12', startAt: Date.parse(`${bookingDate}T12:00:00+08:00`), available: true }
       ]
     }),
@@ -73,13 +82,35 @@ function page(file, api, state = {}) {
   assert.deepStrictEqual(groupedBooking.data.timePeriods.map((period) => period.label), ['上午', '下午']);
   assert.equal(groupedBooking.data.selectedSlotId, '');
   assert.equal(groupedBooking.data.expandedPeriodId, '');
+  groupedBooking.data.timelineTrackWidth = 360;
+  groupedBooking.updateTimelineSelection(groupedBooking.data.timeline.availableSlots[0]);
+  const firstRange = groupedBooking.timelineRangeFromX('start', -14, true);
+  const lastRange = groupedBooking.timelineRangeFromX('end', groupedBooking.data.timelineTrackWidth - 14, true);
+  assert.equal(firstRange.startAt, groupedBooking.data.timeline.startAt);
+  assert.equal(lastRange.endAt, groupedBooking.data.timeline.endAt);
   await groupedBooking.selectPeriod({ currentTarget: { dataset: { id: groupedBooking.data.timePeriods[1].id } } });
   assert.equal(groupedBooking.data.expandedPeriodId, groupedBooking.data.timePeriods[1].id);
   assert.equal(groupedBooking.data.selectedSlotId, '');
   await groupedBooking.selectSlot({ currentTarget: { dataset: { id: 'booking-12' } } });
   assert.equal(groupedBooking.data.selectedSlotId, 'booking-12');
   assert.equal(groupedBooking.data.canSubmit, true);
+  await groupedBooking.selectSlot({ currentTarget: { dataset: { id: 'booking-10' } } });
+  const endBeforeDrag = groupedBooking.data.timelineEndX;
+  groupedBooking.handleTimelineTouchStart({ currentTarget: { dataset: { edge: 'start' } }, touches: [{ clientX: 100 }] });
+  groupedBooking.handleTimelineTouchMove({ touches: [{ clientX: 130 }] });
+  assert(groupedBooking.data.timelineDragging);
+  assert(groupedBooking.data.timelineEndX > endBeforeDrag);
+  await groupedBooking.handleTimelineTouchEnd({ changedTouches: [{ clientX: 130 }] });
+  assert(!groupedBooking.data.timelineDragging);
   const { instance: empty } = page('pages/booking/index.js', {}); empty.onShow(); assert.equal(empty.data.loading, false); assert(!empty.data.service.id);
+  const bookingWxml = fs.readFileSync(path.join(__dirname, '..', 'pages/booking/index.wxml'), 'utf8');
+  assert.match(bookingWxml, /timeline\.segments\.length && timelineHasOptions/);
+  assert.match(bookingWxml, /当天没有可预约时段/);
+  assert(!bookingWxml.includes('step-subtitle'));
+  assert(!bookingWxml.includes('timeline-instruction'));
+  const detailWxml = fs.readFileSync(path.join(__dirname, '..', 'pages/work-detail/index.wxml'), 'utf8');
+  assert.match(detailWxml, /wx:for="\{\{technicians\}\}"/);
+  assert.match(detailWxml, /bindtap="selectTechnician"/);
   const app = require('../app.json');
   app.tabBar.list.forEach(tab => ['iconPath', 'selectedIconPath'].forEach(key => assert(fs.existsSync(path.join(__dirname, '..', tab[key])))));
   console.log('style flow passed: category/project navigation, style selection, tab handoff, booking empty state, icons');
