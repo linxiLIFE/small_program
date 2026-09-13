@@ -102,12 +102,28 @@ async function queryPayment(orderId) {
     throw error;
   });
   assert(payment, 'PAYMENT_NOT_FOUND', '支付记录不存在', 404);
+  const paymentDeadline = Number(order.paymentDeadline || 0);
+  if (order.status === ORDER_STATUS.PENDING_PAYMENT
+    && paymentDeadline > 0
+    && Date.now() >= paymentDeadline
+    && payment.status === PAYMENT_STATUS.NOT_STARTED) {
+    const closed = await markPaymentClosed(orderId);
+    return { configured: wechat.isConfigured(), status: PAYMENT_STATUS.CLOSED, order: closed };
+  }
   if (!wechat.isConfigured()) return { configured: false, status: payment.status, order: publicOrder(order), message: '微信支付资质尚未配置' };
   const result = await wechat.queryOrder(payment.merchantOrderNo);
   if (result.trade_state === 'SUCCESS') {
     const marked = await markPaymentSuccess(orderId, { amountFen: result.amount && result.amount.total, transactionId: result.transaction_id, paidAt: result.success_time ? Date.parse(result.success_time) : Date.now() });
     if (marked.shouldRefund) await requestRefund(orderId, '迟到支付自动退款');
     return { configured: true, status: PAYMENT_STATUS.SUCCESS, order: marked.order };
+  }
+  if (result.trade_state === 'NOTPAY'
+    && order.status === ORDER_STATUS.PENDING_PAYMENT
+    && paymentDeadline > 0
+    && Date.now() >= paymentDeadline) {
+    await wechat.closeOrder(payment.merchantOrderNo);
+    const closed = await markPaymentClosed(orderId);
+    return { configured: true, status: PAYMENT_STATUS.CLOSED, order: closed };
   }
   if (result.trade_state === 'CLOSED' || result.trade_state === 'REVOKED') {
     const closed = await markPaymentClosed(orderId);

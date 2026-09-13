@@ -1,6 +1,27 @@
 const api = require('../../utils/api');
 const { ORDER_STATUS_LABELS } = require('../../utils/constants');
-const { formatMoney, formatDateTime, formatDuration } = require('../../utils/format');
+const { formatMoney, formatDateTimeRange, formatCountdown, formatDuration } = require('../../utils/format');
+
+const PAYMENT_HOLD_MS = 5 * 60 * 1000;
+
+function getPaymentDeadline(order) {
+  if (!order || order.status !== 'PENDING_PAYMENT') return 0;
+  const deadline = Number(order.deadline || order.paymentDeadline || 0);
+  if (Number.isFinite(deadline) && deadline > 0) return deadline;
+  const createdAt = Number(order.createdAt || 0);
+  return createdAt > 0 ? createdAt + PAYMENT_HOLD_MS : 0;
+}
+
+function getCountdownFields(order, now = Date.now()) {
+  const paymentDeadline = getPaymentDeadline(order);
+  if (!paymentDeadline) return { paymentDeadline: 0, countdownText: '', countdownUrgent: false };
+  const remaining = paymentDeadline - now;
+  return {
+    paymentDeadline,
+    countdownText: formatCountdown(remaining),
+    countdownUrgent: remaining <= 60 * 1000
+  };
+}
 
 Page({
   data: {
@@ -9,9 +30,8 @@ Page({
       { id: 'PENDING_PAYMENT', label: '待付款' },
       { id: 'RESERVED', label: '待到店' },
       { id: 'ACTIVE_SERVICE', label: '进行中' },
-      { id: 'ARRIVED', label: '已到店' },
-      { id: 'IN_SERVICE', label: '服务中' },
-      { id: 'COMPLETED', label: '已完成' }
+      { id: 'COMPLETED', label: '已完成' },
+      { id: 'CANCELLED', label: '已取消' }
     ],
     activeStatus: '',
     orders: [],
@@ -28,28 +48,53 @@ Page({
     if (this.hasLoaded) this.loadOrders(this.data.activeStatus);
   },
 
+  onHide() {
+    this.stopCountdown();
+  },
+
+  onUnload() {
+    this.destroyed = true;
+    this.stopCountdown();
+  },
+
   async loadOrders(status) {
     const hasData = this.hasLoaded || this.data.orders.length > 0;
     this.setData({ loading: !hasData });
     const requestId = (this.requestId || 0) + 1;
     this.requestId = requestId;
     try {
-      const result = status === 'ACTIVE_SERVICE'
-        ? await Promise.all([api.listOrders('ARRIVED'), api.listOrders('IN_SERVICE')]).then(([arrived, inService]) => ({
-          orders: [...(arrived.orders || []), ...(inService.orders || [])].sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
+      const statusGroups = {
+        ACTIVE_SERVICE: ['ARRIVED', 'IN_SERVICE'],
+        CANCELLED: ['CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW']
+      };
+      const result = statusGroups[status]
+        ? await Promise.all(statusGroups[status].map((value) => api.listOrders(value))).then((responses) => ({
+          orders: responses.reduce((list, response) => list.concat(response.orders || []), [])
+            .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
         }))
         : await api.listOrders(status);
       if (requestId !== this.requestId) return;
       const orders = (result.orders || []).map((item) => ({
         ...item,
+        ...getCountdownFields(item),
         statusLabel: item.statusLabel || ORDER_STATUS_LABELS[item.status] || '处理中',
-        timeLabel: item.startAtLabel || formatDateTime(item.startAt),
+        styleTitle: item.work && item.work.title !== item.serviceName ? item.work.title : '',
+        timeLabel: item.startAt ? formatDateTimeRange(item.startAt, item.endAt, item.durationMinutes) : item.startAtLabel || '待确定',
         totalText: formatMoney(item.totalFen),
         paidText: formatMoney(item.paidFen),
-        durationText: formatDuration(item.durationMinutes)
+        durationText: formatDuration(item.durationMinutes),
+        technicianLabel: item.technicianName || '待安排',
+        amountLabel: item.status === 'PENDING_PAYMENT'
+          ? '待支付'
+          : item.refundStatus === 'SUCCESS'
+            ? '已退款'
+            : item.refundStatus === 'PROCESSING'
+              ? '退款中'
+              : '实付'
       }));
       this.hasLoaded = true;
       this.setData({ orders, loading: false });
+      this.startCountdown();
     } catch (error) {
       if (requestId !== this.requestId) return;
       this.hasLoaded = true;
@@ -66,6 +111,53 @@ Page({
 
   openOrder(event) {
     wx.navigateTo({ url: `/pages/order-detail/index?orderId=${event.currentTarget.dataset.id}` });
+  },
+
+  startCountdown() {
+    this.stopCountdown();
+    if (this.destroyed || !this.data.orders.some((item) => item.status === 'PENDING_PAYMENT' && item.paymentDeadline)) return;
+    this.refreshCountdowns();
+    this.countdownTimer = setInterval(() => this.refreshCountdowns(), 1000);
+  },
+
+  stopCountdown() {
+    if (!this.countdownTimer) return;
+    clearInterval(this.countdownTimer);
+    this.countdownTimer = null;
+  },
+
+  refreshCountdowns() {
+    if (this.destroyed) return;
+    const now = Date.now();
+    const expiredIds = [];
+    const orders = this.data.orders.map((item) => {
+      if (item.status !== 'PENDING_PAYMENT' || !item.paymentDeadline) return item;
+      const remaining = Number(item.paymentDeadline) - now;
+      if (remaining <= 0) expiredIds.push(item.id);
+      return {
+        ...item,
+        countdownText: formatCountdown(remaining),
+        countdownUrgent: remaining <= 60 * 1000
+      };
+    });
+    this.setData({ orders });
+    if (expiredIds.length) this.reconcileExpiredOrders(expiredIds);
+  },
+
+  async reconcileExpiredOrders(orderIds) {
+    if (this.reconcilingExpired || Date.now() < (this.nextExpireCheckAt || 0)) return;
+    this.reconcilingExpired = true;
+    try {
+      await Promise.all(orderIds.map((orderId) => api.queryPayment(orderId).catch((error) => {
+        console.warn('订单超时状态刷新失败', { orderId, message: error.message });
+      })));
+      if (this.destroyed) return;
+      api.clearCache('listOrders');
+      await this.loadOrders(this.data.activeStatus);
+    } finally {
+      this.nextExpireCheckAt = Date.now() + 5000;
+      this.reconcilingExpired = false;
+    }
   },
 
   goBooking() {

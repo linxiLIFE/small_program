@@ -2,6 +2,7 @@ const assert = require('assert');
 const { calculatePointsDiscount, earnPoints, rebalancePoints, awardPoints } = require('../cloudfunctions/api/lib/money');
 const { overlaps, dateToTimestamp, isWithinDateWindow, toDateString, addMinutes } = require('../cloudfunctions/api/lib/time');
 const { buildTimePeriods } = require('../utils/booking-time');
+const { formatCountdown } = require('../utils/format');
 const { buildBookingTimeline } = require('../cloudfunctions/api/lib/booking-timeline');
 
 const rule = { unit: 20, discountFen: 100, maxPercent: 10 };
@@ -18,6 +19,9 @@ assert.deepStrictEqual(rebalancePoints({ availablePoints: 10, debtPoints: 0, ear
 assert.deepStrictEqual(awardPoints({ availablePoints: 0, debtPoints: 20, earnedPoints: 30 }), { available: 10, debt: 0 });
 assert.strictEqual(overlaps(0, 10, 10, 20), false);
 assert.strictEqual(overlaps(0, 10, 9, 20), true);
+assert.strictEqual(formatCountdown(5 * 60 * 1000 - 1000), '04:59');
+assert.strictEqual(formatCountdown(0), '00:00');
+assert.strictEqual(formatCountdown(-1000), '00:00');
 
 const periodStart = Date.parse('2026-09-12T10:00:00+08:00');
 const groupedPeriods = buildTimePeriods([

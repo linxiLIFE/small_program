@@ -9,6 +9,7 @@
 }
 
 .empty-icon {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -19,6 +20,37 @@
   color: #c18a8b;
   font-family: inherit;
   font-size: 44rpx;
+}
+
+.empty-icon-shape {
+  position: relative;
+  width: 32rpx;
+  height: 38rpx;
+  border: 4rpx solid #c18a8b;
+  border-radius: 8rpx 8rpx 12rpx 12rpx;
+}
+
+.empty-icon-shape::before {
+  position: absolute;
+  top: 10rpx;
+  left: 7rpx;
+  width: 10rpx;
+  height: 4rpx;
+  border-radius: 4rpx;
+  background: #c18a8b;
+  content: '';
+}
+
+.empty-icon-shape::after {
+  position: absolute;
+  bottom: -10rpx;
+  left: 8rpx;
+  width: 8rpx;
+  height: 8rpx;
+  border: 4rpx solid #c18a8b;
+  border-radius: 50%;
+  background: #f7e6e3;
+  content: '';
 }
 
 .empty-title {

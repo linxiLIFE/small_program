@@ -1,6 +1,16 @@
 const api = require('../../utils/api');
 const { ORDER_STATUS_LABELS } = require('../../utils/constants');
-const { formatMoney, formatDateTime, formatDuration } = require('../../utils/format');
+const { formatMoney, formatDateTimeRange, formatCountdown, formatDuration } = require('../../utils/format');
+
+const PAYMENT_HOLD_MS = 5 * 60 * 1000;
+
+function getPaymentDeadline(order) {
+  if (!order || order.status !== 'PENDING_PAYMENT') return 0;
+  const deadline = Number(order.deadline || order.paymentDeadline || 0);
+  if (Number.isFinite(deadline) && deadline > 0) return deadline;
+  const createdAt = Number(order.createdAt || 0);
+  return createdAt > 0 ? createdAt + PAYMENT_HOLD_MS : 0;
+}
 
 Page({
   data: { loading: true, order: {}, actions: [], canCancel: false },
@@ -14,34 +24,63 @@ Page({
     if (this.hasLoaded) this.loadOrder();
   },
 
+  onHide() {
+    this.stopCountdown();
+  },
+
+  onUnload() {
+    this.destroyed = true;
+    this.stopCountdown();
+  },
+
   async loadOrder() {
     const order = await api.getOrder(this.orderId);
     if (!order) {
       this.setData({ loading: false, order: {} });
       return;
     }
+    const refundStatus = order.refundStatus || '';
+    const visibleRefundStatuses = ['PENDING_CONFIG', 'PROCESSING', 'SUCCESS', 'CLOSED', 'ABNORMAL'];
+    const displayTitle = order.work && order.work.title ? order.work.title : order.serviceName || '预约服务';
     const canCancel = ['PENDING_PAYMENT', 'RESERVED'].includes(order.status);
+    const paymentDeadline = getPaymentDeadline(order);
+    const remaining = paymentDeadline ? paymentDeadline - Date.now() : 0;
     this.hasLoaded = true;
     this.setData({
       loading: false,
       order: {
         ...order,
+        displayTitle,
+        showServiceSubtitle: !!order.serviceName && displayTitle !== order.serviceName,
         statusLabel: order.statusLabel || ORDER_STATUS_LABELS[order.status] || '处理中',
-        timeLabel: order.startAtLabel || formatDateTime(order.startAt),
+        timeLabel: order.startAt ? formatDateTimeRange(order.startAt, order.endAt, order.durationMinutes) : order.startAtLabel || '待确定',
         totalText: formatMoney(order.totalFen),
         discountText: formatMoney(order.discountFen || 0),
         paidText: formatMoney(order.paidFen),
-        refundStatusLabel: order.refundStatus === 'SUCCESS' ? '已到账' : order.refundStatus === 'PROCESSING' ? '退款处理中' : order.refundStatus === 'CLOSED' ? '退款已关闭' : '退款异常',
-        durationText: formatDuration(order.durationMinutes)
+        paidLabel: order.status === 'PENDING_PAYMENT' ? '待支付金额' : order.refundStatus === 'SUCCESS' ? '退款金额' : '实付金额',
+        refundStatus: visibleRefundStatuses.includes(refundStatus) ? refundStatus : '',
+        refundStatusLabel: {
+          PENDING_CONFIG: '退款待处理',
+          PROCESSING: '退款处理中',
+          SUCCESS: '已到账',
+          CLOSED: '退款已关闭',
+          ABNORMAL: '退款异常'
+        }[refundStatus] || '',
+        durationText: formatDuration(order.durationMinutes),
+        paymentDeadline,
+        countdownText: paymentDeadline ? formatCountdown(remaining) : '',
+        countdownUrgent: paymentDeadline && remaining <= 60 * 1000
       },
       canCancel,
       actions: this.getActions(order.status)
     });
+    this.startCountdown();
   },
 
   getActions(status) {
     if (status === 'PENDING_PAYMENT') return [{ id: 'pay', text: '继续支付', type: 'primary' }, { id: 'cancel', text: '取消订单', type: 'ghost' }];
     if (status === 'RESERVED') return [{ id: 'cancel', text: '取消并退款', type: 'danger' }];
+    if (['CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW'].includes(status)) return [{ id: 'delete', text: '删除订单', type: 'danger' }];
     return [];
   },
 
@@ -49,9 +88,15 @@ Page({
     const action = event.currentTarget.dataset.action;
     if (action === 'pay') return this.payOrder();
     if (action === 'cancel') return this.confirmCancel();
+    if (action === 'delete') return this.confirmDelete();
   },
 
   async payOrder() {
+    if (this.data.order.paymentDeadline && Number(this.data.order.paymentDeadline) <= Date.now()) {
+      await this.reconcileExpiredOrder();
+      wx.showToast({ title: '支付时间已结束，订单已自动取消', icon: 'none' });
+      return;
+    }
     wx.showLoading({ title: '准备支付' });
     try {
       const payment = await api.preparePayment(this.data.order.id);
@@ -94,11 +139,68 @@ Page({
     });
   },
 
-  copyOrderId() {
-    wx.setClipboardData({ data: this.data.order.id || '' });
+  confirmDelete() {
+    wx.showModal({
+      title: '删除这条订单？',
+      content: '删除后只会从订单记录中移除，不影响退款记录和服务凭证。',
+      confirmText: '删除',
+      confirmColor: '#c2675f',
+      success: async (result) => {
+        if (!result.confirm) return;
+        wx.showLoading({ title: '删除中' });
+        try {
+          await api.deleteOrder(this.data.order.id);
+          wx.hideLoading();
+          wx.showToast({ title: '已删除', icon: 'success' });
+          setTimeout(() => wx.navigateBack({ delta: 1 }), 450);
+        } catch (error) {
+          wx.hideLoading();
+          wx.showModal({ title: '删除失败', content: error.message || '请稍后重试', showCancel: false });
+        }
+      }
+    });
   },
 
   showRefundStatus() {
     wx.showModal({ title: '退款进度', content: '退款申请、处理中和到账是不同状态。请以订单中的退款状态及微信账单为准。', showCancel: false });
+  },
+
+  startCountdown() {
+    this.stopCountdown();
+    if (this.destroyed || this.data.order.status !== 'PENDING_PAYMENT' || !this.data.order.paymentDeadline) return;
+    this.refreshCountdown();
+    this.countdownTimer = setInterval(() => this.refreshCountdown(), 1000);
+  },
+
+  stopCountdown() {
+    if (!this.countdownTimer) return;
+    clearInterval(this.countdownTimer);
+    this.countdownTimer = null;
+  },
+
+  refreshCountdown() {
+    if (this.destroyed || this.data.order.status !== 'PENDING_PAYMENT' || !this.data.order.paymentDeadline) return;
+    const remaining = Number(this.data.order.paymentDeadline) - Date.now();
+    this.setData({
+      'order.countdownText': formatCountdown(remaining),
+      'order.countdownUrgent': remaining <= 60 * 1000
+    });
+    if (remaining <= 0) this.reconcileExpiredOrder();
+  },
+
+  async reconcileExpiredOrder() {
+    if (this.reconcilingExpired || Date.now() < (this.nextExpireCheckAt || 0)) return;
+    this.reconcilingExpired = true;
+    try {
+      await api.queryPayment(this.data.order.id);
+      if (this.destroyed) return;
+      api.clearCache('getOrder');
+      await this.loadOrder();
+    } catch (error) {
+      console.warn('订单超时状态刷新失败', { orderId: this.data.order.id, message: error.message });
+    } finally {
+      this.nextExpireCheckAt = Date.now() + 5000;
+      this.reconcilingExpired = false;
+    }
   }
 });

@@ -1,6 +1,3 @@
 {
-  "navigationBarTitleText": "订单详情",
-  "usingComponents": {
-    "status-badge": "/components/status-badge/status-badge"
-  }
+  "navigationBarTitleText": "订单详情"
 }

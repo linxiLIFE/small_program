@@ -4,21 +4,25 @@
 }
 
 .detail-status-skeleton {
-  height: 190rpx;
+  height: 246rpx;
 }
 
 .detail-order-skeleton {
-  height: 620rpx;
+  height: 720rpx;
   margin-top: 20rpx;
 }
 
 .order-status-card,
 .detail-card,
+.price-card,
 .timeline-card {
   padding: 28rpx 24rpx;
 }
 
-.status-top,
+.status-top {
+  display: block;
+}
+
 .detail-card-heading,
 .detail-row,
 .refund-row {
@@ -27,24 +31,111 @@
   justify-content: space-between;
 }
 
-.status-title {
-  display: block;
-  margin-top: 10rpx;
-  color: #594846;
-  font-family: inherit;
-  font-size: 42rpx;
-  font-weight: 700;
+.status-heading {
+  min-width: 0;
 }
 
-.status-hint {
+.status-label,
+.focus-label,
+.refund-title {
   display: block;
-  margin-top: 22rpx;
-  color: #9a8581;
-  font-size: 23rpx;
-  line-height: 1.55;
+  color: #a08c86;
+  font-size: 22rpx;
+}
+
+.status-title {
+  display: block;
+  margin-top: 8rpx;
+  color: #594846;
+  font-family: inherit;
+  font-size: 44rpx;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.status-title.status-PENDING_PAYMENT { color: #aa7832; }
+.status-title.status-RESERVED { color: #af606b; }
+.status-title.status-ARRIVED,
+.status-title.status-IN_SERVICE { color: #865f8d; }
+.status-title.status-COMPLETED { color: #5d8a67; }
+.status-title.status-CANCELLED,
+.status-title.status-CANCELLED_BY_USER,
+.status-title.status-CANCELLED_NO_SHOW { color: #988684; }
+
+.appointment-focus {
+  margin-top: 28rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 18rpx;
+  background: #fff5f2;
+}
+
+.focus-time {
+  display: block;
+  margin-top: 8rpx;
+  color: #765c58;
+  font-size: 34rpx;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.payment-countdown {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-top: 16rpx;
+  padding-top: 14rpx;
+  border-top: 1rpx dashed #efd9d3;
+  color: #a97868;
+}
+
+.countdown-indicator {
+  flex: 0 0 10rpx;
+  width: 10rpx;
+  height: 10rpx;
+  margin-right: 8rpx;
+  border-radius: 50%;
+  background: #d49a72;
+  box-shadow: 0 0 0 5rpx rgba(212, 154, 114, 0.12);
+}
+
+.countdown-caption,
+.countdown-tip {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.countdown-caption {
+  font-size: 20rpx;
+}
+
+.countdown-value {
+  flex: 0 0 auto;
+  margin-left: 10rpx;
+  color: #b86670;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 26rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  line-height: 1;
+}
+
+.countdown-tip {
+  margin-left: auto;
+  color: #b19d98;
+  font-size: 19rpx;
+}
+
+.payment-countdown.urgent .countdown-indicator {
+  background: #c86e63;
+  box-shadow: 0 0 0 5rpx rgba(200, 110, 99, 0.14);
+}
+
+.payment-countdown.urgent .countdown-value {
+  color: #c35f61;
 }
 
 .detail-card,
+.price-card,
 .timeline-card {
   margin-top: 20rpx;
 }
@@ -53,9 +144,97 @@
   font-size: 32rpx;
 }
 
-.order-number {
+.service-summary {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  margin-top: 26rpx;
+  padding-bottom: 24rpx;
+  border-bottom: 1rpx solid #f2e9e5;
+}
+
+.service-summary-image {
+  flex: 0 0 124rpx;
+  width: 124rpx;
+  height: 124rpx;
+  overflow: hidden;
+  border-radius: 18rpx;
+  background: #f0e1dd;
+}
+
+.service-summary-image image,
+.service-summary-fallback {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.service-summary-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aa777b;
+  font-size: 24rpx;
+}
+
+.service-summary-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.service-summary-title,
+.service-summary-service,
+.service-summary-category,
+.refund-title,
+.refund-status {
+  display: block;
+}
+
+.service-summary-title {
+  overflow: hidden;
+  color: #594846;
+  font-size: 29rpx;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-summary-service {
+  margin-top: 8rpx;
+  overflow: hidden;
+  color: #806d68;
+  font-size: 23rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-summary-category {
+  margin-top: 8rpx;
   color: #bb6f79;
-  font-size: 22rpx;
+  font-size: 21rpx;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+  margin-top: 22rpx;
+}
+
+.detail-grid-item {
+  min-width: 0;
+}
+
+.detail-grid-item .row-value {
+  display: block;
+  max-width: 100%;
+  margin-top: 8rpx;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-row {
@@ -98,8 +277,15 @@
   font-size: 23rpx;
 }
 
-.refund-row text:last-child {
+.refund-status {
+  margin-top: 6rpx;
+  color: #a87949;
+  font-size: 21rpx;
+}
+
+.refund-action {
   color: #bb6f79;
+  font-size: 22rpx;
 }
 
 .timeline-item {
@@ -149,12 +335,16 @@
 }
 
 .action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 1;
   height: 82rpx;
   margin: 0;
+  padding: 0;
   border-radius: 17rpx;
   font-size: 27rpx;
-  line-height: 82rpx;
+  line-height: 1;
 }
 
 .action-button.primary {

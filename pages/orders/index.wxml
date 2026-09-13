@@ -1,16 +1,53 @@
 <view class="page-shell orders-page">
-  <view class="orders-heading"><text class="page-title">预约记录</text></view>
+  <view class="orders-heading">
+    <text class="page-title">预约记录</text>
+    <text wx:if="{{!loading}}" class="orders-count">{{orders.length}}笔</text>
+  </view>
   <scroll-view class="status-tabs" scroll-x="true" show-scrollbar="false">
-    <view class="status-tabs-inner"><view wx:for="{{tabs}}" wx:key="id" class="status-tab {{activeStatus === item.id ? 'active' : ''}}" data-status="{{item.id}}" bindtap="selectTab">{{item.label}}</view></view>
+    <view class="status-tabs-inner">
+      <view wx:for="{{tabs}}" wx:key="id" class="status-tab {{activeStatus === item.id ? 'active' : ''}}" data-status="{{item.id}}" bindtap="selectTab">{{item.label}}</view>
+    </view>
   </scroll-view>
   <view wx:if="{{loading}}" class="order-loading"><view wx:for="{{skeletons}}" wx:key="*this" class="skeleton order-skeleton"></view></view>
   <view wx:elif="{{orders.length}}" class="order-list">
     <view wx:for="{{orders}}" wx:key="id" class="order-card card" data-id="{{item.id}}" bindtap="openOrder">
       <view class="order-visual"><image wx:if="{{item.work && item.work.imageUrl}}" src="{{item.work.imageUrl}}" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}"/><view wx:else class="order-visual-fallback">预约</view></view>
-      <view class="order-content"><view class="order-card-top"><view class="order-card-title"><text class="order-service">{{item.serviceName}}</text><text class="order-style" wx:if="{{item.work}}">{{item.work.title}}</text></view><status-badge status="{{item.status}}" label="{{item.statusLabel}}"></status-badge></view>
-      <view class="order-time"><text class="time-icon">◷</text><text class="order-date">{{item.timeLabel}}</text><text class="order-duration">服务 {{item.durationText}}</text></view>
-      <text class="order-tech">{{item.technicianName}} 服务</text>
-      <view class="order-card-bottom"><text class="order-id">订单 {{item.id}}</text><text class="order-paid">实付 {{item.paidText}}</text></view></view>
+      <view class="order-content">
+        <view class="order-card-top">
+          <view class="order-card-title">
+            <text class="order-service">{{item.serviceName}}</text>
+            <text class="order-style" wx:if="{{item.styleTitle}}">{{item.styleTitle}}</text>
+          </view>
+          <status-badge status="{{item.status}}" label="{{item.statusLabel}}"></status-badge>
+        </view>
+        <view class="order-appointment">
+          <text class="info-label">预约时间</text>
+          <text class="order-date">{{item.timeLabel}}</text>
+          <view wx:if="{{item.status === 'PENDING_PAYMENT' && item.countdownText}}" class="payment-countdown {{item.countdownUrgent ? 'urgent' : ''}}">
+            <view class="countdown-indicator"></view>
+            <text class="countdown-caption">剩余支付</text>
+            <text class="countdown-value">{{item.countdownText}}</text>
+            <text class="countdown-tip">超时自动取消</text>
+          </view>
+        </view>
+        <view class="order-meta-grid">
+          <view class="order-meta-item">
+            <text class="info-label">服务技师</text>
+            <text class="info-value">{{item.technicianLabel}}</text>
+          </view>
+          <view class="order-meta-item">
+            <text class="info-label">服务时长</text>
+            <text class="info-value">{{item.durationText}}</text>
+          </view>
+        </view>
+        <view class="order-card-bottom">
+          <view class="order-amount">
+            <text class="order-amount-label">{{item.amountLabel}}</text>
+            <text class="order-paid">{{item.paidText}}</text>
+          </view>
+          <button class="order-detail-button" data-id="{{item.id}}" catchtap="openOrder">查看详情</button>
+        </view>
+      </view>
     </view>
   </view>
   <empty-state wx:else title="还没有预约记录" button-text="选款" bindaction="goBooking"></empty-state>

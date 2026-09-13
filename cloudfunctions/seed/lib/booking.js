@@ -353,12 +353,14 @@ async function listOrders(status = '') {
   const { openid } = requireOpenId();
   const where = status ? { userId: openid, status } : { userId: openid };
   const orders = await find(COLLECTIONS.orders, where, { orderBy: { field: 'createdAt', direction: 'desc' }, limit: 50 });
-  return { orders: orders.map(publicOrder) };
+  return { orders: orders.filter((order) => !order.deletedAt).map(publicOrder) };
 }
 
 async function getOrder(orderIdValue) {
   const { openid } = requireOpenId();
-  return publicOrder(await getOwnedOrder(orderIdValue, openid));
+  const order = await getOwnedOrder(orderIdValue, openid);
+  assert(!order.deletedAt, 'ORDER_NOT_FOUND', '订单不存在', 404);
+  return publicOrder(order);
 }
 
 async function bindPhone(payload) {
@@ -453,6 +455,18 @@ async function cancelOrder(orderIdValue) {
     }
   }
   return { order: publicOrder(await getOptional(COLLECTIONS.orders, orderIdValue)), refundRequested: result.paid };
+}
+
+async function deleteOrder(orderIdValue) {
+  const { openid } = requireOpenId();
+  await db.runTransaction(async (transaction) => {
+    const order = await getOwnedOrder(orderIdValue, openid, transaction);
+    assert([ORDER_STATUS.CANCELLED, ORDER_STATUS.CANCELLED_BY_USER, ORDER_STATUS.CANCELLED_NO_SHOW].includes(order.status), 'ORDER_NOT_DELETABLE', '只有已取消订单可以删除');
+    if (order.deletedAt) return;
+    const now = Date.now();
+    await transaction.collection(COLLECTIONS.orders).doc(orderIdValue).set({ data: { ...order, deletedAt: now, deletedBy: 'CUSTOMER', updatedAt: now } });
+  });
+  return { deleted: true, orderId: orderIdValue };
 }
 
 async function markPaymentSuccess(orderIdValue, paymentPayload = {}) {
@@ -664,6 +678,7 @@ module.exports = {
   getProfile,
   listPoints,
   cancelOrder,
+  deleteOrder,
   markPaymentSuccess,
   markPaymentClosed,
   markNoShow,

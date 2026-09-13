@@ -1,11 +1,14 @@
 .badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 88rpx;
   height: 48rpx;
   padding: 0 16rpx;
   border-radius: 999rpx;
   font-size: 22rpx;
   line-height: 48rpx;
+  white-space: nowrap;
 }
 
 .badge-PENDING_PAYMENT { background: #fff4df; color: #aa7832; }

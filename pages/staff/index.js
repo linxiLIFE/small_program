@@ -1,6 +1,6 @@
 const api = require('../../utils/api');
 const { ORDER_STATUS_LABELS, ROLE_LABELS } = require('../../utils/constants');
-const { formatDateTime } = require('../../utils/format');
+const { formatDateTimeRange } = require('../../utils/format');
 
 Page({
   data: { loading: true, profile: {}, orders: [], skeletons: [1, 2], activeStatus: 'RESERVED', tabs: [{ id: 'RESERVED', label: '待到店' }, { id: 'ARRIVED', label: '已到店' }, { id: 'IN_SERVICE', label: '服务中' }] },
@@ -32,7 +32,7 @@ Page({
     try {
       const result = await api.staffListOrders(status);
       if (requestId !== this.requestId) return;
-      const orders = (result.orders || []).map((item) => ({ ...item, statusLabel: item.statusLabel || ORDER_STATUS_LABELS[item.status] || '处理中', timeLabel: item.startAtLabel || formatDateTime(item.startAt) }));
+      const orders = (result.orders || []).map((item) => ({ ...item, statusLabel: item.statusLabel || ORDER_STATUS_LABELS[item.status] || '处理中', timeLabel: item.startAt ? formatDateTimeRange(item.startAt, item.endAt, item.durationMinutes) : item.startAtLabel || '待确定' }));
       this.hasLoaded = true;
       this.setData({ orders, loading: false });
     } catch (error) {

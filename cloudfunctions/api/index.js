@@ -65,6 +65,7 @@ async function route(action, payload) {
     case 'listOrders': return booking.listOrders(payload && payload.status);
     case 'getOrder': return booking.getOrder(payload && payload.orderId);
     case 'cancelOrder': return booking.cancelOrder(payload && payload.orderId);
+    case 'deleteOrder': return booking.deleteOrder(payload && payload.orderId);
     case 'preparePayment': return payment.preparePayment(payload && payload.orderId);
     case 'queryPayment': return payment.queryPayment(payload && payload.orderId);
     case 'listPoints': return booking.listPoints();

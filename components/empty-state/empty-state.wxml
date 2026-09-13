@@ -1,5 +1,5 @@
 <view class="empty-state">
-  <view class="empty-icon">✦</view>
+  <view class="empty-icon"><view class="empty-icon-shape"></view></view>
   <text class="empty-title">{{title}}</text>
   <text wx:if="{{description}}" class="empty-description">{{description}}</text>
   <button wx:if="{{buttonText}}" class="empty-button" bindtap="handleAction">{{buttonText}}</button>

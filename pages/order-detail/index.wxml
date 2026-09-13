@@ -2,33 +2,71 @@
   <view wx:if="{{loading}}"><view class="skeleton detail-status-skeleton"></view><view class="skeleton detail-order-skeleton"></view></view>
   <block wx:else>
     <view class="order-status-card card">
-      <view class="status-top"><view><text class="status-title">{{order.statusLabel}}</text></view><status-badge status="{{order.status}}" label="{{order.statusLabel}}"></status-badge></view>
-
-
-
-
+      <view class="status-top">
+        <view class="status-heading">
+          <text class="status-label">预约状态</text>
+          <text class="status-title status-{{order.status}}">{{order.statusLabel}}</text>
+        </view>
+      </view>
+      <view class="appointment-focus">
+        <text class="focus-label">预约时间</text>
+        <text class="focus-time">{{order.timeLabel}}</text>
+        <view wx:if="{{order.status === 'PENDING_PAYMENT' && order.countdownText}}" class="payment-countdown {{order.countdownUrgent ? 'urgent' : ''}}">
+          <view class="countdown-indicator"></view>
+          <text class="countdown-caption">剩余支付</text>
+          <text class="countdown-value">{{order.countdownText}}</text>
+          <text class="countdown-tip">超时自动取消</text>
+        </view>
+      </view>
     </view>
 
     <view class="detail-card card">
-      <view class="detail-card-heading"><text class="section-title">预约信息</text><text class="order-number" bindtap="copyOrderId">复制订单号</text></view>
-      <view wx:if="{{order.work}}" class="detail-row"><text class="row-label">预约款式</text><text class="row-value">{{order.work.title}}</text></view>
-      <view class="detail-row"><text class="row-label">服务项目</text><text class="row-value">{{order.serviceName}}</text></view>
-      <view class="detail-row"><text class="row-label">服务技师</text><text class="row-value">{{order.technicianName}}</text></view>
-      <view class="detail-row"><text class="row-label">预约时间</text><text class="row-value">{{order.timeLabel}}</text></view>
-      <view class="detail-row"><text class="row-label">服务时长</text><text class="row-value">{{order.durationText}}</text></view>
-      <view class="divider"></view>
+      <view class="detail-card-heading"><text class="section-title">服务内容</text></view>
+      <view class="service-summary">
+        <view class="service-summary-image">
+          <image wx:if="{{order.work && order.work.imageUrl}}" src="{{order.work.imageUrl}}" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" />
+          <view wx:else class="service-summary-fallback">预约</view>
+        </view>
+        <view class="service-summary-copy">
+          <text class="service-summary-title">{{order.displayTitle}}</text>
+          <text wx:if="{{order.showServiceSubtitle}}" class="service-summary-service">{{order.serviceName}}</text>
+          <text wx:if="{{order.categoryName}}" class="service-summary-category">{{order.categoryName}}</text>
+        </view>
+      </view>
+      <view class="detail-grid">
+        <view class="detail-grid-item">
+          <text class="row-label">服务技师</text>
+          <text class="row-value">{{order.technicianName || '待安排'}}</text>
+        </view>
+        <view class="detail-grid-item">
+          <text class="row-label">服务时长</text>
+          <text class="row-value">{{order.durationText}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="price-card card">
+      <view class="detail-card-heading"><text class="section-title">费用明细</text></view>
       <view class="detail-row"><text class="row-label">项目金额</text><text class="row-value">{{order.totalText}}</text></view>
       <view class="detail-row"><text class="row-label">积分抵扣</text><text class="row-value discount">- {{order.discountText}}</text></view>
-      <view class="detail-row total-row"><text class="row-label">实付金额</text><text class="row-value total">{{order.paidText}}</text></view>
-      <view wx:if="{{order.refundStatus}}" class="refund-row" bindtap="showRefundStatus"><text>退款状态</text><text>{{order.refundStatusLabel}} ›</text></view>
+      <view class="divider"></view>
+      <view class="detail-row total-row"><text class="row-label">{{order.paidLabel}}</text><text class="row-value total">{{order.paidText}}</text></view>
+      <view wx:if="{{order.refundStatus}}" class="refund-row" bindtap="showRefundStatus">
+        <view class="refund-copy">
+          <text class="refund-title">退款状态</text>
+          <text class="refund-status">{{order.refundStatusLabel}}</text>
+        </view>
+        <text class="refund-action">查看进度</text>
+      </view>
     </view>
 
     <view class="timeline-card card">
-      <view class="timeline-item active"><view class="timeline-dot"></view><view><text>提交预约</text></view></view>
+      <view class="detail-card-heading"><text class="section-title">订单进度</text></view>
+      <view class="timeline-item active"><view class="timeline-dot"></view><view><text>提交预约</text><text class="timeline-meta">预约信息已提交</text></view></view>
       <view class="timeline-line"></view>
-      <view class="timeline-item {{order.status === 'PENDING_PAYMENT' ? '' : 'active'}}"><view class="timeline-dot"></view><view><text>支付确认</text></view></view>
+      <view class="timeline-item {{order.status === 'PENDING_PAYMENT' ? '' : 'active'}}"><view class="timeline-dot"></view><view><text>支付确认</text><text class="timeline-meta">{{order.status === 'PENDING_PAYMENT' ? '等待完成支付' : '支付已确认'}}</text></view></view>
       <view class="timeline-line"></view>
-      <view class="timeline-item {{order.status === 'COMPLETED' ? 'active' : ''}}"><view class="timeline-dot"></view><view><text>到店完成</text></view></view>
+      <view class="timeline-item {{order.status === 'COMPLETED' ? 'active' : ''}}"><view class="timeline-dot"></view><view><text>到店完成</text><text class="timeline-meta">{{order.status === 'COMPLETED' ? '本次服务已完成' : '服务完成后更新'}}</text></view></view>
     </view>
 
     <view wx:if="{{actions.length}}" class="action-bar safe-bottom">

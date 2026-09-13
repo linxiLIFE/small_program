@@ -275,12 +275,14 @@ async function createOrder(payload) {
     if (!service) throw Object.assign(new Error('款式所属小项目已下架'), { code: 'WORK_SERVICE_MISMATCH' });
     const tech = mock.technicians.find((item) => item.id === payload.technicianId) || mock.technicians[0];
     const quote = payload.quote || {};
+    const createdAt = Date.now();
     const order = {
       id: `demo-order-${Date.now()}`, status: quote.paidFen > 0 ? 'PENDING_PAYMENT' : 'RESERVED', statusLabel: quote.paidFen > 0 ? '待付款' : '待到店',
       work,
       serviceName: service.name, technicianName: tech.name, date: payload.date, startAt: payload.startAt,
       durationMinutes: service.durationMinutes, totalFen: service.priceFen, pointsUsed: quote.pointsToUse || 0,
-      discountFen: quote.discountFen || 0, paidFen: quote.paidFen || service.priceFen, refundStatus: '', demo: true
+      discountFen: quote.discountFen || 0, paidFen: quote.paidFen || service.priceFen, refundStatus: '',
+      createdAt, deadline: quote.paidFen > 0 ? createdAt + 5 * 60 * 1000 : 0, demo: true
     };
     mock.orders.unshift(order);
     return { order, paymentRequired: order.paidFen > 0, demo: true };
@@ -294,13 +296,17 @@ async function createOrder(payload) {
 }
 
 function listOrders(status = '') {
-  return cachedCall('listOrders', { status }, () => ({
-    orders: status ? mock.orders.filter((item) => item.status === status) : mock.orders
-  }));
+  return cachedCall('listOrders', { status }, () => {
+    const orders = mock.orders.filter((item) => !item.deletedAt).map(expireDemoPayment);
+    return { orders: status ? orders.filter((item) => item.status === status) : orders };
+  });
 }
 
 function getOrder(orderId) {
-  return cachedCall('getOrder', { orderId }, () => mock.orders.find((item) => item.id === orderId) || mock.orders[0]);
+  return cachedCall('getOrder', { orderId }, () => {
+    const order = mock.orders.find((item) => item.id === orderId);
+    return order && !order.deletedAt ? expireDemoPayment(order) : null;
+  });
 }
 
 async function cancelOrder(orderId) {
@@ -319,11 +325,35 @@ async function cancelOrder(orderId) {
   return result;
 }
 
+async function deleteOrder(orderId) {
+  const result = await call('deleteOrder', { orderId }, () => {
+    const order = mock.orders.find((item) => item.id === orderId);
+    if (!order || !['CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW'].includes(order.status)) {
+      throw Object.assign(new Error('只有已取消订单可以删除'), { code: 'ORDER_NOT_DELETABLE' });
+    }
+    order.deletedAt = Date.now();
+    return { deleted: true, orderId };
+  });
+  clearCache('listOrders');
+  clearCache('getOrder');
+  return result;
+}
+
 async function queryPayment(orderId) {
-  const result = await call('queryPayment', { orderId }, () => getOrder(orderId));
+  const result = await call('queryPayment', { orderId }, () => expireDemoPayment(mock.orders.find((item) => item.id === orderId) || mock.orders[0]));
   clearCache('getOrder');
   clearCache('listOrders');
   return result;
+}
+
+function expireDemoPayment(order) {
+  if (!order || order.status !== 'PENDING_PAYMENT') return order;
+  const deadline = Number(order.deadline || order.paymentDeadline || (Number(order.createdAt || 0) + 5 * 60 * 1000));
+  if (!deadline || Date.now() < deadline) return order;
+  order.status = 'CANCELLED';
+  order.statusLabel = '已取消';
+  order.paymentStatus = 'CLOSED';
+  return order;
 }
 
 function preparePayment(orderId) {
@@ -382,6 +412,7 @@ module.exports = {
   listOrders,
   getOrder,
   cancelOrder,
+  deleteOrder,
   queryPayment,
   preparePayment,
   listPoints,

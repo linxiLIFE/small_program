@@ -18,6 +18,35 @@ function formatDateTime(timestamp) {
   return `${date.getMonth() + 1}月${date.getDate()}日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function formatDateTimeRange(startAt, endAt, durationMinutes) {
+  if (!startAt) return '待确定';
+  const start = new Date(Number(startAt));
+  if (Number.isNaN(start.getTime())) return '待确定';
+  let endTimestamp = Number(endAt);
+  if (!Number.isFinite(endTimestamp) || endTimestamp <= start.getTime()) {
+    const duration = Number(durationMinutes || 0);
+    if (duration > 0) endTimestamp = start.getTime() + duration * 60 * 1000;
+  }
+  if (!Number.isFinite(endTimestamp) || endTimestamp <= start.getTime()) return formatDateTime(startAt);
+  const end = new Date(endTimestamp);
+  if (Number.isNaN(end.getTime())) return formatDateTime(startAt);
+  const startLabel = formatDateTime(startAt);
+  const endClock = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+  const sameDate = start.getFullYear() === end.getFullYear()
+    && start.getMonth() === end.getMonth()
+    && start.getDate() === end.getDate();
+  const endLabel = sameDate ? endClock : `${end.getMonth() + 1}月${end.getDate()}日 ${endClock}`;
+  return `${startLabel}—${endLabel}`;
+}
+
+function formatCountdown(milliseconds) {
+  const value = Number(milliseconds);
+  const totalSeconds = Number.isFinite(value) ? Math.max(0, Math.ceil(value / 1000)) : 0;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${pad(minutes)}:${pad(seconds)}`;
+}
+
 function formatDateLabel(dateString) {
   if (!dateString) return '';
   const date = new Date(`${dateString}T00:00:00`);
@@ -44,6 +73,8 @@ module.exports = {
   formatMoney,
   formatPoints,
   formatDateTime,
+  formatDateTimeRange,
+  formatCountdown,
   formatDateLabel,
   formatDuration,
   maskPhone
