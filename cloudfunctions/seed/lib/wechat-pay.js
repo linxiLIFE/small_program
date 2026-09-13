@@ -4,25 +4,80 @@ const { AppError, assert } = require('./errors');
 
 const HOSTNAME = 'api.mch.weixin.qq.com';
 
+function normalizePem(value) {
+  return String(value || '').replace(/\\n/g, '\n').trim();
+}
+
+function normalizeSerial(value) {
+  return String(value || '').replace(/:/g, '').trim().toUpperCase();
+}
+
 function config() {
   return {
     mchid: process.env.WX_MCH_ID || '',
     serialNo: process.env.WX_MCH_SERIAL_NO || '',
     apiV3Key: process.env.WX_API_V3_KEY || '',
-    privateKey: (process.env.WX_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+    privateKey: normalizePem(process.env.WX_PRIVATE_KEY),
     notifyUrl: process.env.WX_NOTIFY_URL || '',
     appid: process.env.WX_APPID || '',
-    platformCertificate: (process.env.WX_PLATFORM_CERT_PEM || '').replace(/\\n/g, '\n')
+    platformCertificate: normalizePem(process.env.WX_PLATFORM_CERT_PEM),
+    platformPublicKey: normalizePem(process.env.WX_PLATFORM_PUBLIC_KEY_PEM),
+    platformSerialNo: normalizeSerial(process.env.WX_PLATFORM_SERIAL_NO || process.env.WX_PLATFORM_PUBLIC_KEY_ID)
   };
 }
 
 function getMissingConfig() {
   const current = config();
-  return Object.entries({ WX_MCH_ID: current.mchid, WX_MCH_SERIAL_NO: current.serialNo, WX_API_V3_KEY: current.apiV3Key, WX_PRIVATE_KEY: current.privateKey, WX_NOTIFY_URL: current.notifyUrl, WX_APPID: current.appid }).filter(([, value]) => !value).map(([key]) => key);
+  const missing = Object.entries({
+    WX_MCH_ID: current.mchid,
+    WX_MCH_SERIAL_NO: current.serialNo,
+    WX_API_V3_KEY: current.apiV3Key,
+    WX_PRIVATE_KEY: current.privateKey,
+    WX_NOTIFY_URL: current.notifyUrl,
+    WX_APPID: current.appid
+  }).filter(([, value]) => !value).map(([key]) => key);
+  if (!current.platformCertificate && !current.platformPublicKey) missing.push('WX_PLATFORM_PUBLIC_KEY_PEM_OR_WX_PLATFORM_CERT_PEM');
+  if (current.platformPublicKey && !current.platformSerialNo) missing.push('WX_PLATFORM_SERIAL_NO');
+  return missing;
 }
 
 function isConfigured() {
   return getMissingConfig().length === 0;
+}
+
+function getNotificationVerifier(current = config()) {
+  if (current.platformPublicKey && current.platformSerialNo) {
+    return { key: current.platformPublicKey, serialNo: current.platformSerialNo, mode: 'public-key' };
+  }
+  if (current.platformCertificate) {
+    let serialNo = '';
+    try {
+      serialNo = normalizeSerial(new crypto.X509Certificate(current.platformCertificate).serialNumber);
+    } catch (error) {
+      console.warn('微信支付平台证书无法读取序列号', { message: error.message });
+    }
+    return { key: current.platformCertificate, serialNo, mode: 'platform-certificate' };
+  }
+  return null;
+}
+
+function hasNotificationVerifier() {
+  return !!getNotificationVerifier();
+}
+
+function getHeader(headers, name) {
+  const target = String(name).toLowerCase();
+  for (const [key, value] of Object.entries(headers || {})) {
+    if (String(key).toLowerCase() === target) return Array.isArray(value) ? value[0] : value;
+  }
+  return '';
+}
+
+function verifySignedMessage({ timestamp, nonce, signature, body, serialNo, verifier = getNotificationVerifier() }) {
+  if (!verifier || !timestamp || !nonce || !signature) return false;
+  if (verifier.serialNo && normalizeSerial(serialNo) !== verifier.serialNo) return false;
+  const message = `${timestamp}\n${nonce}\n${body}\n`;
+  return crypto.createVerify('RSA-SHA256').update(message).verify(verifier.key, signature, 'base64');
 }
 
 function requireConfigured() {
@@ -51,6 +106,7 @@ function request(method, path, payload) {
   const current = requireConfigured();
   const body = payload === undefined ? '' : JSON.stringify(payload);
   const auth = authorization(method, path, body, current);
+  const verifier = getNotificationVerifier(current);
   return new Promise((resolve, reject) => {
     const requestOptions = {
       hostname: HOSTNAME,
@@ -64,11 +120,23 @@ function request(method, path, payload) {
       },
       timeout: 10000
     };
+    if (current.platformSerialNo) requestOptions.headers['Wechatpay-Serial'] = current.platformSerialNo;
     const req = https.request(requestOptions, (response) => {
       let raw = '';
       response.setEncoding('utf8');
       response.on('data', (chunk) => { raw += chunk; });
       response.on('end', () => {
+        if (verifier && response.statusCode >= 200 && response.statusCode < 300) {
+          const valid = verifySignedMessage({
+            timestamp: getHeader(response.headers, 'Wechatpay-Timestamp'),
+            nonce: getHeader(response.headers, 'Wechatpay-Nonce'),
+            signature: getHeader(response.headers, 'Wechatpay-Signature'),
+            serialNo: getHeader(response.headers, 'Wechatpay-Serial'),
+            body: raw,
+            verifier
+          });
+          if (!valid) return reject(new AppError('PAYMENT_RESPONSE_SIGNATURE_INVALID', '微信支付应答验签失败', 502));
+        }
         let data = {};
         try { data = raw ? JSON.parse(raw) : {}; } catch (error) { return reject(new AppError('PAYMENT_BAD_RESPONSE', '微信支付返回内容无法解析', 502)); }
         if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -131,11 +199,15 @@ function createRefund({ outTradeNo, outRefundNo, amountFen, totalFen, reason }) 
   });
 }
 
-function verifyNotifySignature({ timestamp, nonce, signature, body }) {
+function queryRefund(outRefundNo) {
+  return request('GET', `/v3/refund/domestic/refunds/${encodeURIComponent(outRefundNo)}`);
+}
+
+function verifyNotifySignature({ timestamp, nonce, signature, serialNo, body }) {
   const current = config();
-  assert(current.platformCertificate, 'PAYMENT_CERT_NOT_CONFIGURED', '微信支付平台证书尚未配置', 503);
-  const message = `${timestamp}\n${nonce}\n${body}\n`;
-  return crypto.createVerify('RSA-SHA256').update(message).verify(current.platformCertificate, signature, 'base64');
+  const verifier = getNotificationVerifier(current);
+  assert(verifier, 'PAYMENT_CERT_NOT_CONFIGURED', '微信支付公钥或平台证书尚未配置', 503);
+  return verifySignedMessage({ timestamp, nonce, signature, serialNo, body, verifier });
 }
 
 function decryptNotification(resource) {
@@ -148,4 +220,20 @@ function decryptNotification(resource) {
   return JSON.parse(plaintext);
 }
 
-module.exports = { config, getMissingConfig, isConfigured, requireConfigured, request, createJsapiPrepay, queryOrder, closeOrder, createRefund, verifyNotifySignature, decryptNotification, buildJsapiPayParams };
+module.exports = {
+  config,
+  getMissingConfig,
+  isConfigured,
+  requireConfigured,
+  hasNotificationVerifier,
+  getNotificationVerifier,
+  request,
+  createJsapiPrepay,
+  queryOrder,
+  closeOrder,
+  createRefund,
+  queryRefund,
+  verifyNotifySignature,
+  decryptNotification,
+  buildJsapiPayParams
+};

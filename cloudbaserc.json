@@ -59,6 +59,8 @@
     },
     {
       "name": "payment-callback",
+      "type": "HTTP",
+      "gatewayPath": "/payment-callback",
       "timeout": 20,
       "memorySize": 256,
       "runtime": "Nodejs20.19",

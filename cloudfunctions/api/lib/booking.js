@@ -534,6 +534,12 @@ async function markNoShow(orderIdValue) {
       await requestRefund(orderIdValue, '预约开始后未核销');
     } catch (error) {
       console.error('未到店退款提交失败，等待退款补偿', { orderId: orderIdValue, message: error.message });
+      try {
+        const { scheduleRefundRetry } = require('./payment-service');
+        await scheduleRefundRetry(orderIdValue, `rf_${orderIdValue}`);
+      } catch (scheduleError) {
+        console.error('未到店退款补偿任务创建失败', { orderId: orderIdValue, message: scheduleError.message });
+      }
     }
   }
   return result.order ? publicOrder(await getOptional(COLLECTIONS.orders, orderIdValue)) : null;
@@ -568,6 +574,31 @@ async function markRefundSuccess(refundId, payload = {}) {
         nextOrder.pointsReversedAt = now;
       }
     }
+    await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: nextOrder });
+    return { order: nextOrder, duplicate: false };
+  });
+  return { order: publicOrder(result.order), duplicate: result.duplicate };
+}
+
+async function markRefundAbnormal(refundId, payload = {}) {
+  const result = await db.runTransaction(async (transaction) => {
+    const refund = await getOptional(COLLECTIONS.refunds, refundId, transaction);
+    assert(refund, 'REFUND_NOT_FOUND', '退款记录不存在', 404);
+    const order = await getOptional(COLLECTIONS.orders, refund.orderId, transaction);
+    assert(order, 'ORDER_NOT_FOUND', '退款对应订单不存在', 404);
+    if (refund.status === REFUND_STATUS.SUCCESS && order.refundStatus === REFUND_STATUS.SUCCESS) return { order, duplicate: true };
+    const now = Date.now();
+    const status = payload.status === REFUND_STATUS.CLOSED ? REFUND_STATUS.CLOSED : REFUND_STATUS.ABNORMAL;
+    const nextRefund = {
+      ...refund,
+      status,
+      providerRefundId: payload.refundId || refund.providerRefundId || '',
+      providerStatus: payload.providerStatus || refund.providerStatus || '',
+      errorMessage: payload.message || refund.errorMessage || '',
+      updatedAt: now
+    };
+    const nextOrder = { ...order, refundStatus: status, updatedAt: now };
+    await transaction.collection(COLLECTIONS.refunds).doc(refund._id || refund.id).set({ data: nextRefund });
     await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: nextOrder });
     return { order: nextOrder, duplicate: false };
   });
@@ -637,6 +668,7 @@ module.exports = {
   markPaymentClosed,
   markNoShow,
   markRefundSuccess,
+  markRefundAbnormal,
   transitionStaff,
   staffListOrders,
   preparePaymentRecord,

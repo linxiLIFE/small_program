@@ -489,6 +489,7 @@ Page({
         workId: this.workId,
         serviceId: this.serviceId,
         technicianId: this.data.selectedTechnicianId,
+        date: this.data.selectedDate,
         startAt: this.data.selectedSlot.startAt,
         pointsToUse: this.data.usePoints ? Number(this.data.profile.points || 0) : 0
       });

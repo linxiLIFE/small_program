@@ -105,7 +105,7 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
     return technician.plan as T;
   }
   if (action === 'adminSaveWeeklySchedule') return { version: demoSettings.version + 1, weekly: payload.weekly as WeeklySchedule[] } as T;
-  if (action === 'adminPaymentStatus') return { configured: false, missing: ['WX_MCH_ID', 'WX_MCH_SERIAL_NO', 'WX_API_V3_KEY', 'WX_PRIVATE_KEY', 'WX_NOTIFY_URL'], callbackCertificateConfigured: false, note: '仅返回状态，不返回密钥。' } as T;
+  if (action === 'adminPaymentStatus') return { configured: false, missing: ['WX_MCH_ID', 'WX_MCH_SERIAL_NO', 'WX_API_V3_KEY', 'WX_PRIVATE_KEY', 'WX_NOTIFY_URL', 'WX_PLATFORM_PUBLIC_KEY_PEM_OR_WX_PLATFORM_CERT_PEM'], callbackCertificateConfigured: false, note: '仅返回状态，不返回密钥。' } as T;
   if (action === 'adminUploadImage') {
     const base64 = typeof payload.base64 === 'string' ? payload.base64 : '';
     return { fileID: `demo-file-${Date.now()}`, url: base64 ? `data:image/jpeg;base64,${base64}` : '' } as T;

@@ -31,7 +31,7 @@ Page({
         totalText: formatMoney(order.totalFen),
         discountText: formatMoney(order.discountFen || 0),
         paidText: formatMoney(order.paidFen),
-        refundStatusLabel: order.refundStatus === 'SUCCESS' ? '已到账' : order.refundStatus === 'PROCESSING' ? '退款处理中' : '退款异常',
+        refundStatusLabel: order.refundStatus === 'SUCCESS' ? '已到账' : order.refundStatus === 'PROCESSING' ? '退款处理中' : order.refundStatus === 'CLOSED' ? '退款已关闭' : '退款异常',
         durationText: formatDuration(order.durationMinutes)
       },
       canCancel,

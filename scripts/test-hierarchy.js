@@ -22,6 +22,7 @@ assert.match(read('pages/booking/index.js'), /loadedKey/);
 
 const bookingPage = read('pages/booking/index.js');
 assert.match(bookingPage, /workId: this\.workId/);
+assert.match(bookingPage, /date: this\.data\.selectedDate/);
 assert.match(bookingPage, /api\.getBookingContext\(this\.serviceId, this\.workId\)/);
 assert.match(read('cloudfunctions/api/lib/booking.js'), /STYLE_REQUIRED/);
 assert.match(read('cloudfunctions/api/lib/booking.js'), /claims\.workId === work\.id/);

@@ -296,7 +296,7 @@ async function saveSettings(payload = {}) {
 async function getPaymentConfigStatus() {
   await requireRole(['OWNER']);
   const missing = wechat.getMissingConfig();
-  return { configured: missing.length === 0, missing, callbackCertificateConfigured: !!wechat.config().platformCertificate, note: '仅返回配置状态，不返回任何密钥或证书内容。' };
+  return { configured: missing.length === 0, missing, callbackCertificateConfigured: wechat.hasNotificationVerifier(), note: '仅返回配置状态，不返回任何密钥或证书内容。' };
 }
 
 async function refundOrder(payload) {

@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { COLLECTIONS } = require('./constants');
 const { db, getOptional, find, getContext } = require('./db');
 const { requireRole } = require('./auth');
-const { assert } = require('./errors');
+const { AppError, assert } = require('./errors');
 
 async function session() {
   const context = getContext();
@@ -19,6 +19,20 @@ function validateCredentials(payload) {
   assert(password.length>=8&&password.length<=32&&/^[a-zA-Z0-9]/.test(password)&&complexity>=3,'INVALID_PASSWORD','密码需为 8 到 32 位，以字母或数字开头，包含大小写字母、数字、符号中的至少三类');
   return {username,password};
 }
+
+function accountProviderError(error, action) {
+  const code = String(error && error.code || '').toUpperCase();
+  const message = String(error && error.message || '');
+  console.error('技师账号服务调用失败', { action, code, message });
+  if (/TIMEOUT|TIMEDOUT|ECONN|ENET|EAI_AGAIN|SOCKET/.test(code) || /timeout|timed out|network|socket/i.test(message)) {
+    return new AppError('ACCOUNT_PROVIDER_UNAVAILABLE', '技师账号服务连接失败，请稍后重试', 503);
+  }
+  if (/credential|secret|unauthorized|forbidden|permission|invalid.*(token|key)/i.test(`${code} ${message}`)) {
+    return new AppError('ACCOUNT_PROVIDER_CONFIG', '技师账号服务配置异常，请联系管理员', 503);
+  }
+  return new AppError('ACCOUNT_PROVIDER_UNAVAILABLE', '技师账号服务暂时不可用，请稍后重试', 503);
+}
+
 async function createTechnicianLogin(payload) {
   const {account} = await requireRole(['OWNER']);
   const {username,password}=validateCredentials(payload);
@@ -38,13 +52,24 @@ async function createTechnicianLogin(payload) {
   const Client=require('tencentcloud-sdk-nodejs-tcb').tcb.v20180608.Client;
   const client=new Client({credential:{secretId:credentials.TENCENTCLOUD_SECRETID,secretKey:credentials.TENCENTCLOUD_SECRETKEY,token:credentials.TENCENTCLOUD_SESSIONTOKEN},region:'ap-shanghai',profile:{httpProfile:{reqTimeout:15}}});
   const envId=credentials.TCB_ENV || credentials.SCF_NAMESPACE;
+  assert(envId, 'ACCOUNT_PROVIDER_CONFIG', '技师账号服务环境未配置', 503);
   // Read the deterministic UID first so a retry after a database/network failure
   // cannot create another account or change an existing account's credentials.
-  const existing=await client.DescribeUserList({EnvId:envId,UidList:[uid],PageSize:1});
+  let existing;
+  try {
+    existing=await client.DescribeUserList({EnvId:envId,UidList:[uid],PageSize:1});
+  } catch (error) {
+    throw accountProviderError(error, 'DescribeUserList');
+  }
   const user=existing.Data?.UserList?.find(item=>item.Uid===uid);
   if(user) assert(user.Name===username,'ACCOUNT_CONFLICT','该技师账号名称已固定，请使用原账号名称');
   else {
-    const result=await client.CreateUser({EnvId:envId,Name:username,Uid:uid,Password:password,Type:'internalUser',UserStatus:'ACTIVE',NickName:technician.name.length>=2?technician.name:'技师'+technician.name});
+    let result;
+    try {
+      result=await client.CreateUser({EnvId:envId,Name:username,Uid:uid,Password:password,Type:'internalUser',UserStatus:'ACTIVE',NickName:technician.name.length>=2?technician.name:'技师'+technician.name});
+    } catch (error) {
+      throw accountProviderError(error, 'CreateUser');
+    }
     assert(result.Data?.Uid===uid,'CREATE_ACCOUNT_FAILED','登录账号未创建成功');
   }
   await db.collection(COLLECTIONS.staff).doc(bindingId).set({data:{id:bindingId,uid,technicianId:payload.technicianId,role:'TECHNICIAN',active:true,name:username,createdAt:Date.now()}});

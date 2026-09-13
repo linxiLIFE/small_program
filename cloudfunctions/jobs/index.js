@@ -62,7 +62,7 @@ async function processRefund(job) {
   const refund = await getOptional(COLLECTIONS.refunds, job.businessId);
   if (!refund || refund.status === REFUND_STATUS.SUCCESS) return;
   const result = await requestRefund(refund.orderId, refund.reason || '预约退款');
-  if (result && result.status === REFUND_STATUS.PENDING_CONFIG) return { deferred: true };
+  if (result && [REFUND_STATUS.PENDING_CONFIG, REFUND_STATUS.PROCESSING].includes(result.status)) return { deferred: true };
 }
 
 async function deferJob(job) {
