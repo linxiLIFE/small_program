@@ -328,8 +328,8 @@ async function cancelOrder(orderId) {
 async function deleteOrder(orderId) {
   const result = await call('deleteOrder', { orderId }, () => {
     const order = mock.orders.find((item) => item.id === orderId);
-    if (!order || !['CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW'].includes(order.status)) {
-      throw Object.assign(new Error('只有已取消订单可以删除'), { code: 'ORDER_NOT_DELETABLE' });
+    if (!order || !['CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW', 'REFUNDED'].includes(order.status)) {
+      throw Object.assign(new Error('只有已取消或已退款订单可以删除'), { code: 'ORDER_NOT_DELETABLE' });
     }
     order.deletedAt = Date.now();
     return { deleted: true, orderId };

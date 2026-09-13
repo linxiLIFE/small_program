@@ -1,5 +1,6 @@
 const cloud = require('wx-server-sdk');
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
+const crypto = require('crypto');
 
 const { db } = require('./lib/db');
 const { COLLECTIONS } = require('./lib/constants');
@@ -19,7 +20,14 @@ async function write(collection, item) {
 }
 
 exports.main = async (event = {}) => {
-  if (event.confirm !== 'SEED_DEMO_DATA') return { ok: false, message: '需要传入 confirm=SEED_DEMO_DATA 才会写入演示目录' };
+  const expected = String(process.env.SEED_ADMIN_SECRET || '');
+  const received = String(event.secret || '');
+  const secretValid = expected.length >= 32
+    && received.length === expected.length
+    && crypto.timingSafeEqual(Buffer.from(received), Buffer.from(expected));
+  if (process.env.SEED_ENABLED !== 'true' || event.confirm !== 'SEED_DEMO_DATA' || !secretValid) {
+    return { ok: false, message: '演示数据初始化未启用或授权失败' };
+  }
   for (const item of categories) await write(COLLECTIONS.categories, item);
   for (const item of services) await write(COLLECTIONS.services, item);
   for (const item of technicians) await write(COLLECTIONS.technicians, item);

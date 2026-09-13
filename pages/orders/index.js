@@ -65,7 +65,7 @@ Page({
     try {
       const statusGroups = {
         ACTIVE_SERVICE: ['ARRIVED', 'IN_SERVICE'],
-        CANCELLED: ['CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW']
+        CANCELLED: ['CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW', 'CANCEL_PENDING_REFUND', 'REFUNDED']
       };
       const result = statusGroups[status]
         ? await Promise.all(statusGroups[status].map((value) => api.listOrders(value))).then((responses) => ({

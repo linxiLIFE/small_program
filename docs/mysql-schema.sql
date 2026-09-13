@@ -81,8 +81,18 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `data` JSON NOT NULL,
   `created_at` BIGINT NULL,
   `updated_at` BIGINT NULL,
+  `user_id` VARCHAR(191) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.userId')), '')) VIRTUAL,
+  `status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.status')), '')) VIRTUAL,
+  `payment_status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.paymentStatus')), '')) VIRTUAL,
+  `refund_status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.refundStatus')), '')) VIRTUAL,
+  `technician_id` VARCHAR(191) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.technicianId')), '')) VIRTUAL,
+  `start_at` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.startAt')) AS SIGNED)) VIRTUAL,
   PRIMARY KEY (`id`),
-  KEY `idx_orders_created_at` (`created_at`)
+  KEY `idx_orders_created_at` (`created_at`),
+  KEY `idx_orders_user_status` (`user_id`, `status`),
+  KEY `idx_orders_technician_start` (`technician_id`, `start_at`),
+  KEY `idx_orders_payment_status` (`payment_status`),
+  KEY `idx_orders_refund_status` (`refund_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `payments` (
@@ -90,7 +100,15 @@ CREATE TABLE IF NOT EXISTS `payments` (
   `data` JSON NOT NULL,
   `created_at` BIGINT NULL,
   `updated_at` BIGINT NULL,
+  `order_id` VARCHAR(191) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.orderId')), '')) VIRTUAL,
+  `merchant_order_no` VARCHAR(64) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.merchantOrderNo')), '')) VIRTUAL,
+  `transaction_id` VARCHAR(64) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.transactionId')), '')) VIRTUAL,
+  `status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.status')), '')) VIRTUAL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payments_merchant_order_no` (`merchant_order_no`),
+  UNIQUE KEY `uq_payments_transaction_id` (`transaction_id`),
+  KEY `idx_payments_order_id` (`order_id`),
+  KEY `idx_payments_status` (`status`),
   KEY `idx_payments_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -99,7 +117,13 @@ CREATE TABLE IF NOT EXISTS `refunds` (
   `data` JSON NOT NULL,
   `created_at` BIGINT NULL,
   `updated_at` BIGINT NULL,
+  `order_id` VARCHAR(191) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.orderId')), '')) VIRTUAL,
+  `refund_no` VARCHAR(64) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.refundNo')), '')) VIRTUAL,
+  `status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.status')), '')) VIRTUAL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_refunds_refund_no` (`refund_no`),
+  KEY `idx_refunds_order_id` (`order_id`),
+  KEY `idx_refunds_status` (`status`),
   KEY `idx_refunds_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -126,7 +150,14 @@ CREATE TABLE IF NOT EXISTS `jobs` (
   `data` JSON NOT NULL,
   `created_at` BIGINT NULL,
   `updated_at` BIGINT NULL,
+  `type` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.type')), '')) VIRTUAL,
+  `status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.status')), '')) VIRTUAL,
+  `next_run_at` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.nextRunAt')) AS SIGNED)) VIRTUAL,
+  `lease_until` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.leaseUntil')) AS SIGNED)) VIRTUAL,
   PRIMARY KEY (`id`),
+  KEY `idx_jobs_due` (`status`, `next_run_at`),
+  KEY `idx_jobs_lease` (`status`, `lease_until`),
+  KEY `idx_jobs_type` (`type`),
   KEY `idx_jobs_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

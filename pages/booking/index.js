@@ -591,13 +591,16 @@ Page({
         paySign: payment.paySign,
         success: async () => {
           wx.showLoading({ title: '确认支付中' });
-          try { await api.queryPayment(orderId); } finally { wx.hideLoading(); }
+          let confirmed = true;
+          try { await api.queryPayment(orderId); } catch (error) { confirmed = false; } finally { wx.hideLoading(); }
+          if (!confirmed) wx.showToast({ title: '支付结果确认中', icon: 'none' });
           wx.redirectTo({ url: `/pages/order-detail/index?orderId=${orderId}` });
           resolve();
         },
-        fail: (error) => {
+        fail: async (error) => {
           const cancelled = error && (error.errMsg || '').includes('cancel');
-          wx.showModal({ title: cancelled ? '已取消支付' : '支付待确认', content: '订单仍会保留 5 分钟，你可以在订单详情中重新查询支付状态。', showCancel: false, success: () => wx.redirectTo({ url: `/pages/order-detail/index?orderId=${orderId}` }) });
+          try { await api.queryPayment(orderId); } catch (queryError) { /* 订单详情和后台任务会继续主动查单。 */ }
+          wx.showModal({ title: cancelled ? '已返回订单' : '支付待确认', content: '请在订单倒计时结束前到订单详情确认支付结果；系统也会继续主动查单。', showCancel: false, success: () => wx.redirectTo({ url: `/pages/order-detail/index?orderId=${orderId}` }) });
           resolve();
         }
       });

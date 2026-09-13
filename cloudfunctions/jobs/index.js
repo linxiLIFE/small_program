@@ -7,7 +7,7 @@ const sharedRoot = fs.existsSync(path.join(__dirname, 'lib')) ? './lib' : '../ap
 const { db, getOptional } = require(`${sharedRoot}/db`);
 const { COLLECTIONS, PAYMENT_STATUS, REFUND_STATUS, ORDER_STATUS } = require(`${sharedRoot}/constants`);
 const { markPaymentSuccess, markPaymentClosed, markNoShow } = require(`${sharedRoot}/booking`);
-const { requestRefund } = require(`${sharedRoot}/payment-service`);
+const { requestRefund, scheduleRefundRetry } = require(`${sharedRoot}/payment-service`);
 const wechat = require(`${sharedRoot}/wechat-pay`);
 const { addMinutes } = require(`${sharedRoot}/time`);
 
@@ -41,14 +41,23 @@ async function processPaymentExpire(job) {
     }
     throw new Error('微信支付尚未配置，暂不关闭已创建预支付单');
   }
-  const provider = await wechat.queryOrder(payment.merchantOrderNo);
+  let provider;
+  try {
+    provider = await wechat.queryOrder(payment.merchantOrderNo);
+  } catch (error) {
+    if (error.code === 'PAYMENT_PROVIDER_ERROR' && error.details && error.details.providerCode === 'ORDER_NOT_EXIST') {
+      await markPaymentClosed(order.id, 'ORDER_NOT_EXIST');
+      return;
+    }
+    throw error;
+  }
   if (provider.trade_state === 'SUCCESS') {
-    await markPaymentSuccess(order.id, { amountFen: provider.amount && provider.amount.total, transactionId: provider.transaction_id, paidAt: provider.success_time ? Date.parse(provider.success_time) : Date.now() });
+    await markPaymentSuccess(order.id, { amountFen: provider.amount && provider.amount.total, currency: provider.amount && provider.amount.currency, payerOpenid: provider.payer && provider.payer.openid, transactionId: provider.transaction_id, paidAt: provider.success_time ? Date.parse(provider.success_time) : Date.now() });
     return;
   }
   if (provider.trade_state === 'NOTPAY' || provider.trade_state === 'CLOSED' || provider.trade_state === 'REVOKED') {
     if (provider.trade_state === 'NOTPAY') await wechat.closeOrder(payment.merchantOrderNo);
-    await markPaymentClosed(order.id);
+    await markPaymentClosed(order.id, provider.trade_state === 'NOTPAY' ? 'NOTPAY_CLOSED' : provider.trade_state);
     return;
   }
   throw new Error(`支付状态待确认: ${provider.trade_state || 'UNKNOWN'}`);
@@ -70,14 +79,44 @@ async function deferJob(job) {
   await db.collection(COLLECTIONS.jobs).doc(jobId).update({ data: { status: 'PENDING', nextRunAt: addMinutes(Date.now(), 30), leaseUntil: 0, updatedAt: Date.now() } });
 }
 
+async function repairReconciliationJobs(now) {
+  let repaired = 0;
+  const payments = await db.collection(COLLECTIONS.payments).where({ status: db.command.in([
+    PAYMENT_STATUS.NOT_STARTED,
+    PAYMENT_STATUS.PREPAY_SUBMITTING,
+    PAYMENT_STATUS.PREPAY_CREATED,
+    PAYMENT_STATUS.UNKNOWN
+  ]) }).limit(100).get();
+  for (const payment of payments.data || []) {
+    const order = await getOptional(COLLECTIONS.orders, payment.orderId);
+    if (!order || order.status !== ORDER_STATUS.PENDING_PAYMENT || Number(order.paymentDeadline || 0) > now) continue;
+    const jobId = `job_payment_expire_${order.id}`;
+    const existing = await getOptional(COLLECTIONS.jobs, jobId);
+    if (existing && ['PENDING', 'RUNNING'].includes(existing.status)) continue;
+    await db.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { ...(existing || {}), _id: jobId, id: jobId, type: 'PAYMENT_EXPIRE', businessId: order.id, status: 'PENDING', nextRunAt: now, retryCount: 0, leaseUntil: 0, createdAt: existing && existing.createdAt || now, updatedAt: now } });
+    repaired += 1;
+  }
+  const refunds = await db.collection(COLLECTIONS.refunds).where({ status: db.command.in([
+    REFUND_STATUS.INIT,
+    REFUND_STATUS.PENDING_CONFIG,
+    REFUND_STATUS.SUBMITTING,
+    REFUND_STATUS.PROCESSING
+  ]) }).limit(100).get();
+  for (const refund of refunds.data || []) {
+    if (await scheduleRefundRetry(refund.orderId, refund.id || refund._id)) repaired += 1;
+  }
+  return repaired;
+}
+
 exports.main = async () => {
   const now = Date.now();
+  const repaired = await repairReconciliationJobs(now);
   const [pendingJobs, expiredJobs] = await Promise.all([
     db.collection(COLLECTIONS.jobs).where({ status: 'PENDING', nextRunAt: db.command.lte(now) }).limit(50).get(),
     db.collection(COLLECTIONS.jobs).where({ status: 'RUNNING', leaseUntil: db.command.lte(now) }).limit(50).get()
   ]);
   const jobs = [...(pendingJobs.data || []), ...(expiredJobs.data || [])].slice(0, 50);
-  const result = { processed: 0, failed: 0 };
+  const result = { processed: 0, failed: 0, repaired };
   for (const job of jobs) {
     if (!(await claimJob(job))) continue;
     try {

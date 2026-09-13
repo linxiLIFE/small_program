@@ -12,17 +12,31 @@ function normalizeSerial(value) {
   return String(value || '').replace(/:/g, '').trim().toUpperCase();
 }
 
+function parseVerifierList(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((item) => ({
+      serialNo: normalizeSerial(item.serialNo || item.id),
+      key: normalizePem(item.publicKeyPem || item.certificatePem || item.key)
+    })).filter((item) => item.serialNo && item.key) : [];
+  } catch (error) {
+    return [];
+  }
+}
+
 function config() {
   return {
     mchid: process.env.WX_MCH_ID || '',
-    serialNo: process.env.WX_MCH_SERIAL_NO || '',
+    serialNo: normalizeSerial(process.env.WX_MCH_SERIAL_NO),
     apiV3Key: process.env.WX_API_V3_KEY || '',
     privateKey: normalizePem(process.env.WX_PRIVATE_KEY),
     notifyUrl: process.env.WX_NOTIFY_URL || '',
     appid: process.env.WX_APPID || '',
     platformCertificate: normalizePem(process.env.WX_PLATFORM_CERT_PEM),
     platformPublicKey: normalizePem(process.env.WX_PLATFORM_PUBLIC_KEY_PEM),
-    platformSerialNo: normalizeSerial(process.env.WX_PLATFORM_SERIAL_NO || process.env.WX_PLATFORM_PUBLIC_KEY_ID)
+    platformSerialNo: normalizeSerial(process.env.WX_PLATFORM_SERIAL_NO || process.env.WX_PLATFORM_PUBLIC_KEY_ID),
+    platformVerifiers: parseVerifierList(process.env.WX_PLATFORM_VERIFIERS_JSON)
   };
 }
 
@@ -36,18 +50,34 @@ function getMissingConfig() {
     WX_NOTIFY_URL: current.notifyUrl,
     WX_APPID: current.appid
   }).filter(([, value]) => !value).map(([key]) => key);
-  if (!current.platformCertificate && !current.platformPublicKey) missing.push('WX_PLATFORM_PUBLIC_KEY_PEM_OR_WX_PLATFORM_CERT_PEM');
+  if (!current.platformCertificate && !current.platformPublicKey && !current.platformVerifiers.length) missing.push('WX_PLATFORM_PUBLIC_KEY_PEM_OR_WX_PLATFORM_CERT_PEM');
   if (current.platformPublicKey && !current.platformSerialNo) missing.push('WX_PLATFORM_SERIAL_NO');
   return missing;
 }
 
-function isConfigured() {
-  return getMissingConfig().length === 0;
+function getConfigIssues() {
+  const current = config();
+  const issues = getMissingConfig();
+  if (current.apiV3Key && Buffer.byteLength(current.apiV3Key, 'utf8') !== 32) issues.push('WX_API_V3_KEY_MUST_BE_32_BYTES');
+  if (current.notifyUrl && !/^https:\/\//i.test(current.notifyUrl)) issues.push('WX_NOTIFY_URL_MUST_BE_HTTPS');
+  if (current.privateKey) {
+    try { crypto.createPrivateKey(current.privateKey); } catch (error) { issues.push('WX_PRIVATE_KEY_INVALID'); }
+  }
+  for (const verifier of getNotificationVerifiers(current)) {
+    try { crypto.createPublicKey(verifier.key); } catch (error) { issues.push(`WX_PLATFORM_VERIFIER_INVALID:${verifier.serialNo || 'UNKNOWN'}`); }
+  }
+  if (process.env.WX_PLATFORM_VERIFIERS_JSON && !current.platformVerifiers.length) issues.push('WX_PLATFORM_VERIFIERS_JSON_INVALID');
+  return [...new Set(issues)];
 }
 
-function getNotificationVerifier(current = config()) {
+function isConfigured() {
+  return getConfigIssues().length === 0;
+}
+
+function getNotificationVerifiers(current = config()) {
+  const verifiers = [...(current.platformVerifiers || [])];
   if (current.platformPublicKey && current.platformSerialNo) {
-    return { key: current.platformPublicKey, serialNo: current.platformSerialNo, mode: 'public-key' };
+    verifiers.push({ key: current.platformPublicKey, serialNo: current.platformSerialNo, mode: 'public-key' });
   }
   if (current.platformCertificate) {
     let serialNo = '';
@@ -56,13 +86,19 @@ function getNotificationVerifier(current = config()) {
     } catch (error) {
       console.warn('微信支付平台证书无法读取序列号', { message: error.message });
     }
-    return { key: current.platformCertificate, serialNo, mode: 'platform-certificate' };
+    verifiers.push({ key: current.platformCertificate, serialNo, mode: 'platform-certificate' });
   }
-  return null;
+  return verifiers;
+}
+
+function getNotificationVerifier(current = config(), serialNo = '') {
+  const normalized = normalizeSerial(serialNo);
+  const verifiers = getNotificationVerifiers(current);
+  return normalized ? verifiers.find((item) => item.serialNo === normalized) || null : verifiers[0] || null;
 }
 
 function hasNotificationVerifier() {
-  return !!getNotificationVerifier();
+  return getNotificationVerifiers().length > 0;
 }
 
 function getHeader(headers, name) {
@@ -73,7 +109,7 @@ function getHeader(headers, name) {
   return '';
 }
 
-function verifySignedMessage({ timestamp, nonce, signature, body, serialNo, verifier = getNotificationVerifier() }) {
+function verifySignedMessage({ timestamp, nonce, signature, body, serialNo, verifier = getNotificationVerifier(config(), serialNo) }) {
   if (!verifier || !timestamp || !nonce || !signature) return false;
   if (verifier.serialNo && normalizeSerial(serialNo) !== verifier.serialNo) return false;
   const message = `${timestamp}\n${nonce}\n${body}\n`;
@@ -81,8 +117,8 @@ function verifySignedMessage({ timestamp, nonce, signature, body, serialNo, veri
 }
 
 function requireConfigured() {
-  const missing = getMissingConfig();
-  if (missing.length) throw new AppError('PAYMENT_NOT_CONFIGURED', '微信支付资质尚未配置，请先补齐服务端商户参数', 503, { missing });
+  const missing = getConfigIssues();
+  if (missing.length) throw new AppError('PAYMENT_NOT_CONFIGURED', '微信支付资质尚未配置或配置无效，请检查服务端商户参数', 503, { missing });
   return config();
 }
 
@@ -106,7 +142,6 @@ function request(method, path, payload) {
   const current = requireConfigured();
   const body = payload === undefined ? '' : JSON.stringify(payload);
   const auth = authorization(method, path, body, current);
-  const verifier = getNotificationVerifier(current);
   return new Promise((resolve, reject) => {
     const requestOptions = {
       hostname: HOSTNAME,
@@ -126,12 +161,15 @@ function request(method, path, payload) {
       response.setEncoding('utf8');
       response.on('data', (chunk) => { raw += chunk; });
       response.on('end', () => {
-        if (verifier && response.statusCode >= 200 && response.statusCode < 300) {
+        const responseSerial = getHeader(response.headers, 'Wechatpay-Serial');
+        const verifier = getNotificationVerifier(current, responseSerial);
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          if (!verifier) return reject(new AppError('PAYMENT_RESPONSE_SERIAL_UNKNOWN', '微信支付应答签名序列号未配置', 502));
           const valid = verifySignedMessage({
             timestamp: getHeader(response.headers, 'Wechatpay-Timestamp'),
             nonce: getHeader(response.headers, 'Wechatpay-Nonce'),
             signature: getHeader(response.headers, 'Wechatpay-Signature'),
-            serialNo: getHeader(response.headers, 'Wechatpay-Serial'),
+            serialNo: responseSerial,
             body: raw,
             verifier
           });
@@ -162,14 +200,16 @@ function buildJsapiPayParams(prepayId, current = requireConfigured()) {
   return { timeStamp, nonceStr, package: packageValue, signType: 'RSA', paySign };
 }
 
-async function createJsapiPrepay({ description, outTradeNo, amountFen, openid }) {
+async function createJsapiPrepay({ description, outTradeNo, amountFen, openid, timeExpire }) {
   const current = requireConfigured();
   assert(openid, 'OPENID_REQUIRED', '缺少微信用户身份');
+  assert(Number.isFinite(Number(timeExpire)) && Number(timeExpire) > Date.now(), 'PAYMENT_DEADLINE_INVALID', '支付截止时间无效');
   const result = await request('POST', '/v3/pay/transactions/jsapi', {
     appid: current.appid,
     mchid: current.mchid,
     description,
     out_trade_no: outTradeNo,
+    time_expire: new Date(Number(timeExpire)).toISOString(),
     notify_url: current.notifyUrl,
     amount: { total: Number(amountFen), currency: 'CNY' },
     payer: { openid }
@@ -205,7 +245,7 @@ function queryRefund(outRefundNo) {
 
 function verifyNotifySignature({ timestamp, nonce, signature, serialNo, body }) {
   const current = config();
-  const verifier = getNotificationVerifier(current);
+  const verifier = getNotificationVerifier(current, serialNo);
   assert(verifier, 'PAYMENT_CERT_NOT_CONFIGURED', '微信支付公钥或平台证书尚未配置', 503);
   return verifySignedMessage({ timestamp, nonce, signature, serialNo, body, verifier });
 }
@@ -223,10 +263,12 @@ function decryptNotification(resource) {
 module.exports = {
   config,
   getMissingConfig,
+  getConfigIssues,
   isConfigured,
   requireConfigured,
   hasNotificationVerifier,
   getNotificationVerifier,
+  getNotificationVerifiers,
   request,
   createJsapiPrepay,
   queryOrder,

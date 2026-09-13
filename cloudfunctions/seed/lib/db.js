@@ -166,6 +166,69 @@ function parseData(row) {
   try { return JSON.parse(row.data || '{}'); } catch (error) { return {}; }
 }
 
+const GENERATED_FIELDS = {
+  orders: { userId: 'user_id', status: 'status', paymentStatus: 'payment_status', refundStatus: 'refund_status', technicianId: 'technician_id', startAt: 'start_at' },
+  payments: { orderId: 'order_id', merchantOrderNo: 'merchant_order_no', transactionId: 'transaction_id', status: 'status' },
+  refunds: { orderId: 'order_id', refundNo: 'refund_no', status: 'status' },
+  jobs: { type: 'type', status: 'status', nextRunAt: 'next_run_at', leaseUntil: 'lease_until' }
+};
+
+function sqlField(field, table = '') {
+  const value = String(field || '');
+  if (value === '_id' || value === 'id') return '`id`';
+  const generated = GENERATED_FIELDS[table] && GENERATED_FIELDS[table][value];
+  if (generated) return `\`${generated}\``;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(value)) return '';
+  const path = value.split('.').map((part) => `.${part}`).join('');
+  return `JSON_UNQUOTE(JSON_EXTRACT(data, '$${path}'))`;
+}
+
+function scalarParameter(value) {
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  return undefined;
+}
+
+function compileFieldCondition(field, condition, params, table) {
+  const expression = sqlField(field, table);
+  if (!expression) return '';
+  if (!isOperator(condition)) {
+    if (condition === null) return `${expression} IS NULL`;
+    const parameter = scalarParameter(condition);
+    if (parameter === undefined) return '';
+    params.push(parameter);
+    return `${expression} = ?`;
+  }
+  const name = condition.__sqlOperator;
+  if (name === 'and' || name === 'or') {
+    if (!Array.isArray(condition.value) || !condition.value.length) return '';
+    const parts = condition.value.map((item) => compileFieldCondition(field, item, params, table));
+    if (parts.some((item) => !item)) return '';
+    return `(${parts.join(name === 'and' ? ' AND ' : ' OR ')})`;
+  }
+  if (name === 'exists') return condition.value ? `${expression} IS NOT NULL` : `${expression} IS NULL`;
+  if (name === 'in' || name === 'nin') {
+    if (!Array.isArray(condition.value) || !condition.value.length) return name === 'in' ? '0 = 1' : '1 = 1';
+    const values = condition.value.map(scalarParameter);
+    if (values.some((item) => item === undefined)) return '';
+    params.push(...values);
+    return `${expression} ${name === 'nin' ? 'NOT IN' : 'IN'} (${values.map(() => '?').join(', ')})`;
+  }
+  const operators = { eq: '=', neq: '<>', gt: '>', gte: '>=', lt: '<', lte: '<=' };
+  if (!operators[name]) return '';
+  const parameter = scalarParameter(condition.value);
+  if (parameter === undefined) return '';
+  params.push(parameter);
+  return `${expression} ${operators[name]} ?`;
+}
+
+function compileWhere(where = {}, table = '') {
+  const params = [];
+  const clauses = Object.entries(where).map(([field, condition]) => compileFieldCondition(field, condition, params, table));
+  if (clauses.some((item) => !item)) return null;
+  return { sql: clauses.length ? clauses.join(' AND ') : '1 = 1', params };
+}
+
 function missingDocument(table, id) {
   const error = new Error(`document ${table}/${id} does not exist`);
   error.errCode = -1;
@@ -194,6 +257,42 @@ class SQLReader {
     const suffix = lock && this.inTransaction ? ' FOR UPDATE' : '';
     const [rows] = await this.query(`SELECT id, data, created_at, updated_at FROM \`${name}\`${suffix}`);
     return rows;
+  }
+
+  async selectRows(table, where = {}, options = {}, lock = false) {
+    const name = assertTableName(table);
+    let compiled = compileWhere(where, name);
+    if (!compiled) {
+      const rows = await this.rows(table, lock);
+      rows.sqlOptionsApplied = false;
+      return rows;
+    }
+    const execute = async (useGeneratedColumns) => {
+      const current = useGeneratedColumns ? compiled : compileWhere(where);
+      const params = [...current.params];
+      let sql = `SELECT id, data, created_at, updated_at FROM \`${name}\` WHERE ${current.sql}`;
+      if (options.orderBy) {
+        const expression = sqlField(options.orderBy.field, useGeneratedColumns ? name : '');
+        if (expression) sql += ` ORDER BY ${expression} ${String(options.orderBy.direction).toLowerCase() === 'asc' ? 'ASC' : 'DESC'}`;
+      }
+      if (options.limit !== null && options.limit !== undefined) {
+        sql += ' LIMIT ?';
+        params.push(Math.max(0, Number(options.limit)));
+        if (options.offset) {
+          sql += ' OFFSET ?';
+          params.push(Math.max(0, Number(options.offset)));
+        }
+      }
+      if (lock && this.inTransaction) sql += ' FOR UPDATE';
+      const [rows] = await this.query(sql, params);
+      rows.sqlOptionsApplied = true;
+      return rows;
+    };
+    try { return await execute(true); }
+    catch (error) {
+      if (error && error.code === 'ER_BAD_FIELD_ERROR' && GENERATED_FIELDS[name]) return execute(false);
+      throw error;
+    }
   }
 
   async row(table, id, lock = false) {
@@ -303,7 +402,11 @@ class SQLQuery {
   }
 
   async get() {
-    const rows = await this.reader.rows(this.table, this.reader.inTransaction);
+    const rows = await this.reader.selectRows(this.table, this.conditions, {
+      orderBy: this.sort,
+      limit: this.max,
+      offset: this.offset
+    }, this.reader.inTransaction);
     let data = rows
       .map((row) => ({ row, data: parseData(row) }))
       .filter(({ row, data: value }) => matchesWhere(value, row.id, this.conditions));
@@ -319,8 +422,10 @@ class SQLQuery {
         return direction === 'asc' ? result : -result;
       });
     }
-    if (this.offset) data = data.slice(this.offset);
-    if (this.max !== null) data = data.slice(0, this.max);
+    if (!rows.sqlOptionsApplied) {
+      if (this.offset) data = data.slice(this.offset);
+      if (this.max !== null) data = data.slice(0, this.max);
+    }
     return { data: data.map(({ data: value }) => this.project(value)) };
   }
 
@@ -331,21 +436,11 @@ class SQLQuery {
 
   async update(input) {
     if (!this.reader.inTransaction) {
-      const connection = await getPool().getConnection();
-      const transactionReader = new SQLReader(connection, true);
-      try {
-        await connection.beginTransaction();
-        const result = await new SQLQuery(this.table, transactionReader, this.conditions)
+      return runTransaction((transactionReader) => (
+        new SQLQuery(this.table, transactionReader, this.conditions)
           .applyOptionsFrom(this)
-          .updateInTransaction(input);
-        await connection.commit();
-        return result;
-      } catch (error) {
-        await connection.rollback();
-        throw error;
-      } finally {
-        connection.release();
-      }
+          .updateInTransaction(input)
+      ));
     }
     return this.updateInTransaction(input);
   }
@@ -358,7 +453,11 @@ class SQLQuery {
   }
 
   async updateInTransaction(input) {
-    const rows = await this.reader.rows(this.table, true);
+    const rows = await this.reader.selectRows(this.table, this.conditions, {
+      orderBy: this.sort,
+      limit: this.max,
+      offset: this.offset
+    }, true);
     const changes = input && input.data !== undefined ? input.data : input;
     let updated = 0;
     for (const row of rows) {
@@ -372,21 +471,17 @@ class SQLQuery {
 
   async remove() {
     if (!this.reader.inTransaction) {
-      const connection = await getPool().getConnection();
-      const transactionReader = new SQLReader(connection, true);
-      try {
-        await connection.beginTransaction();
-        const result = await new SQLQuery(this.table, transactionReader, this.conditions).remove();
-        await connection.commit();
-        return result;
-      } catch (error) {
-        await connection.rollback();
-        throw error;
-      } finally {
-        connection.release();
-      }
+      return runTransaction((transactionReader) => (
+        new SQLQuery(this.table, transactionReader, this.conditions)
+          .applyOptionsFrom(this)
+          .remove()
+      ));
     }
-    const rows = await this.reader.rows(this.table, true);
+    const rows = await this.reader.selectRows(this.table, this.conditions, {
+      orderBy: this.sort,
+      limit: this.max,
+      offset: this.offset
+    }, true);
     let removed = 0;
     for (const row of rows) {
       if (!matchesWhere(parseData(row), row.id, this.conditions)) continue;
@@ -468,22 +563,42 @@ function cleanId(data, fallback = '') {
   return data.id || data._id || fallback;
 }
 
-async function runTransaction(callback) {
-  const connection = await getPool().getConnection();
-  const transaction = new SQLReader(connection, true);
-  try {
-    await connection.beginTransaction();
-    const result = await callback(transaction);
-    await connection.commit();
-    return result;
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
+function isRetryableTransactionError(error) {
+  return !!error && (
+    Number(error.errno) === 1213
+    || Number(error.errno) === 1205
+    || error.code === 'ER_LOCK_DEADLOCK'
+    || error.code === 'ER_LOCK_WAIT_TIMEOUT'
+  );
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function runTransaction(callback, options = {}) {
+  const maxAttempts = Math.max(1, Number(options.maxAttempts || 3));
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const connection = await getPool().getConnection();
+    const transaction = new SQLReader(connection, true);
+    try {
+      await connection.beginTransaction();
+      const result = await callback(transaction);
+      await connection.commit();
+      return result;
+    } catch (error) {
+      lastError = error;
+      try { await connection.rollback(); } catch (rollbackError) { console.error('SQL transaction rollback failed', rollbackError.code || rollbackError.message); }
+      if (!isRetryableTransactionError(error) || attempt >= maxAttempts) throw error;
+    } finally {
+      connection.release();
+    }
+    await wait(20 * attempt + Math.floor(Math.random() * 30));
   }
+  throw lastError;
 }
 
 db.runTransaction = runTransaction;
 
-module.exports = { cloud, db, command, getContext, withRequestContext, getOptional, getRequired, find, cleanId };
+module.exports = { cloud, db, command, getContext, withRequestContext, getOptional, getRequired, find, cleanId, isRetryableTransactionError, compileWhere };

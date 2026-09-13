@@ -2,14 +2,11 @@ const api = require('../../utils/api');
 const { ORDER_STATUS_LABELS } = require('../../utils/constants');
 const { formatMoney, formatDateTimeRange, formatCountdown, formatDuration } = require('../../utils/format');
 
-const PAYMENT_HOLD_MS = 5 * 60 * 1000;
-
 function getPaymentDeadline(order) {
   if (!order || order.status !== 'PENDING_PAYMENT') return 0;
   const deadline = Number(order.deadline || order.paymentDeadline || 0);
   if (Number.isFinite(deadline) && deadline > 0) return deadline;
-  const createdAt = Number(order.createdAt || 0);
-  return createdAt > 0 ? createdAt + PAYMENT_HOLD_MS : 0;
+  return 0;
 }
 
 Page({
@@ -40,7 +37,7 @@ Page({
       return;
     }
     const refundStatus = order.refundStatus || '';
-    const visibleRefundStatuses = ['PENDING_CONFIG', 'PROCESSING', 'SUCCESS', 'CLOSED', 'ABNORMAL'];
+    const visibleRefundStatuses = ['INIT', 'PENDING_CONFIG', 'SUBMITTING', 'PROCESSING', 'SUCCESS', 'RETRY_REQUIRED', 'MANUAL_ACTION', 'CLOSED', 'ABNORMAL'];
     const displayTitle = order.work && order.work.title ? order.work.title : order.serviceName || '预约服务';
     const canCancel = ['PENDING_PAYMENT', 'RESERVED'].includes(order.status);
     const paymentDeadline = getPaymentDeadline(order);
@@ -60,9 +57,13 @@ Page({
         paidLabel: order.status === 'PENDING_PAYMENT' ? '待支付金额' : order.refundStatus === 'SUCCESS' ? '退款金额' : '实付金额',
         refundStatus: visibleRefundStatuses.includes(refundStatus) ? refundStatus : '',
         refundStatusLabel: {
-          PENDING_CONFIG: '退款待处理',
+          INIT: '退款待提交',
+          PENDING_CONFIG: '退款待配置',
+          SUBMITTING: '退款提交中',
           PROCESSING: '退款处理中',
           SUCCESS: '已到账',
+          RETRY_REQUIRED: '退款需重新发起',
+          MANUAL_ACTION: '退款需人工处理',
           CLOSED: '退款已关闭',
           ABNORMAL: '退款异常'
         }[refundStatus] || '',
@@ -80,7 +81,7 @@ Page({
   getActions(status) {
     if (status === 'PENDING_PAYMENT') return [{ id: 'pay', text: '继续支付', type: 'primary' }, { id: 'cancel', text: '取消订单', type: 'ghost' }];
     if (status === 'RESERVED') return [{ id: 'cancel', text: '取消并退款', type: 'danger' }];
-    if (['CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW'].includes(status)) return [{ id: 'delete', text: '删除订单', type: 'danger' }];
+    if (['CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW', 'REFUNDED'].includes(status)) return [{ id: 'delete', text: '删除订单', type: 'danger' }];
     return [];
   },
 
@@ -108,8 +109,15 @@ Page({
       wx.requestPayment({
         timeStamp: String(payment.timeStamp), nonceStr: payment.nonceStr, package: payment.package,
         signType: payment.signType || 'RSA', paySign: payment.paySign,
-        success: async () => { await api.queryPayment(this.data.order.id); this.loadOrder(); },
-        fail: () => wx.showToast({ title: '支付未完成', icon: 'none' })
+        success: async () => {
+          try { await api.queryPayment(this.data.order.id); } catch (error) { wx.showToast({ title: '支付结果确认中', icon: 'none' }); }
+          this.loadOrder();
+        },
+        fail: async () => {
+          try { await api.queryPayment(this.data.order.id); } catch (error) { /* 后台任务会继续查单。 */ }
+          wx.showToast({ title: '请查看订单支付状态', icon: 'none' });
+          this.loadOrder();
+        }
       });
     } catch (error) {
       wx.hideLoading();

@@ -34,18 +34,6 @@
       }
     },
     {
-      "name": "seed",
-      "timeout": 60,
-      "memorySize": 256,
-      "runtime": "Nodejs20.19",
-      "handler": "index.main",
-      "description": "四个小姐姐的店受控演示数据初始化",
-      "vpc": {
-        "vpcId": "vpc-92zwp758",
-        "subnetId": "subnet-6sf7e7m9"
-      }
-    },
-    {
       "name": "admin-api",
       "timeout": 20,
       "memorySize": 256,

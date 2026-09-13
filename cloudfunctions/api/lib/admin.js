@@ -4,7 +4,7 @@ const { AppError, assert } = require('./errors');
 const { requireRole } = require('./auth');
 const { getCurrentSettings, mergeSettings, publicSettings } = require('./settings');
 const { publicService, publicWork, publicTechnician, listServices, listWorks } = require('./catalog');
-const { publicOrder } = require('./booking');
+const { publicOrder, beginAdminRefund } = require('./booking');
 const { requestRefund } = require('./payment-service');
 const wechat = require('./wechat-pay');
 const { dateToTimestamp, formatParts, toDateString, weekday } = require('./time');
@@ -295,14 +295,18 @@ async function saveSettings(payload = {}) {
 
 async function getPaymentConfigStatus() {
   await requireRole(['OWNER']);
-  const missing = wechat.getMissingConfig();
+  const missing = wechat.getConfigIssues();
   return { configured: missing.length === 0, missing, callbackCertificateConfigured: wechat.hasNotificationVerifier(), note: '仅返回配置状态，不返回任何密钥或证书内容。' };
 }
 
 async function refundOrder(payload) {
   const { account } = await requireRole(['OWNER']);
   assert(payload && payload.orderId, 'INVALID_REFUND', '缺少订单 ID');
-  const result = await requestRefund(payload.orderId, payload.reason || '管理员发起退款');
+  const reason = payload.reason || '管理员发起退款';
+  const prepared = await beginAdminRefund(payload.orderId, reason);
+  const result = prepared.refundRequired
+    ? await requestRefund(payload.orderId, reason, { allowClosedRetry: true })
+    : { id: prepared.order.refundId || '', status: prepared.order.refundStatus };
   await audit({ ...account, openid: account.openid }, 'REQUEST_REFUND', 'orders', payload.orderId, { refundId: result.id || result._id, status: result.status }, payload.reason);
   return result;
 }
