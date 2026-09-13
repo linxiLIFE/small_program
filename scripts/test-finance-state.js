@@ -7,6 +7,11 @@ const {
   needsCashRefund,
   canAdvanceService,
   refundStatusFromProvider,
+  refundFailureDisposition,
+  bookingRequestHash,
+  assertServiceTransitionTime,
+  canDeleteCustomerOrder,
+  canCommitPaymentAttempt,
   nextRefundIdentity,
   notificationRecordId
 } = require('../cloudfunctions/api/lib/finance-state');
@@ -32,6 +37,21 @@ test('provider success maps to success', () => assert.strictEqual(refundStatusFr
 test('provider closed requires a new refund number', () => assert.strictEqual(refundStatusFromProvider('CLOSED'), REFUND_STATUS.RETRY_REQUIRED));
 test('provider abnormal requires manual action', () => assert.strictEqual(refundStatusFromProvider('ABNORMAL'), REFUND_STATUS.MANUAL_ACTION));
 test('provider processing stays processing', () => assert.strictEqual(refundStatusFromProvider('PROCESSING'), REFUND_STATUS.PROCESSING));
+test('insufficient merchant funds waits for manual retry', () => assert.deepStrictEqual(refundFailureDisposition({ details: { providerCode: 'NOT_ENOUGH' } }), { status: REFUND_STATUS.WAITING_FUNDS, retry: false, providerCode: 'NOT_ENOUGH' }));
+test('invalid refund request never auto retries', () => assert.strictEqual(refundFailureDisposition({ details: { providerCode: 'INVALID_REQUEST' } }).status, REFUND_STATUS.CONFIG_OR_DATA_ERROR));
+test('provider timeout retries the same refund', () => assert.strictEqual(refundFailureDisposition({ details: { providerCode: 'SYSTEM_ERROR' } }).retry, true));
+test('unknown network timeout is retryable', () => assert.strictEqual(refundFailureDisposition({ code: 'ETIMEDOUT' }).retry, true));
+test('booking request hash is stable', () => assert.strictEqual(bookingRequestHash({ serviceId: 's', workId: 'w', technicianId: 't', date: '2026-09-14', startAt: 1, pointsToUse: 2, quoteId: 'q' }), bookingRequestHash({ serviceId: 's', workId: 'w', technicianId: 't', date: '2026-09-14', startAt: 1, pointsToUse: 2, quoteId: 'q' })));
+test('booking request hash changes with the slot', () => assert.notStrictEqual(bookingRequestHash({ startAt: 1 }), bookingRequestHash({ startAt: 2 })));
+test('future check-in is blocked', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000, bookingRuleSnapshot: { noShowGraceMinutes: 30 } }, 'checkIn', 1).allowed, false));
+test('check-in inside the window is allowed', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000, bookingRuleSnapshot: { noShowGraceMinutes: 30 } }, 'checkIn', 9_000_000).allowed, true));
+test('refund-in-progress cancelled order cannot be hidden', () => assert.strictEqual(canDeleteCustomerOrder({ status: ORDER_STATUS.CANCELLED_BY_USER, refundStatus: REFUND_STATUS.PROCESSING }), false));
+test('refunded order can be hidden', () => assert.strictEqual(canDeleteCustomerOrder({ status: ORDER_STATUS.REFUNDED, refundStatus: REFUND_STATUS.SUCCESS }), true));
+test('only the current payment attempt can commit prepay', () => assert.strictEqual(canCommitPaymentAttempt({ status: ORDER_STATUS.PENDING_PAYMENT }, { status: PAYMENT_STATUS.PREPAY_SUBMITTING, paymentAttemptId: 'current' }, 'current'), true));
+test('a cancelled or superseded payment attempt cannot commit prepay', () => {
+  assert.strictEqual(canCommitPaymentAttempt({ status: ORDER_STATUS.CANCELLED_BY_USER }, { status: PAYMENT_STATUS.PREPAY_SUBMITTING, paymentAttemptId: 'current' }, 'current'), false);
+  assert.strictEqual(canCommitPaymentAttempt({ status: ORDER_STATUS.PENDING_PAYMENT }, { status: PAYMENT_STATUS.PREPAY_SUBMITTING, paymentAttemptId: 'new' }, 'old'), false);
+});
 test('closed retry increments refund identity', () => assert.deepStrictEqual(nextRefundIdentity('order1', { attempt: 1 }), { id: 'rf_order1_2', refundNo: 'rf_order1_2', attempt: 2 }));
 test('notification IDs are stable and bounded', () => assert.strictEqual(notificationRecordId('event-1'), notificationRecordId('event-1')));
 test('notification IDs differ by event', () => assert.notStrictEqual(notificationRecordId('event-1'), notificationRecordId('event-2')));
@@ -40,6 +60,7 @@ test('lock timeout is retryable', () => assert(isRetryableTransactionError({ err
 test('ordinary SQL errors are not retried', () => assert(!isRetryableTransactionError({ code: 'ER_PARSE_ERROR' })));
 test('indexed payment lookup compiles to a unique column', () => assert(compileWhere({ merchantOrderNo: 'SG1' }, 'payments').sql.includes('`merchant_order_no`')));
 test('due-job comparison compiles to indexed columns', () => assert(compileWhere({ status: 'PENDING', nextRunAt: { __sqlOperator: 'lte', value: 10 } }, 'jobs').sql.includes('`next_run_at` <= ?')));
+test('settings version sorts by numeric generated column', () => assert(compileWhere({ version: 10 }, 'settings_versions').sql.includes('`version_num`')));
 
 const root = path.resolve(__dirname, '..');
 const wechat = fs.readFileSync(path.join(root, 'cloudfunctions/api/lib/wechat-pay.js'), 'utf8');

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { db, getOptional } = require('./db');
 const { COLLECTIONS, PAYMENT_STATUS, REFUND_STATUS, ORDER_STATUS } = require('./constants');
 const { AppError, assert } = require('./errors');
@@ -5,7 +6,7 @@ const { requireOpenId } = require('./auth');
 const { preparePaymentRecord, markPaymentSuccess, markPaymentClosed, markRefundSuccess, markRefundAbnormal, markRefundProcessing, publicOrder } = require('./booking');
 const wechat = require('./wechat-pay');
 const { addMinutes } = require('./time');
-const { refundStatusFromProvider, nextRefundIdentity, notificationRecordId } = require('./finance-state');
+const { refundStatusFromProvider, refundFailureDisposition, nextRefundIdentity, notificationRecordId, canCommitPaymentAttempt } = require('./finance-state');
 
 async function scheduleRefundRetry(orderId, refundId) {
   const jobId = `job_refund_retry_${refundId}`;
@@ -104,6 +105,10 @@ async function reconcilePaymentBeforeCancellation(order, payment) {
     provider = await wechat.queryOrder(payment.merchantOrderNo);
   } catch (error) {
     if (isProviderMissing(error)) {
+      const settleUntil = Number(order.paymentDeadline || 0) + 2 * 60 * 1000;
+      if (payment.status === PAYMENT_STATUS.CLOSE_PENDING && Date.now() < settleUntil) {
+        throw new AppError('PAYMENT_CLOSE_PENDING', '支付单正在关闭，将由后台继续确认', 409);
+      }
       await recordPaymentState(order.id, PAYMENT_STATUS.CLOSED, 'ORDER_NOT_EXIST');
       return { ...payment, status: PAYMENT_STATUS.CLOSED, providerState: 'ORDER_NOT_EXIST' };
     }
@@ -158,7 +163,18 @@ async function preparePayment(orderId) {
   if (!wechat.isConfigured()) {
     return { configured: false, missing: wechat.getConfigIssues(), message: '微信支付资质尚未配置或配置无效，订单已保留。检查商户配置后可重新发起支付。' };
   }
-  await recordPaymentState(order.id, PAYMENT_STATUS.PREPAY_SUBMITTING, 'PREPAY_SUBMITTING');
+  const paymentAttemptId = crypto.randomBytes(16).toString('hex');
+  await db.runTransaction(async (transaction) => {
+    const latestOrder = await getOptional(COLLECTIONS.orders, order.id, transaction);
+    const latestPayment = await getOptional(COLLECTIONS.payments, payment.id || payment._id, transaction);
+    assert(latestOrder && latestOrder.status === ORDER_STATUS.PENDING_PAYMENT, 'ORDER_NOT_PAYABLE', '当前订单不需要支付', 409);
+    assert(Number(latestOrder.paymentDeadline || 0) > Date.now(), 'PAYMENT_DEADLINE_EXPIRED', '支付时间已结束', 409);
+    assert(latestPayment && ![PAYMENT_STATUS.SUCCESS, PAYMENT_STATUS.CLOSED, PAYMENT_STATUS.CLOSE_PENDING].includes(latestPayment.status), 'ORDER_NOT_PAYABLE', '当前订单不能继续支付', 409);
+    const now = Date.now();
+    const nextPayment = { ...latestPayment, status: PAYMENT_STATUS.PREPAY_SUBMITTING, providerState: 'PREPAY_SUBMITTING', paymentAttemptId, prepareGeneration: Number(latestPayment.prepareGeneration || 0) + 1, updatedAt: now };
+    await transaction.collection(COLLECTIONS.payments).doc(payment.id || payment._id).set({ data: nextPayment });
+    await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: { ...latestOrder, paymentStatus: PAYMENT_STATUS.PREPAY_SUBMITTING, updatedAt: now } });
+  });
   const payParams = await wechat.createJsapiPrepay({
     description: order.serviceSnapshot.name,
     outTradeNo: payment.merchantOrderNo,
@@ -169,7 +185,7 @@ async function preparePayment(orderId) {
   const accepted = await db.runTransaction(async (transaction) => {
     const latestOrder = await getOptional(COLLECTIONS.orders, order.id, transaction);
     const latestPayment = await getOptional(COLLECTIONS.payments, payment.id || payment._id, transaction);
-    if (!latestOrder || latestOrder.status !== ORDER_STATUS.PENDING_PAYMENT || latestPayment.status === PAYMENT_STATUS.SUCCESS) return false;
+    if (!canCommitPaymentAttempt(latestOrder, latestPayment, paymentAttemptId)) return false;
     const now = Date.now();
     await transaction.collection(COLLECTIONS.payments).doc(payment.id || payment._id).set({ data: { ...latestPayment, appid, mchid: wechat.config().mchid, status: PAYMENT_STATUS.PREPAY_CREATED, providerState: 'PREPAY_CREATED', prepayCreatedAt: now, updatedAt: now } });
     await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: { ...latestOrder, paymentStatus: PAYMENT_STATUS.PREPAY_CREATED, updatedAt: now } });
@@ -178,7 +194,9 @@ async function preparePayment(orderId) {
   if (!accepted) {
     const latestOrder = await getOptional(COLLECTIONS.orders, order.id);
     const latestPayment = await getOptional(COLLECTIONS.payments, payment.id || payment._id);
-    if (latestOrder && latestPayment) await reconcilePaymentBeforeCancellation(latestOrder, latestPayment);
+    if (latestOrder && latestPayment && (latestOrder.status !== ORDER_STATUS.PENDING_PAYMENT || latestPayment.status === PAYMENT_STATUS.CLOSE_PENDING)) {
+      await reconcilePaymentBeforeCancellation(latestOrder, latestPayment);
+    }
     throw new AppError('ORDER_NOT_PAYABLE', '订单状态已变化，不能继续支付', 409);
   }
   return { configured: true, ...payParams, orderId: order.id };
@@ -212,6 +230,13 @@ async function queryPayment(orderId) {
         const closed = await markPaymentClosed(orderId, 'ORDER_NOT_EXIST');
         return { configured: true, status: PAYMENT_STATUS.CLOSED, providerState: 'ORDER_NOT_EXIST', order: closed };
       }
+      if (order.status !== ORDER_STATUS.PENDING_PAYMENT && payment.status === PAYMENT_STATUS.CLOSE_PENDING) {
+        if (Date.now() < paymentDeadline + 2 * 60 * 1000) {
+          return { configured: true, status: PAYMENT_STATUS.CLOSE_PENDING, providerState: 'ORDER_NOT_EXIST_PENDING_SETTLEMENT', order: publicOrder(order) };
+        }
+        await recordPaymentState(orderId, PAYMENT_STATUS.CLOSED, 'ORDER_NOT_EXIST');
+        return { configured: true, status: PAYMENT_STATUS.CLOSED, providerState: 'ORDER_NOT_EXIST', order: publicOrder(await getOptional(COLLECTIONS.orders, orderId)) };
+      }
       await recordPaymentState(orderId, PAYMENT_STATUS.NOT_STARTED, 'ORDER_NOT_EXIST');
       return { configured: true, status: PAYMENT_STATUS.NOT_STARTED, providerState: 'ORDER_NOT_EXIST', order: publicOrder(order) };
     }
@@ -229,15 +254,24 @@ async function queryPayment(orderId) {
     const closed = await markPaymentClosed(orderId, 'NOTPAY_CLOSED');
     return { configured: true, status: PAYMENT_STATUS.CLOSED, order: closed };
   }
+  if (result.trade_state === 'NOTPAY' && (order.status !== ORDER_STATUS.PENDING_PAYMENT || payment.status === PAYMENT_STATUS.CLOSE_PENDING)) {
+    await wechat.closeOrder(payment.merchantOrderNo);
+    await recordPaymentState(orderId, PAYMENT_STATUS.CLOSED, 'NOTPAY_CLOSED');
+    return { configured: true, status: PAYMENT_STATUS.CLOSED, order: publicOrder(await getOptional(COLLECTIONS.orders, orderId)) };
+  }
   if (result.trade_state === 'CLOSED' || result.trade_state === 'REVOKED') {
-    const closed = await markPaymentClosed(orderId, result.trade_state);
-    return { configured: true, status: PAYMENT_STATUS.CLOSED, order: closed };
+    if (order.status === ORDER_STATUS.PENDING_PAYMENT) {
+      const closed = await markPaymentClosed(orderId, result.trade_state);
+      return { configured: true, status: PAYMENT_STATUS.CLOSED, order: closed };
+    }
+    await recordPaymentState(orderId, PAYMENT_STATUS.CLOSED, result.trade_state);
+    return { configured: true, status: PAYMENT_STATUS.CLOSED, order: publicOrder(await getOptional(COLLECTIONS.orders, orderId)) };
   }
   await recordPaymentState(orderId, PAYMENT_STATUS.UNKNOWN, result.trade_state || 'UNKNOWN');
   return { configured: true, status: PAYMENT_STATUS.UNKNOWN, providerState: result.trade_state || 'UNKNOWN', order: publicOrder(await getOptional(COLLECTIONS.orders, orderId)) };
 }
 
-async function ensureDurableRefundIntent(orderId, reason, allowClosedRetry) {
+async function ensureDurableRefundIntent(orderId, reason, options = {}) {
   return db.runTransaction(async (transaction) => {
     const order = await getOptional(COLLECTIONS.orders, orderId, transaction);
     assert(order, 'ORDER_NOT_FOUND', '订单不存在', 404);
@@ -248,10 +282,13 @@ async function ensureDurableRefundIntent(orderId, reason, allowClosedRetry) {
     if (existing && existing.status === REFUND_STATUS.SUCCESS) return { order, payment, refund: existing };
     if (existing && [REFUND_STATUS.MANUAL_ACTION, REFUND_STATUS.ABNORMAL].includes(existing.status)) return { order, payment, refund: existing };
     if (existing && [REFUND_STATUS.RETRY_REQUIRED, REFUND_STATUS.CLOSED].includes(existing.status)) {
-      if (!allowClosedRetry) return { order, payment, refund: { ...existing, status: REFUND_STATUS.RETRY_REQUIRED } };
+      if (!options.allowClosedRetry) return { order, payment, refund: { ...existing, status: REFUND_STATUS.RETRY_REQUIRED } };
       const identity = nextRefundIdentity(orderId, existing);
       refundId = identity.id;
       existing = { _id: refundId, id: refundId, orderId, userId: order.userId, refundNo: identity.refundNo, attempt: identity.attempt, previousRefundId: order.refundId || '', amountFen: Number(payment.amountFen), status: REFUND_STATUS.INIT, reason, retryCount: 0, createdAt: Date.now(), updatedAt: Date.now() };
+    }
+    if (existing && options.manualRetry && [REFUND_STATUS.WAITING_FUNDS, REFUND_STATUS.CONFIG_OR_DATA_ERROR].includes(existing.status)) {
+      existing = { ...existing, status: REFUND_STATUS.INIT, lastManualRetryAt: Date.now(), errorCode: '', errorMessage: '', updatedAt: Date.now() };
     }
     const now = Date.now();
     const refund = existing || { _id: refundId, id: refundId, orderId, userId: order.userId, refundNo: refundId, attempt: 1, amountFen: Number(payment.amountFen), status: REFUND_STATUS.INIT, reason, retryCount: 0, createdAt: now, updatedAt: now };
@@ -262,9 +299,9 @@ async function ensureDurableRefundIntent(orderId, reason, allowClosedRetry) {
 }
 
 async function requestRefund(orderId, reason = '预约取消退款', options = {}) {
-  let context = await ensureDurableRefundIntent(orderId, reason, !!options.allowClosedRetry);
+  let context = await ensureDurableRefundIntent(orderId, reason, options);
   if (context.refund.status === REFUND_STATUS.SUCCESS) return context.refund;
-  if ([REFUND_STATUS.MANUAL_ACTION, REFUND_STATUS.ABNORMAL, REFUND_STATUS.RETRY_REQUIRED].includes(context.refund.status)) return context.refund;
+  if ([REFUND_STATUS.MANUAL_ACTION, REFUND_STATUS.ABNORMAL, REFUND_STATUS.RETRY_REQUIRED, REFUND_STATUS.WAITING_FUNDS, REFUND_STATUS.CONFIG_OR_DATA_ERROR].includes(context.refund.status)) return context.refund;
   await scheduleRefundRetry(orderId, context.refund.id || context.refund._id);
   if (!wechat.isConfigured()) {
     const pending = await db.runTransaction(async (transaction) => {
@@ -296,15 +333,24 @@ async function requestRefund(orderId, reason = '预约取消退款', options = {
   try {
     result = await wechat.createRefund({ outTradeNo: context.payment.merchantOrderNo, outRefundNo: context.refund.refundNo, amountFen: context.refund.amountFen, totalFen: context.payment.amountFen, reason });
   } catch (error) {
-    await scheduleRefundRetry(orderId, refundId);
-    throw error;
+    const disposition = refundFailureDisposition(error);
+    if (disposition.retry) {
+      await scheduleRefundRetry(orderId, refundId);
+      throw error;
+    }
+    await markRefundAbnormal(refundId, {
+      status: disposition.status,
+      providerStatus: disposition.providerCode,
+      message: error && error.details && error.details.providerMessage || error.message || ''
+    });
+    return getOptional(COLLECTIONS.refunds, refundId);
   }
   const providerStatus = String(result.status || 'PROCESSING').toUpperCase();
   const localStatus = refundStatusFromProvider(providerStatus);
   if (localStatus === REFUND_STATUS.SUCCESS) {
     await markRefundSuccess(refundId, { refundId: result.refund_id || '', successAt: parseProviderTime(result.success_time) });
   } else if ([REFUND_STATUS.RETRY_REQUIRED, REFUND_STATUS.MANUAL_ACTION].includes(localStatus)) {
-    await markRefundAbnormal(refundId, { status: providerStatus, refundId: result.refund_id || '', providerStatus, message: result.refund_remark || result.reason || '' });
+    await markRefundAbnormal(refundId, { status: localStatus, refundId: result.refund_id || '', providerStatus, message: result.refund_remark || result.reason || '' });
   } else {
     await markRefundProcessing(orderId, refundId, { refundId: result.refund_id || '', providerStatus });
     await scheduleRefundRetry(orderId, refundId);
@@ -318,15 +364,20 @@ async function beginNotification(notification) {
     const existing = await getOptional(COLLECTIONS.notifications, id, transaction);
     if (existing && existing.status === 'DONE') return { id, duplicate: true };
     const now = Date.now();
-    await transaction.collection(COLLECTIONS.notifications).doc(id).set({ data: { ...(existing || {}), _id: id, id, providerEventId: notification.id, eventType: notification.event_type, status: 'PROCESSING', attemptCount: Number(existing && existing.attemptCount || 0) + 1, createdAt: existing && existing.createdAt || now, updatedAt: now } });
-    return { id, duplicate: false };
+    if (existing && existing.status === 'PROCESSING' && Number(existing.leaseUntil || 0) > now) return { id, duplicate: true, inFlight: true };
+    const claimToken = crypto.randomBytes(16).toString('hex');
+    await transaction.collection(COLLECTIONS.notifications).doc(id).set({ data: { ...(existing || {}), _id: id, id, providerEventId: notification.id, eventType: notification.event_type, status: 'PROCESSING', claimToken, leaseUntil: now + 2 * 60 * 1000, attemptCount: Number(existing && existing.attemptCount || 0) + 1, createdAt: existing && existing.createdAt || now, updatedAt: now } });
+    return { id, claimToken, duplicate: false };
   });
 }
 
-async function finishNotification(id, status, result = {}, error = null) {
-  const record = await getOptional(COLLECTIONS.notifications, id);
-  if (!record) return;
-  await db.collection(COLLECTIONS.notifications).doc(id).set({ data: { ...record, status, result, lastError: error ? String(error.code || error.message || error) : '', updatedAt: Date.now() } });
+async function finishNotification(id, claimToken, status, result = {}, error = null) {
+  return db.runTransaction(async (transaction) => {
+    const record = await getOptional(COLLECTIONS.notifications, id, transaction);
+    if (!record || record.status === 'DONE' || record.status !== 'PROCESSING' || record.claimToken !== claimToken) return false;
+    await transaction.collection(COLLECTIONS.notifications).doc(id).set({ data: { ...record, status, result, lastError: error ? String(error.code || error.message || error) : '', leaseUntil: 0, updatedAt: Date.now() } });
+    return true;
+  });
 }
 
 async function handleNotify(event) {
@@ -376,10 +427,10 @@ async function handleNotify(event) {
       const marked = await markPaymentSuccess(payment.orderId, { amountFen: resource.amount && resource.amount.total, currency: resource.amount && resource.amount.currency, payerOpenid: resource.payer && resource.payer.openid, transactionId: resource.transaction_id, paidAt: parseProviderTime(resource.success_time) });
       result = { ok: true, orderId: payment.orderId, duplicate: marked.duplicate, refundQueued: marked.shouldRefund };
     }
-    await finishNotification(claim.id, 'DONE', result);
+    await finishNotification(claim.id, claim.claimToken, 'DONE', result);
     return result;
   } catch (error) {
-    await finishNotification(claim.id, 'FAILED', {}, error);
+    await finishNotification(claim.id, claim.claimToken, 'FAILED', {}, error);
     throw error;
   }
 }

@@ -167,10 +167,11 @@ function parseData(row) {
 }
 
 const GENERATED_FIELDS = {
-  orders: { userId: 'user_id', status: 'status', paymentStatus: 'payment_status', refundStatus: 'refund_status', technicianId: 'technician_id', startAt: 'start_at' },
+  orders: { userId: 'user_id', status: 'status', paymentStatus: 'payment_status', refundStatus: 'refund_status', technicianId: 'technician_id', date: 'booking_date', startAt: 'start_at' },
   payments: { orderId: 'order_id', merchantOrderNo: 'merchant_order_no', transactionId: 'transaction_id', status: 'status' },
   refunds: { orderId: 'order_id', refundNo: 'refund_no', status: 'status' },
-  jobs: { type: 'type', status: 'status', nextRunAt: 'next_run_at', leaseUntil: 'lease_until' }
+  jobs: { type: 'type', status: 'status', nextRunAt: 'next_run_at', leaseUntil: 'lease_until' },
+  settings_versions: { version: 'version_num' }
 };
 
 function sqlField(field, table = '') {

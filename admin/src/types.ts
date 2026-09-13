@@ -100,7 +100,7 @@ export interface Settings {
   version: number;
   store: { storeName: string; address: string; phone: string; notice: string; latitude?:number|null; longitude?:number|null };
   home?: {banners:Array<{id:string;imageUrl:string;imageFileID?:string}>};
-  booking: { openDays: number; minAdvanceMinutes: number; slotStepMinutes: number; unpaidHoldMinutes: number; noShowGraceMinutes: number };
+  booking: { openDays: number; minAdvanceMinutes: number; slotStepMinutes: number; unpaidHoldMinutes: number; noShowGraceMinutes: number; noShowPolicy: 'MANUAL_REVIEW' };
   points: { pointRateFen: number; unit: number; discountFen: number; maxPercent: number };
 }
 

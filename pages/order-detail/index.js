@@ -37,7 +37,7 @@ Page({
       return;
     }
     const refundStatus = order.refundStatus || '';
-    const visibleRefundStatuses = ['INIT', 'PENDING_CONFIG', 'SUBMITTING', 'PROCESSING', 'SUCCESS', 'RETRY_REQUIRED', 'MANUAL_ACTION', 'CLOSED', 'ABNORMAL'];
+    const visibleRefundStatuses = ['INIT', 'PENDING_CONFIG', 'SUBMITTING', 'PROCESSING', 'SUCCESS', 'RETRY_REQUIRED', 'WAITING_FUNDS', 'CONFIG_OR_DATA_ERROR', 'MANUAL_ACTION', 'CLOSED', 'ABNORMAL'];
     const displayTitle = order.work && order.work.title ? order.work.title : order.serviceName || '预约服务';
     const canCancel = ['PENDING_PAYMENT', 'RESERVED'].includes(order.status);
     const paymentDeadline = getPaymentDeadline(order);
@@ -63,6 +63,8 @@ Page({
           PROCESSING: '退款处理中',
           SUCCESS: '已到账',
           RETRY_REQUIRED: '退款需重新发起',
+          WAITING_FUNDS: '商户余额不足，等待处理',
+          CONFIG_OR_DATA_ERROR: '退款配置或数据异常',
           MANUAL_ACTION: '退款需人工处理',
           CLOSED: '退款已关闭',
           ABNORMAL: '退款异常'
@@ -73,15 +75,16 @@ Page({
         countdownUrgent: paymentDeadline && remaining <= 60 * 1000
       },
       canCancel,
-      actions: this.getActions(order.status)
+      actions: this.getActions(order)
     });
     this.startCountdown();
   },
 
-  getActions(status) {
+  getActions(order) {
+    const status = order.status;
     if (status === 'PENDING_PAYMENT') return [{ id: 'pay', text: '继续支付', type: 'primary' }, { id: 'cancel', text: '取消订单', type: 'ghost' }];
     if (status === 'RESERVED') return [{ id: 'cancel', text: '取消并退款', type: 'danger' }];
-    if (['CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW', 'REFUNDED'].includes(status)) return [{ id: 'delete', text: '删除订单', type: 'danger' }];
+    if (order.canDelete) return [{ id: 'delete', text: '删除订单', type: 'danger' }];
     return [];
   },
 

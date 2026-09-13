@@ -9,7 +9,7 @@ const { dateToTimestamp, weekday, minutesOfDay, addMinutes, isWithinDateWindow, 
 const { calculatePointsDiscount, earnPoints, rebalancePoints, awardPoints } = require('./money');
 const { encryptPhone, maskPhone } = require('./contact-crypto');
 const { buildBookingTimeline } = require('./booking-timeline');
-const { needsCashRefund, canAdvanceService, refundStatusFromProvider } = require('./finance-state');
+const { needsCashRefund, canAdvanceService, refundStatusFromProvider, bookingRequestHash, assertServiceTransitionTime, canDeleteCustomerOrder } = require('./finance-state');
 
 function idempotencyId(openid, key) {
   return `idem_${crypto.createHash('sha256').update(`${openid}:${key}`).digest('hex').slice(0, 48)}`;
@@ -224,7 +224,7 @@ function publicOrder(order) {
   return {
     id: order.id || order._id,
     status: order.status,
-    statusLabel: ({ PENDING_PAYMENT: '待付款', RESERVED: '待到店', ARRIVED: '已到店', IN_SERVICE: '服务中', COMPLETED: '已完成', CANCEL_PENDING_REFUND: '退款待处理', REFUNDED: '已退款', CANCELLED: '已取消', CANCELLED_BY_USER: '已取消', CANCELLED_NO_SHOW: '未到店已取消' })[order.status] || '处理中',
+    statusLabel: ({ PENDING_PAYMENT: '待付款', RESERVED: '待到店', ARRIVED: '已到店', IN_SERVICE: '服务中', COMPLETED: '已完成', NO_SHOW_REVIEW: '未到店待复核', CANCEL_PENDING_REFUND: '退款待处理', REFUNDED: '已退款', CANCELLED: '已取消', CANCELLED_BY_USER: '已取消', CANCELLED_NO_SHOW: '未到店已取消' })[order.status] || '处理中',
     work: order.workSnapshot || null,
     serviceName: order.serviceSnapshot && order.serviceSnapshot.name,
     categoryName: order.serviceSnapshot && order.serviceSnapshot.categoryName,
@@ -248,7 +248,8 @@ function publicOrder(order) {
     paidAt: order.paidAt || 0,
     completedAt: order.completedAt || 0,
     paymentStatus: order.paymentStatus || PAYMENT_STATUS.NOT_STARTED,
-    deadline: order.paymentDeadline || 0
+    deadline: order.paymentDeadline || 0,
+    canDelete: canDeleteCustomerOrder(order)
   };
 }
 
@@ -352,6 +353,7 @@ async function createOrder(payload) {
   const key = String(payload.idempotencyKey || '').trim();
   assert(key && key.length <= 100, 'INVALID_IDEMPOTENCY_KEY', '缺少有效的幂等键');
   const idem = idempotencyId(context.openid, key);
+  const requestHash = bookingRequestHash(payload);
   const id = orderId();
   const merchantNo = merchantOrderNo(id);
   const paymentId = `pay_${id}`;
@@ -378,7 +380,10 @@ async function createOrder(payload) {
 
   const result = await db.runTransaction(async (transaction) => {
     const existingIdem = await getOptional(COLLECTIONS.idempotency, idem, transaction);
-    if (existingIdem && existingIdem.orderId) return { orderId: existingIdem.orderId, replay: true };
+    if (existingIdem && existingIdem.orderId) {
+      assert(existingIdem.requestHash === requestHash, 'IDEMPOTENCY_CONFLICT', '预约内容已变化，请重新提交', 409);
+      return { orderId: existingIdem.orderId, replay: true };
+    }
     await getOptional(COLLECTIONS.users, context.openid, transaction);
     const day = await getDayPlan(validation.technician.id, payload.date, validation.settings, transaction);
     assert(!day.leave, 'SLOT_UNAVAILABLE', '该日期技师休息');
@@ -406,7 +411,7 @@ async function createOrder(payload) {
         await addLedger(transaction, `consume_${id}`, { userId: context.openid, orderId: id, type: 'CONSUME', amount: -price.pointsToUse, balanceAfter: available, description: '全积分预约，支付确认时消耗积分' });
       }
     }
-    await transaction.collection(COLLECTIONS.idempotency).doc(idem).set({ data: { _id: idem, userId: context.openid, key, orderId: id, createdAt: now, expiresAt: addMinutes(now, 24 * 60) } });
+    await transaction.collection(COLLECTIONS.idempotency).doc(idem).set({ data: { _id: idem, id: idem, userId: context.openid, key, requestHash, orderId: id, createdAt: now, expiresAt: addMinutes(now, 24 * 60) } });
     if (price.paidFen > 0) {
       const jobId = `job_payment_expire_${id}`;
       await transaction.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { _id: jobId, type: 'PAYMENT_EXPIRE', businessId: id, status: 'PENDING', nextRunAt: deadline, retryCount: 0, createdAt: now, updatedAt: now } });
@@ -490,17 +495,11 @@ async function listPoints() {
 
 async function cancelOrder(orderIdValue) {
   const { openid } = requireOpenId();
-  const initialOrder = await getOwnedOrder(orderIdValue, openid);
-  assert([ORDER_STATUS.PENDING_PAYMENT, ORDER_STATUS.RESERVED].includes(initialOrder.status), 'ORDER_NOT_CANCELLABLE', '当前订单状态不支持取消');
-  const initialPayment = await getOptional(COLLECTIONS.payments, `pay_${initialOrder.id}`);
-  const { reconcilePaymentBeforeCancellation } = require('./payment-service');
-  await reconcilePaymentBeforeCancellation(initialOrder, initialPayment);
   const result = await db.runTransaction(async (transaction) => {
     const order = await getOwnedOrder(orderIdValue, openid, transaction);
     assert([ORDER_STATUS.PENDING_PAYMENT, ORDER_STATUS.RESERVED].includes(order.status), 'ORDER_NOT_CANCELLABLE', '当前订单状态不支持取消');
     const payment = await getOptional(COLLECTIONS.payments, `pay_${order.id}`, transaction);
     const paymentStatus = payment ? payment.status : PAYMENT_STATUS.NOT_STARTED;
-    assert(paymentStatus !== PAYMENT_STATUS.UNKNOWN, 'PAYMENT_CHECK_REQUIRED', '支付结果待确认，请先查询支付状态');
     const cashPaid = paymentStatus === PAYMENT_STATUS.SUCCESS && Number(order.paidFen || 0) > 0;
     const nextStatus = ORDER_STATUS.CANCELLED_BY_USER;
     let nextOrder = { ...order, status: nextStatus, refundStatus: cashPaid ? REFUND_STATUS.INIT : REFUND_STATUS.NOT_REQUIRED, cancelledAt: Date.now(), updatedAt: Date.now() };
@@ -519,13 +518,29 @@ async function cancelOrder(orderIdValue) {
       const intent = await ensureRefundIntent(transaction, nextOrder, '用户取消预约');
       nextOrder = intent.order;
     } else if (payment && payment.status !== PAYMENT_STATUS.SUCCESS) {
-      await transaction.collection(COLLECTIONS.payments).doc(payment.id || payment._id).set({ data: { ...payment, status: PAYMENT_STATUS.CLOSED, providerState: payment.providerState || 'CLOSED_BEFORE_CANCEL', updatedAt: Date.now() } });
-      nextOrder.paymentStatus = PAYMENT_STATUS.CLOSED;
+      const providerMayExist = [PAYMENT_STATUS.PREPAY_SUBMITTING, PAYMENT_STATUS.PREPAY_CREATED, PAYMENT_STATUS.UNKNOWN, PAYMENT_STATUS.CLOSE_PENDING].includes(payment.status);
+      const nextPaymentStatus = providerMayExist ? PAYMENT_STATUS.CLOSE_PENDING : PAYMENT_STATUS.CLOSED;
+      await transaction.collection(COLLECTIONS.payments).doc(payment.id || payment._id).set({ data: { ...payment, status: nextPaymentStatus, providerState: providerMayExist ? 'CANCEL_CLOSE_PENDING' : (payment.providerState || 'CLOSED_BEFORE_CANCEL'), updatedAt: Date.now() } });
+      nextOrder.paymentStatus = nextPaymentStatus;
+      if (providerMayExist) {
+        const jobId = `job_payment_reconcile_${order.id}`;
+        const now = Date.now();
+        await transaction.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { _id: jobId, id: jobId, type: 'PAYMENT_RECONCILE', businessId: order.id, status: 'PENDING', nextRunAt: now, retryCount: 0, leaseUntil: 0, createdAt: now, updatedAt: now } });
+      }
     }
     await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: nextOrder });
     await updateDayOccupancy(transaction, order, nextStatus);
-    return { order: { ...nextOrder }, cashPaid };
+    return { order: { ...nextOrder }, cashPaid, paymentNeedsReconcile: nextOrder.paymentStatus === PAYMENT_STATUS.CLOSE_PENDING };
   });
+  if (result.paymentNeedsReconcile) {
+    try {
+      const { reconcilePaymentBeforeCancellation } = require('./payment-service');
+      const latestPayment = await getOptional(COLLECTIONS.payments, `pay_${orderIdValue}`);
+      await reconcilePaymentBeforeCancellation(result.order, latestPayment);
+    } catch (error) {
+      console.error('取消订单后的支付关单待补偿', { orderId: orderIdValue, code: error.code || '', message: error.message });
+    }
+  }
   if (result.cashPaid) {
     try {
       const { requestRefund } = require('./payment-service');
@@ -541,7 +556,7 @@ async function deleteOrder(orderIdValue) {
   const { openid } = requireOpenId();
   await db.runTransaction(async (transaction) => {
     const order = await getOwnedOrder(orderIdValue, openid, transaction);
-    assert([ORDER_STATUS.CANCELLED, ORDER_STATUS.CANCELLED_BY_USER, ORDER_STATUS.CANCELLED_NO_SHOW, ORDER_STATUS.REFUNDED].includes(order.status), 'ORDER_NOT_DELETABLE', '只有已取消或已退款订单可以删除');
+    assert(canDeleteCustomerOrder(order), 'ORDER_NOT_DELETABLE', '只有已取消且退款处理完成的订单可以删除');
     if (order.deletedAt) return;
     const now = Date.now();
     await transaction.collection(COLLECTIONS.orders).doc(orderIdValue).set({ data: { ...order, deletedAt: now, deletedBy: 'CUSTOMER', updatedAt: now } });
@@ -623,6 +638,13 @@ async function markNoShow(orderIdValue) {
     assert(Date.now() >= addMinutes(order.startAt, grace), 'NO_SHOW_TOO_EARLY', '尚未达到未到店处理时间');
     const now = Date.now();
     const cashPaid = Number(order.paidFen || 0) > 0 && order.paymentStatus === PAYMENT_STATUS.SUCCESS;
+    const policy = order.bookingRuleSnapshot && order.bookingRuleSnapshot.noShowPolicy || 'MANUAL_REVIEW';
+    if (policy !== 'AUTO_REFUND') {
+      const next = { ...order, status: ORDER_STATUS.NO_SHOW_REVIEW, noShowReviewAt: now, updatedAt: now };
+      await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: next });
+      await updateDayOccupancy(transaction, order, next.status);
+      return { order: next, changed: true, cashPaid: false };
+    }
     let next = { ...order, status: ORDER_STATUS.CANCELLED_NO_SHOW, refundStatus: cashPaid ? REFUND_STATUS.INIT : REFUND_STATUS.NOT_REQUIRED, updatedAt: now };
     if (cashPaid) {
       const intent = await ensureRefundIntent(transaction, next, '预约开始后未核销');
@@ -701,7 +723,10 @@ async function markRefundAbnormal(refundId, payload = {}) {
     assert(refund, 'REFUND_NOT_FOUND', '退款记录不存在', 404);
     if (refund.status === REFUND_STATUS.SUCCESS && order.refundStatus === REFUND_STATUS.SUCCESS) return { order, duplicate: true };
     const now = Date.now();
-    const status = refundStatusFromProvider(payload.status || payload.providerStatus);
+    const requestedStatus = String(payload.status || '');
+    const status = [REFUND_STATUS.WAITING_FUNDS, REFUND_STATUS.CONFIG_OR_DATA_ERROR].includes(requestedStatus)
+      ? requestedStatus
+      : refundStatusFromProvider(payload.providerStatus || requestedStatus);
     const nextRefund = {
       ...refund,
       status,
@@ -742,6 +767,7 @@ async function beginAdminRefund(orderIdValue, reason) {
     ORDER_STATUS.ARRIVED,
     ORDER_STATUS.IN_SERVICE,
     ORDER_STATUS.COMPLETED,
+    ORDER_STATUS.NO_SHOW_REVIEW,
     ORDER_STATUS.CANCELLED,
     ORDER_STATUS.CANCELLED_BY_USER,
     ORDER_STATUS.CANCELLED_NO_SHOW,
@@ -772,7 +798,7 @@ async function beginAdminRefund(orderIdValue, reason) {
 
 async function transitionStaff(orderIdValue, action) {
   const { context, account } = await requireRole(['OWNER', 'STAFF', 'TECHNICIAN']);
-  const allowed = { checkIn: [ORDER_STATUS.RESERVED, ORDER_STATUS.ARRIVED], start: [ORDER_STATUS.ARRIVED], complete: [ORDER_STATUS.IN_SERVICE] };
+  const allowed = { checkIn: [ORDER_STATUS.RESERVED, ORDER_STATUS.ARRIVED, ORDER_STATUS.NO_SHOW_REVIEW], start: [ORDER_STATUS.ARRIVED], complete: [ORDER_STATUS.IN_SERVICE] };
   assert(allowed[action], 'INVALID_TRANSITION', '不支持的工作台操作');
   const targetStatus = { checkIn: ORDER_STATUS.ARRIVED, start: ORDER_STATUS.IN_SERVICE, complete: ORDER_STATUS.COMPLETED }[action];
   const result = await db.runTransaction(async (transaction) => {
@@ -782,6 +808,9 @@ async function transitionStaff(orderIdValue, action) {
     assert(allowed[action].includes(order.status), 'INVALID_TRANSITION', '订单当前状态不允许此操作');
     assert(canAdvanceService(order), 'REFUND_IN_PROGRESS', '订单正在退款或已退款，不能继续服务流转');
     const now = Date.now();
+    if (action === 'checkIn' && order.status === ORDER_STATUS.ARRIVED) return order;
+    const timing = assertServiceTransitionTime(order, action, now);
+    assert(timing.allowed, timing.code, ({ CHECK_IN_TOO_EARLY: '仅可在预约前 60 分钟内办理到店', CHECK_IN_TOO_LATE: '已超过到店时间窗口，请由店主复核', SERVICE_TOO_EARLY: '服务开始时间过早', SERVICE_COMPLETE_TOO_EARLY: '不能提前完成未来预约', ORDER_TIME_INVALID: '订单预约时间无效' })[timing.code] || '当前时间不允许此操作', 409);
     const next = { ...order, status: targetStatus, updatedAt: now };
     if (targetStatus === ORDER_STATUS.ARRIVED) next.arrivedAt = now;
     if (targetStatus === ORDER_STATUS.IN_SERVICE) next.serviceStartedAt = now;
@@ -804,9 +833,8 @@ async function transitionStaff(orderIdValue, action) {
 
 async function staffListOrders(status = '') {
   const { account } = await requireRole(['OWNER', 'STAFF', 'TECHNICIAN']);
-  const where = status ? { status } : {};
-  let orders = await find(COLLECTIONS.orders, where, { orderBy: { field: 'startAt', direction: 'asc' }, limit: 100 });
-  if (account.role === 'TECHNICIAN') orders = orders.filter((item) => item.technicianId === account.technicianId);
+  const where = { ...(status ? { status } : {}), ...(account.role === 'TECHNICIAN' ? { technicianId: account.technicianId } : {}) };
+  const orders = await find(COLLECTIONS.orders, where, { orderBy: { field: 'startAt', direction: 'asc' }, limit: 100 });
   return { orders: orders.map(publicOrder) };
 }
 

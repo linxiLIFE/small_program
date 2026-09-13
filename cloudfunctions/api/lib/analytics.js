@@ -15,9 +15,10 @@ function analyze(orders, refunds, days = 30, now = Date.now()) {
   const inRange = timestamp => Number(timestamp) >= start && Number(timestamp) < end;
   const clean = orders.filter(o => !o.archived);
   const firstVisit = new Map();
-  for(const order of clean.filter(o=>o.status==='COMPLETED' && o.userId && o.completedAt)) firstVisit.set(order.userId,Math.min(firstVisit.get(order.userId)||Infinity,order.completedAt));
+  for(const order of clean.filter(o=>o.userId && Number(o.completedAt)>0)) firstVisit.set(order.userId,Math.min(firstVisit.get(order.userId)||Infinity,order.completedAt));
   const paid = clean.filter(o=>o.paymentStatus==='SUCCESS' && inRange(o.paidAt));
-  const completed = clean.filter(o=>o.status==='COMPLETED' && inRange(o.completedAt));
+  // 履约事实由 completedAt 表示；后续退款只改变资金状态，不能抹掉已完成服务。
+  const completed = clean.filter(o=>Number(o.completedAt)>0 && inRange(o.completedAt));
   const customers = [...new Set(completed.map(o=>o.userId).filter(Boolean))];
   const newCustomerCount = customers.filter(id=>firstVisit.get(id)>=start).length;
   const refundRecords = refunds.filter(r=>!r.archived && r.status==='SUCCESS' && inRange(r.successAt));

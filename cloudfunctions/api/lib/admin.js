@@ -165,9 +165,8 @@ async function bootstrapOwner() {
 
 async function listOrdersForAdmin(payload = {}) {
   const { account } = await requireRole(['OWNER', 'STAFF']);
-  const where = payload.status ? { status: payload.status } : {};
-  let orders = await find(COLLECTIONS.orders, where, { orderBy: { field: 'createdAt', direction: 'desc' }, limit: Math.min(Number(payload.limit || 100), 200) });
-  if (payload.date) orders = orders.filter((item) => item.date === payload.date);
+  const where = { ...(payload.status ? { status: payload.status } : {}), ...(payload.date ? { date: payload.date } : {}) };
+  const orders = await find(COLLECTIONS.orders, where, { orderBy: { field: 'createdAt', direction: 'desc' }, limit: Math.min(Number(payload.limit || 100), 200) });
   return { orders: orders.map(publicOrder), canRefund: account.role === 'OWNER' };
 }
 
@@ -305,7 +304,7 @@ async function refundOrder(payload) {
   const reason = payload.reason || '管理员发起退款';
   const prepared = await beginAdminRefund(payload.orderId, reason);
   const result = prepared.refundRequired
-    ? await requestRefund(payload.orderId, reason, { allowClosedRetry: true })
+    ? await requestRefund(payload.orderId, reason, { allowClosedRetry: true, manualRetry: true })
     : { id: prepared.order.refundId || '', status: prepared.order.refundStatus };
   await audit({ ...account, openid: account.openid }, 'REQUEST_REFUND', 'orders', payload.orderId, { refundId: result.id || result._id, status: result.status }, payload.reason);
   return result;

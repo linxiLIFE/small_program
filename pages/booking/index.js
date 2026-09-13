@@ -144,7 +144,7 @@ Page({
       const work = context.work;
       if (!service || !work || work.serviceId !== service.id) throw new Error('款式与小项目不匹配，请重新选择');
       const openDays = Math.max(1, Number(settings.booking?.openDays || 14));
-      const dates = mock.getDates().slice(0, openDays);
+      const dates = mock.getDates(openDays);
       const technicians = (technicianResult.technicians || []).map((item) => ({
         ...item,
         initial: item.name ? item.name.slice(0, 1) : '师'
@@ -540,6 +540,19 @@ Page({
     this.setData({ submitting: true });
     wx.showLoading({ title: '锁定时段中' });
     try {
+      const requestFingerprint = JSON.stringify({
+        workId: this.workId,
+        serviceId: this.serviceId,
+        technicianId: this.data.selectedTechnicianId,
+        date: this.data.selectedDate,
+        startAt: Number(this.data.selectedSlot.startAt),
+        quoteId: this.data.quote.quoteId,
+        pointsToUse: Number(this.data.quote.pointsToUse || 0)
+      });
+      if (this.idempotencyFingerprint !== requestFingerprint) {
+        this.idempotencyFingerprint = requestFingerprint;
+        this.idempotencyKey = `booking-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      }
       const result = await api.createOrder({
         workId: this.workId,
         serviceId: this.serviceId,

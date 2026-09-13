@@ -3,7 +3,7 @@ const { ORDER_STATUS_LABELS, ROLE_LABELS } = require('../../utils/constants');
 const { formatDateTimeRange } = require('../../utils/format');
 
 Page({
-  data: { loading: true, profile: {}, orders: [], skeletons: [1, 2], activeStatus: 'RESERVED', tabs: [{ id: 'RESERVED', label: '待到店' }, { id: 'ARRIVED', label: '已到店' }, { id: 'IN_SERVICE', label: '服务中' }] },
+  data: { loading: true, profile: {}, orders: [], skeletons: [1, 2], activeStatus: 'RESERVED', tabs: [{ id: 'RESERVED', label: '待到店' }, { id: 'NO_SHOW_REVIEW', label: '未到店复核' }, { id: 'ARRIVED', label: '已到店' }, { id: 'IN_SERVICE', label: '服务中' }] },
 
   onLoad() {
     this.loadStaff();

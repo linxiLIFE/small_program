@@ -26,7 +26,7 @@ let demoOrders: AdminOrder[] = [
 const demoSettings: Settings = {
   version: 1,
   store: { storeName: '四个小姐姐的店', address: '预约成功后展示详细地址', phone: '', notice: '每次预约只安排一位顾客和一位技师，请提前 5 分钟到店。' },
-  booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, noShowGraceMinutes: 30 },
+  booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, noShowGraceMinutes: 30, noShowPolicy: 'MANUAL_REVIEW' },
   points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10 }
 };
 

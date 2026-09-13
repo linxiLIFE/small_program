@@ -41,6 +41,76 @@ function refundStatusFromProvider(status) {
   }
 }
 
+const RETRYABLE_REFUND_PROVIDER_CODES = new Set(['SYSTEM_ERROR', 'FREQUENCY_LIMITED']);
+const CONFIG_REFUND_PROVIDER_CODES = new Set([
+  'PARAM_ERROR',
+  'INVALID_REQUEST',
+  'SIGN_ERROR',
+  'MCH_NOT_EXISTS',
+  'RESOURCE_NOT_EXISTS',
+  'NO_AUTH'
+]);
+
+function refundFailureDisposition(error) {
+  const providerCode = String(error && error.details && error.details.providerCode || '').toUpperCase();
+  if (providerCode === 'NOT_ENOUGH') return { status: REFUND_STATUS.WAITING_FUNDS, retry: false, providerCode };
+  if (providerCode === 'USER_ACCOUNT_ABNORMAL') return { status: REFUND_STATUS.MANUAL_ACTION, retry: false, providerCode };
+  if (CONFIG_REFUND_PROVIDER_CODES.has(providerCode)) return { status: REFUND_STATUS.CONFIG_OR_DATA_ERROR, retry: false, providerCode };
+  if (RETRYABLE_REFUND_PROVIDER_CODES.has(providerCode)) return { status: REFUND_STATUS.SUBMITTING, retry: true, providerCode };
+  if (!providerCode || ['PAYMENT_TIMEOUT', 'ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'PROTOCOL_CONNECTION_LOST'].includes(String(error && error.code || '').toUpperCase())) {
+    return { status: REFUND_STATUS.SUBMITTING, retry: true, providerCode };
+  }
+  return { status: REFUND_STATUS.CONFIG_OR_DATA_ERROR, retry: false, providerCode };
+}
+
+function bookingRequestHash(payload = {}) {
+  const normalized = {
+    serviceId: String(payload.serviceId || ''),
+    workId: String(payload.workId || ''),
+    technicianId: String(payload.technicianId || ''),
+    date: String(payload.date || ''),
+    startAt: Number(payload.startAt || 0),
+    pointsToUse: Number(payload.pointsToUse || 0),
+    quoteId: String(payload.quoteId || '')
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+}
+
+function assertServiceTransitionTime(order, action, now = Date.now()) {
+  const startAt = Number(order && order.startAt || 0);
+  const endAt = Number(order && order.endAt || 0);
+  const grace = Number(order && order.bookingRuleSnapshot && order.bookingRuleSnapshot.noShowGraceMinutes || 30);
+  if (!Number.isFinite(startAt) || startAt <= 0) return { allowed: false, code: 'ORDER_TIME_INVALID' };
+  if (action === 'checkIn') {
+    const earliest = startAt - 60 * 60 * 1000;
+    const latest = order.status === ORDER_STATUS.NO_SHOW_REVIEW && endAt > startAt
+      ? endAt + grace * 60 * 1000
+      : startAt + grace * 60 * 1000;
+    return { allowed: now >= earliest && now <= latest, code: now < earliest ? 'CHECK_IN_TOO_EARLY' : 'CHECK_IN_TOO_LATE' };
+  }
+  if (action === 'start') {
+    return { allowed: now >= startAt - 15 * 60 * 1000, code: 'SERVICE_TOO_EARLY' };
+  }
+  if (action === 'complete') {
+    return { allowed: now >= startAt, code: 'SERVICE_COMPLETE_TOO_EARLY' };
+  }
+  return { allowed: false, code: 'INVALID_TRANSITION' };
+}
+
+function canDeleteCustomerOrder(order) {
+  return !!order
+    && [ORDER_STATUS.CANCELLED, ORDER_STATUS.CANCELLED_BY_USER, ORDER_STATUS.CANCELLED_NO_SHOW, ORDER_STATUS.REFUNDED].includes(order.status)
+    && [REFUND_STATUS.NOT_REQUIRED, REFUND_STATUS.SUCCESS, '', undefined, null].includes(order.refundStatus);
+}
+
+function canCommitPaymentAttempt(order, payment, paymentAttemptId) {
+  return !!order
+    && !!payment
+    && order.status === ORDER_STATUS.PENDING_PAYMENT
+    && payment.status === PAYMENT_STATUS.PREPAY_SUBMITTING
+    && payment.paymentAttemptId === paymentAttemptId;
+}
+
 function nextRefundIdentity(orderId, current) {
   const attempt = Math.max(1, Number(current && current.attempt || 1) + 1);
   const suffix = attempt === 1 ? '' : `_${attempt}`;
@@ -59,6 +129,11 @@ module.exports = {
   needsCashRefund,
   canAdvanceService,
   refundStatusFromProvider,
+  refundFailureDisposition,
+  bookingRequestHash,
+  assertServiceTransitionTime,
+  canDeleteCustomerOrder,
+  canCommitPaymentAttempt,
   nextRefundIdentity,
   notificationRecordId
 };

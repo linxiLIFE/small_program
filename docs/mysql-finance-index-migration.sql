@@ -7,9 +7,11 @@ ALTER TABLE `orders`
   ADD COLUMN `payment_status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.paymentStatus')), '')) VIRTUAL,
   ADD COLUMN `refund_status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.refundStatus')), '')) VIRTUAL,
   ADD COLUMN `technician_id` VARCHAR(191) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.technicianId')), '')) VIRTUAL,
+  ADD COLUMN `booking_date` VARCHAR(10) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.date')), '')) VIRTUAL,
   ADD COLUMN `start_at` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.startAt')) AS SIGNED)) VIRTUAL,
   ADD INDEX `idx_orders_user_status` (`user_id`, `status`),
   ADD INDEX `idx_orders_technician_start` (`technician_id`, `start_at`),
+  ADD INDEX `idx_orders_technician_date` (`technician_id`, `booking_date`, `start_at`),
   ADD INDEX `idx_orders_payment_status` (`payment_status`),
   ADD INDEX `idx_orders_refund_status` (`refund_status`);
 
@@ -39,3 +41,7 @@ ALTER TABLE `jobs`
   ADD INDEX `idx_jobs_due` (`status`, `next_run_at`),
   ADD INDEX `idx_jobs_lease` (`status`, `lease_until`),
   ADD INDEX `idx_jobs_type` (`type`);
+
+ALTER TABLE `settings_versions`
+  ADD COLUMN `version_num` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.version')) AS SIGNED)) VIRTUAL,
+  ADD INDEX `idx_settings_versions_version` (`version_num`);

@@ -1,4 +1,5 @@
 const { formatDateLabel } = require('./format');
+const { storeDateString, addStoreDays, storeParts, storeTimestamp } = require('./store-time');
 
 const categories = [
   { id: 'nail', name: '美甲', subtitle: '指尖的小心思', icon: '✦', color: '#f7d9d3' },
@@ -97,38 +98,26 @@ const works = [
   }
 ];
 
-function addDays(date, days) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function toDateString(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getDates() {
-  const now = new Date();
-  return Array.from({ length: 14 }, (_, index) => {
-    const date = addDays(now, index);
-    const value = toDateString(date);
+function getDates(openDays = 14, now = Date.now()) {
+  const today = storeDateString(now);
+  return Array.from({ length: Number(openDays) }, (_, index) => {
+    const value = addStoreDays(today, index);
     return { value, label: index === 0 ? '今天' : index === 1 ? '明天' : formatDateLabel(value) };
   });
 }
 
 function getSlots(dateString) {
-  const today = new Date();
+  const now = Date.now();
+  const today = storeDateString(now);
+  const current = storeParts(now);
   const slots = [];
   for (let hour = 10; hour < 20; hour += 1) {
     for (const minute of [0, 15, 30, 45]) {
-      if (dateString === toDateString(today) && hour * 60 + minute < today.getHours() * 60 + today.getMinutes() + 60) continue;
+      if (dateString === today && hour * 60 + minute < current.hour * 60 + current.minute + 60) continue;
       slots.push({
         id: `${dateString}-${hour}-${minute}`,
         label: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
-        startAt: new Date(`${dateString}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00+08:00`).getTime(),
+        startAt: storeTimestamp(dateString, `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`),
         available: true
       });
     }

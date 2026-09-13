@@ -3,15 +3,15 @@ const PARTS = [
   { id: 'afternoon', label: '下午', end: 18 * 60 },
   { id: 'evening', label: '晚上', end: 24 * 60 }
 ];
+const { storeParts, storeClock } = require('./store-time');
 
 function minutesOf(timestamp) {
-  const date = new Date(Number(timestamp));
-  return date.getHours() * 60 + date.getMinutes();
+  const parts = storeParts(timestamp);
+  return parts.hour * 60 + parts.minute;
 }
 
 function timeLabel(timestamp) {
-  const date = new Date(Number(timestamp));
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  return storeClock(timestamp);
 }
 
 function partFor(timestamp) {
@@ -109,8 +109,8 @@ function decorateBookingTimeline(rawTimeline, slots, durationMinutes = 60, stepM
     }));
   const totalMinutes = Math.max(1, Math.round((endAt - startAt) / 60000));
   const everyMinutes = totalMinutes > 480 ? 120 : totalMinutes > 240 ? 60 : 30;
-  const firstDate = new Date(startAt);
-  const firstMinutes = firstDate.getHours() * 60 + firstDate.getMinutes();
+  const firstParts = storeParts(startAt);
+  const firstMinutes = firstParts.hour * 60 + firstParts.minute;
   const firstTick = Math.floor(firstMinutes / everyMinutes) * everyMinutes;
   const ticks = [];
   for (let minute = firstTick; minute <= firstMinutes + totalMinutes; minute += everyMinutes) {

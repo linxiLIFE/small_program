@@ -7,7 +7,7 @@ const sharedRoot = fs.existsSync(path.join(__dirname, 'lib')) ? './lib' : '../ap
 const { db, getOptional } = require(`${sharedRoot}/db`);
 const { COLLECTIONS, PAYMENT_STATUS, REFUND_STATUS, ORDER_STATUS } = require(`${sharedRoot}/constants`);
 const { markPaymentSuccess, markPaymentClosed, markNoShow } = require(`${sharedRoot}/booking`);
-const { requestRefund, scheduleRefundRetry } = require(`${sharedRoot}/payment-service`);
+const { requestRefund, scheduleRefundRetry, reconcilePaymentBeforeCancellation } = require(`${sharedRoot}/payment-service`);
 const wechat = require(`${sharedRoot}/wechat-pay`);
 const { addMinutes } = require(`${sharedRoot}/time`);
 
@@ -67,6 +67,14 @@ async function processNoShow(job) {
   await markNoShow(job.businessId);
 }
 
+async function processPaymentReconcile(job) {
+  const order = await getOptional(COLLECTIONS.orders, job.businessId);
+  const payment = await getOptional(COLLECTIONS.payments, `pay_${job.businessId}`);
+  if (!order || !payment || [PAYMENT_STATUS.SUCCESS, PAYMENT_STATUS.CLOSED].includes(payment.status)) return;
+  const result = await reconcilePaymentBeforeCancellation(order, payment);
+  if (result && [PAYMENT_STATUS.CLOSE_PENDING, PAYMENT_STATUS.UNKNOWN, PAYMENT_STATUS.PREPAY_SUBMITTING].includes(result.status)) return { deferred: true };
+}
+
 async function processRefund(job) {
   const refund = await getOptional(COLLECTIONS.refunds, job.businessId);
   if (!refund || refund.status === REFUND_STATUS.SUCCESS) return;
@@ -85,15 +93,17 @@ async function repairReconciliationJobs(now) {
     PAYMENT_STATUS.NOT_STARTED,
     PAYMENT_STATUS.PREPAY_SUBMITTING,
     PAYMENT_STATUS.PREPAY_CREATED,
-    PAYMENT_STATUS.UNKNOWN
+    PAYMENT_STATUS.UNKNOWN,
+    PAYMENT_STATUS.CLOSE_PENDING
   ]) }).limit(100).get();
   for (const payment of payments.data || []) {
     const order = await getOptional(COLLECTIONS.orders, payment.orderId);
-    if (!order || order.status !== ORDER_STATUS.PENDING_PAYMENT || Number(order.paymentDeadline || 0) > now) continue;
-    const jobId = `job_payment_expire_${order.id}`;
+    if (!order || (order.status === ORDER_STATUS.PENDING_PAYMENT && Number(order.paymentDeadline || 0) > now && payment.status !== PAYMENT_STATUS.CLOSE_PENDING)) continue;
+    const needsCancellationReconcile = payment.status === PAYMENT_STATUS.CLOSE_PENDING || order.status !== ORDER_STATUS.PENDING_PAYMENT;
+    const jobId = needsCancellationReconcile ? `job_payment_reconcile_${order.id}` : `job_payment_expire_${order.id}`;
     const existing = await getOptional(COLLECTIONS.jobs, jobId);
     if (existing && ['PENDING', 'RUNNING'].includes(existing.status)) continue;
-    await db.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { ...(existing || {}), _id: jobId, id: jobId, type: 'PAYMENT_EXPIRE', businessId: order.id, status: 'PENDING', nextRunAt: now, retryCount: 0, leaseUntil: 0, createdAt: existing && existing.createdAt || now, updatedAt: now } });
+    await db.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { ...(existing || {}), _id: jobId, id: jobId, type: needsCancellationReconcile ? 'PAYMENT_RECONCILE' : 'PAYMENT_EXPIRE', businessId: order.id, status: 'PENDING', nextRunAt: now, retryCount: 0, leaseUntil: 0, createdAt: existing && existing.createdAt || now, updatedAt: now } });
     repaired += 1;
   }
   const refunds = await db.collection(COLLECTIONS.refunds).where({ status: db.command.in([
@@ -121,6 +131,14 @@ exports.main = async () => {
     if (!(await claimJob(job))) continue;
     try {
       if (job.type === 'PAYMENT_EXPIRE') await processPaymentExpire(job);
+      else if (job.type === 'PAYMENT_RECONCILE') {
+        const paymentResult = await processPaymentReconcile(job);
+        if (paymentResult && paymentResult.deferred) {
+          await deferJob(job);
+          result.processed += 1;
+          continue;
+        }
+      }
       else if (job.type === 'NO_SHOW') await processNoShow(job);
       else if (job.type === 'REFUND_RETRY') {
         const refundResult = await processRefund(job);

@@ -6,7 +6,7 @@
     <view wx:for="{{orders}}" wx:key="id" class="staff-order card">
       <view class="staff-order-top"><view><text class="staff-service">{{item.serviceName}}</text><text wx:if="{{item.work}}">{{item.work.title}}</text><text class="staff-customer">{{item.customerName || '预约顾客'}} · {{item.technicianName}}</text></view><status-badge status="{{item.status}}" label="{{item.statusLabel}}"></status-badge></view>
       <view class="staff-time">{{item.timeLabel}}</view>
-      <view wx:if="{{item.status === 'RESERVED'}}" class="staff-actions"><button class="staff-button check" data-id="{{item.id}}" data-action="checkIn" bindtap="transition">确认到店</button></view>
+      <view wx:if="{{item.status === 'RESERVED' || item.status === 'NO_SHOW_REVIEW'}}" class="staff-actions"><button class="staff-button check" data-id="{{item.id}}" data-action="checkIn" bindtap="transition">确认到店</button></view>
       <view wx:elif="{{item.status === 'ARRIVED'}}" class="staff-actions"><button class="staff-button start" data-id="{{item.id}}" data-action="start" bindtap="transition">开始服务</button></view>
       <view wx:elif="{{item.status === 'IN_SERVICE'}}" class="staff-actions"><button class="staff-button complete" data-id="{{item.id}}" data-action="complete" bindtap="transition">完成服务</button></view>
     </view>

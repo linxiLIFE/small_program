@@ -179,7 +179,7 @@ function request(method, path, payload) {
         try { data = raw ? JSON.parse(raw) : {}; } catch (error) { return reject(new AppError('PAYMENT_BAD_RESPONSE', '微信支付返回内容无法解析', 502)); }
         if (response.statusCode < 200 || response.statusCode >= 300) {
           console.error('微信支付接口异常', { statusCode: response.statusCode, code: data.code, message: data.message });
-          return reject(new AppError('PAYMENT_PROVIDER_ERROR', '微信支付服务暂时不可用', 502, { providerCode: data.code || '' }));
+          return reject(new AppError('PAYMENT_PROVIDER_ERROR', '微信支付服务暂时不可用', 502, { providerCode: data.code || '', providerMessage: data.message || '', statusCode: response.statusCode }));
         }
         resolve(data);
       });

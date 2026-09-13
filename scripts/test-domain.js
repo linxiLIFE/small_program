@@ -3,6 +3,8 @@ const { calculatePointsDiscount, earnPoints, rebalancePoints, awardPoints } = re
 const { overlaps, dateToTimestamp, isWithinDateWindow, toDateString, addMinutes } = require('../cloudfunctions/api/lib/time');
 const { buildTimePeriods } = require('../utils/booking-time');
 const { formatCountdown } = require('../utils/format');
+const { formatDateTime, formatDateLabel } = require('../utils/format');
+const { storeDateString } = require('../utils/store-time');
 const { buildBookingTimeline } = require('../cloudfunctions/api/lib/booking-timeline');
 
 const rule = { unit: 20, discountFen: 100, maxPercent: 10 };
@@ -58,7 +60,7 @@ const bookingTimeline = buildBookingTimeline({
 assert.deepStrictEqual(bookingTimeline.segments.map(item => item.kind), ['available', 'closed', 'available', 'occupied', 'available', 'break', 'available']);
 assert.equal(bookingTimeline.segments.find(item => item.kind === 'occupied').startAt, dateToTimestamp(timelineDate, '14:00'));
 
-const today = new Date().toISOString().slice(0, 10);
+const today = toDateString();
 const todayAtNoon = dateToTimestamp(today, '12:00');
 assert.strictEqual(typeof todayAtNoon, 'number');
 assert.strictEqual(isWithinDateWindow(today, 14, 0), true);
@@ -66,5 +68,8 @@ const lastOpenDate = toDateString(addMinutes(dateToTimestamp(today), 13 * 24 * 6
 const outsideOpenDate = toDateString(addMinutes(dateToTimestamp(today), 14 * 24 * 60));
 assert.strictEqual(isWithinDateWindow(lastOpenDate, 14, 0), true);
 assert.strictEqual(isWithinDateWindow(outsideOpenDate, 14, 0), false);
+assert.strictEqual(storeDateString(Date.parse('2026-09-13T16:30:00Z')), '2026-09-14');
+assert.strictEqual(formatDateTime(Date.parse('2026-09-13T16:30:00Z')), '9月14日 00:30');
+assert.strictEqual(formatDateLabel('2026-09-14'), '9月14日 周一');
 
 console.log('domain tests passed: money, points, interval and booking window rules');

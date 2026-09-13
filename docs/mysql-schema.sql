@@ -86,11 +86,13 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `payment_status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.paymentStatus')), '')) VIRTUAL,
   `refund_status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.refundStatus')), '')) VIRTUAL,
   `technician_id` VARCHAR(191) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.technicianId')), '')) VIRTUAL,
+  `booking_date` VARCHAR(10) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.date')), '')) VIRTUAL,
   `start_at` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.startAt')) AS SIGNED)) VIRTUAL,
   PRIMARY KEY (`id`),
   KEY `idx_orders_created_at` (`created_at`),
   KEY `idx_orders_user_status` (`user_id`, `status`),
   KEY `idx_orders_technician_start` (`technician_id`, `start_at`),
+  KEY `idx_orders_technician_date` (`technician_id`, `booking_date`, `start_at`),
   KEY `idx_orders_payment_status` (`payment_status`),
   KEY `idx_orders_refund_status` (`refund_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -193,7 +195,9 @@ CREATE TABLE IF NOT EXISTS `settings_versions` (
   `data` JSON NOT NULL,
   `created_at` BIGINT NULL,
   `updated_at` BIGINT NULL,
+  `version_num` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.version')) AS SIGNED)) VIRTUAL,
   PRIMARY KEY (`id`),
+  KEY `idx_settings_versions_version` (`version_num`),
   KEY `idx_settings_versions_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

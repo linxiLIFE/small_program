@@ -12,7 +12,7 @@ const technicians = [
   { _id: 'tech-he', id: 'tech-he', name: '何老师', title: '美睫 · 纹绣师', bio: '专注自然美睫、纹绣与术后恢复沟通，先充分沟通，再决定最适合你的方案。', categoryIds: ['lash', 'tattoo'], skills: [], avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=240&q=80', sort: 3, enabled: true }
 ];
 
-const settings = { _id: 'v1', id: 'v1', version: 1, published: true, timezone: 'Asia/Shanghai', store: { storeName: '四个小姐姐的店', address: '预约成功后展示详细地址', phone: '', notice: '每次预约只安排一位顾客和一位技师，请提前 5 分钟到店。' }, booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, noShowGraceMinutes: 30 }, points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10 }, schedule: { weekly: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, enabled: true, shifts: [{ start: '10:00', end: '20:00', breaks: [] }] })) }, createdAt: Date.now() };
+const settings = { _id: 'v1', id: 'v1', version: 1, published: true, timezone: 'Asia/Shanghai', store: { storeName: '四个小姐姐的店', address: '预约成功后展示详细地址', phone: '', notice: '每次预约只安排一位顾客和一位技师，请提前 5 分钟到店。' }, booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, noShowGraceMinutes: 30, noShowPolicy: 'MANUAL_REVIEW' }, points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10 }, schedule: { weekly: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, enabled: true, shifts: [{ start: '10:00', end: '20:00', breaks: [] }] })) }, createdAt: Date.now() };
 
 async function write(collection, item) {
   const { _id, ...data } = item;

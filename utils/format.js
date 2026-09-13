@@ -1,6 +1,7 @@
 function pad(value) {
   return String(value).padStart(2, '0');
 }
+const { storeParts } = require('./store-time');
 
 function formatMoney(fen, withSymbol = true) {
   const value = Number(fen || 0) / 100;
@@ -13,29 +14,27 @@ function formatPoints(points) {
 
 function formatDateTime(timestamp) {
   if (!timestamp) return '待确定';
-  const date = new Date(Number(timestamp));
-  if (Number.isNaN(date.getTime())) return '待确定';
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  if (!Number.isFinite(Number(timestamp))) return '待确定';
+  const date = storeParts(timestamp);
+  return `${date.month}月${date.day}日 ${pad(date.hour)}:${pad(date.minute)}`;
 }
 
 function formatDateTimeRange(startAt, endAt, durationMinutes) {
   if (!startAt) return '待确定';
-  const start = new Date(Number(startAt));
-  if (Number.isNaN(start.getTime())) return '待确定';
+  const startTimestamp = Number(startAt);
+  if (!Number.isFinite(startTimestamp)) return '待确定';
+  const start = storeParts(startTimestamp);
   let endTimestamp = Number(endAt);
-  if (!Number.isFinite(endTimestamp) || endTimestamp <= start.getTime()) {
+  if (!Number.isFinite(endTimestamp) || endTimestamp <= startTimestamp) {
     const duration = Number(durationMinutes || 0);
-    if (duration > 0) endTimestamp = start.getTime() + duration * 60 * 1000;
+    if (duration > 0) endTimestamp = startTimestamp + duration * 60 * 1000;
   }
-  if (!Number.isFinite(endTimestamp) || endTimestamp <= start.getTime()) return formatDateTime(startAt);
-  const end = new Date(endTimestamp);
-  if (Number.isNaN(end.getTime())) return formatDateTime(startAt);
+  if (!Number.isFinite(endTimestamp) || endTimestamp <= startTimestamp) return formatDateTime(startAt);
+  const end = storeParts(endTimestamp);
   const startLabel = formatDateTime(startAt);
-  const endClock = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
-  const sameDate = start.getFullYear() === end.getFullYear()
-    && start.getMonth() === end.getMonth()
-    && start.getDate() === end.getDate();
-  const endLabel = sameDate ? endClock : `${end.getMonth() + 1}月${end.getDate()}日 ${endClock}`;
+  const endClock = `${pad(end.hour)}:${pad(end.minute)}`;
+  const sameDate = start.year === end.year && start.month === end.month && start.day === end.day;
+  const endLabel = sameDate ? endClock : `${end.month}月${end.day}日 ${endClock}`;
   return `${startLabel}—${endLabel}`;
 }
 
@@ -49,10 +48,11 @@ function formatCountdown(milliseconds) {
 
 function formatDateLabel(dateString) {
   if (!dateString) return '';
-  const date = new Date(`${dateString}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return dateString;
+  const timestamp = Date.parse(`${dateString}T00:00:00+08:00`);
+  if (!Number.isFinite(timestamp)) return dateString;
+  const date = storeParts(timestamp);
   const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${weekdays[date.getDay()]}`;
+  return `${date.month}月${date.day}日 ${weekdays[date.weekday]}`;
 }
 
 function formatDuration(minutes) {
