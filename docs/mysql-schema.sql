@@ -101,7 +101,8 @@ CREATE TABLE IF NOT EXISTS `orders` (
   KEY `idx_orders_payment_status` (`payment_status`),
   KEY `idx_orders_refund_status` (`refund_status`),
   KEY `idx_orders_paid_at` (`paid_at`),
-  KEY `idx_orders_completed_at` (`completed_at`)
+  KEY `idx_orders_completed_at` (`completed_at`),
+  KEY `idx_orders_user_completed` (`user_id`, `completed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `payments` (

@@ -13,9 +13,22 @@ function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function isPointsOnlyPayment(order) {
+  return order.paymentStatus === 'SUCCESS'
+    && Number(order.paidFen || 0) === 0
+    && Number(order.pointsUsed || order.pointsConsumed || 0) > 0;
+}
+
+function isPaymentResolved(order) {
+  return ['SUCCESS', 'CLOSED'].includes(order.paymentStatus) || order.status !== 'PENDING_PAYMENT';
+}
+
 function paymentProgress(order, confirming = false) {
   const paid = order.paymentStatus === 'SUCCESS' || Number(order.paidAt || 0) > 0;
+  const pointsOnly = isPointsOnlyPayment(order);
+  if (pointsOnly && order.refundStatus === 'SUCCESS') return { active: true, label: '积分已退回' };
   if (order.refundStatus === 'SUCCESS') return { active: true, label: '已支付，退款已到账' };
+  if (pointsOnly) return { active: true, label: '积分支付完成，无需微信支付' };
   if (paid) return { active: true, label: '支付成功' };
   if (confirming) return { active: false, label: '支付结果确认中，请勿重复支付' };
   if (order.paymentStatus === 'CLOSED' || order.status !== 'PENDING_PAYMENT') return { active: false, label: '订单已关闭，未发生支付' };
@@ -24,19 +37,19 @@ function paymentProgress(order, confirming = false) {
 }
 
 Page({
-  data: { loading: true, loadError: '', order: {}, actions: [], canCancel: false, paying: false, paymentConfirming: false },
+  data: { loading: true, loadError: '', order: {}, actions: [], canCancel: false, paying: false, paymentConfirming: false, paymentChecking: false },
 
   onLoad(options) {
     this.orderId = options.orderId || '';
     if (options.paymentConfirming === '1') {
-      this.setData({ paymentConfirming: true }, () => this.loadOrder());
+      this.setData({ paymentConfirming: true }, () => this.resumePaymentConfirmation());
       return;
     }
     this.loadOrder();
   },
 
   onShow() {
-    if (this.hasLoaded) this.loadOrder();
+    if (this.hasLoaded) this.resumePaymentConfirmation();
   },
 
   onHide() {
@@ -63,7 +76,8 @@ Page({
       const refundStatus = order.refundStatus || '';
       const visibleRefundStatuses = ['INIT', 'PENDING_CONFIG', 'SUBMITTING', 'PROCESSING', 'SUCCESS', 'RETRY_REQUIRED', 'WAITING_FUNDS', 'CONFIG_OR_DATA_ERROR', 'MANUAL_ACTION', 'CLOSED', 'ABNORMAL'];
       const displayTitle = order.work && order.work.title ? order.work.title : order.serviceName || '预约服务';
-      const confirming = this.data.paymentConfirming === true;
+      const confirming = this.data.paymentConfirming === true && !isPaymentResolved(order);
+      const pointsOnly = isPointsOnlyPayment(order);
       const progress = paymentProgress(order, confirming);
       const canCancel = !confirming && ['PENDING_PAYMENT', 'RESERVED'].includes(order.status);
       const paymentDeadline = getPaymentDeadline(order);
@@ -72,6 +86,7 @@ Page({
       this.setData({
         loading: false,
         loadError: '',
+        paymentConfirming: confirming,
         order: {
           ...order,
           displayTitle,
@@ -80,8 +95,8 @@ Page({
           timeLabel: order.startAt ? formatDateTimeRange(order.startAt, order.endAt, order.durationMinutes) : order.startAtLabel || '待确定',
           totalText: formatMoney(order.totalFen),
           discountText: formatMoney(order.discountFen || 0),
-          paidText: formatMoney(order.paidFen),
-          paidLabel: order.status === 'PENDING_PAYMENT' ? '待支付金额' : order.refundStatus === 'SUCCESS' ? '退款金额' : '实付金额',
+          paidText: pointsOnly ? (order.refundStatus === 'SUCCESS' ? '已退回积分' : '积分支付') : formatMoney(order.paidFen),
+          paidLabel: pointsOnly ? '支付方式' : order.status === 'PENDING_PAYMENT' ? '待支付金额' : order.refundStatus === 'SUCCESS' ? '退款金额' : '实付金额',
           paymentProgressActive: progress.active,
           paymentProgressLabel: progress.label,
           serviceCompleted: Number(order.completedAt || 0) > 0,
@@ -117,6 +132,16 @@ Page({
   retryLoadOrder() {
     api.clearCache('getOrder');
     this.loadOrder();
+  },
+
+  async resumePaymentConfirmation() {
+    await this.loadOrder();
+    if (this.data.paymentConfirming && this.data.order.id) await this.confirmPaymentResult();
+  },
+
+  retryPaymentConfirmation() {
+    if (!this.data.paymentConfirming || this.data.paymentChecking) return;
+    this.confirmPaymentResult();
   },
 
   getActions(order) {
@@ -175,26 +200,34 @@ Page({
   },
 
   async confirmPaymentResult() {
+    if (this.paymentConfirmationRunning || this.destroyed || !this.data.order.id) return;
+    this.paymentConfirmationRunning = true;
+    this.setData({ paymentChecking: true });
     let lastError;
-    for (const delay of [0, 1000, 2000, 4000, 8000]) {
-      if (delay) await wait(delay);
-      if (this.destroyed) return;
-      try {
-        const result = await api.queryPayment(this.data.order.id);
-        const status = result && result.status;
-        if (status === 'SUCCESS' || status === 'CLOSED') {
-          this.setData({ paymentConfirming: false });
-          api.clearCache('getOrder');
-          await this.loadOrder();
-          return;
+    try {
+      for (const delay of [0, 1000, 2000, 4000, 8000]) {
+        if (delay) await wait(delay);
+        if (this.destroyed) return;
+        try {
+          const result = await api.queryPayment(this.data.order.id);
+          const status = result && result.status;
+          if (status === 'SUCCESS' || status === 'CLOSED') {
+            this.setData({ paymentConfirming: false });
+            api.clearCache('getOrder');
+            await this.loadOrder();
+            return;
+          }
+        } catch (error) {
+          lastError = error;
         }
-      } catch (error) {
-        lastError = error;
       }
+      if (this.destroyed) return;
+      this.setData({ paymentConfirming: true, paying: false, canCancel: false, actions: [], 'order.paymentProgressLabel': '支付结果仍在确认，请稍后重新确认' });
+      wx.showToast({ title: lastError ? '网络异常，支付结果仍在确认' : '支付结果仍在确认', icon: 'none' });
+    } finally {
+      this.paymentConfirmationRunning = false;
+      if (!this.destroyed) this.setData({ paymentChecking: false });
     }
-    if (this.destroyed) return;
-    this.setData({ paymentConfirming: true, paying: false, canCancel: false, actions: [], 'order.paymentProgressLabel': '支付结果仍在确认，请稍后刷新' });
-    wx.showToast({ title: lastError ? '网络异常，支付结果仍在确认' : '支付结果仍在确认', icon: 'none' });
   },
 
   confirmCancel() {

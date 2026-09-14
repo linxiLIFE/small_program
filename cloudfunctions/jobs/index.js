@@ -11,6 +11,9 @@ const { markPaymentSuccess, markPaymentClosed, markNoShow } = require(`${sharedR
 const { requestRefund, scheduleRefundRetry, reconcilePaymentBeforeCancellation } = require(`${sharedRoot}/payment-service`);
 const wechat = require(`${sharedRoot}/wechat-pay`);
 const { addMinutes } = require(`${sharedRoot}/time`);
+const { fairTakeJobs, nextRepairCursor } = require(`${sharedRoot}/job-scheduling`);
+
+const REPAIR_PAGE_SIZE = 100;
 
 async function claimJob(job) {
   const now = Date.now();
@@ -153,16 +156,46 @@ async function processJobGroups(groups, result, concurrency = 4) {
   await Promise.all(Array.from({ length: Math.min(concurrency, groups.length) }, () => worker()));
 }
 
-async function repairReconciliationJobs(now) {
+async function loadRepairPage(collection, statuses, cursorId) {
+  const load = (afterId = '') => db.collection(collection).where({
+    status: db.command.in(statuses),
+    ...(afterId ? { _id: db.command.gt(afterId) } : {})
+  }).orderBy('_id', 'asc').limit(REPAIR_PAGE_SIZE).get();
+  let page = await load(cursorId);
+  if (!(page.data || []).length && cursorId) page = await load();
+  return page.data || [];
+}
+
+async function getRepairPage(collection, statuses, cursorName) {
+  const cursorRecord = await getOptional(COLLECTIONS.jobs, cursorName);
+  const records = await loadRepairPage(collection, statuses, String(cursorRecord && cursorRecord.cursorId || ''));
+  return { cursorName, cursorRecord, records };
+}
+
+async function saveRepairCursor(page) {
+  const now = Date.now();
+  await db.collection(COLLECTIONS.jobs).doc(page.cursorName).set({ data: {
+    ...(page.cursorRecord || {}),
+    _id: page.cursorName,
+    id: page.cursorName,
+    type: 'RECONCILIATION_CURSOR',
+    status: 'CURSOR',
+    cursorId: nextRepairCursor(page.records, REPAIR_PAGE_SIZE),
+    createdAt: page.cursorRecord && page.cursorRecord.createdAt || now,
+    updatedAt: now
+  } });
+}
+
+async function repairPaymentJobs(now) {
   let repaired = 0;
-  const payments = await db.collection(COLLECTIONS.payments).where({ status: db.command.in([
+  const page = await getRepairPage(COLLECTIONS.payments, [
     PAYMENT_STATUS.NOT_STARTED,
     PAYMENT_STATUS.PREPAY_SUBMITTING,
     PAYMENT_STATUS.PREPAY_CREATED,
     PAYMENT_STATUS.UNKNOWN,
     PAYMENT_STATUS.CLOSE_PENDING
-  ]) }).limit(100).get();
-  for (const payment of payments.data || []) {
+  ], 'cursor_repair_payments');
+  for (const payment of page.records) {
     const order = await getOptional(COLLECTIONS.orders, payment.orderId);
     if (!order || (order.status === ORDER_STATUS.PENDING_PAYMENT && Number(order.paymentDeadline || 0) > now && payment.status !== PAYMENT_STATUS.CLOSE_PENDING)) continue;
     const needsCancellationReconcile = payment.status === PAYMENT_STATUS.CLOSE_PENDING || order.status !== ORDER_STATUS.PENDING_PAYMENT;
@@ -172,26 +205,38 @@ async function repairReconciliationJobs(now) {
     await db.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { ...(existing || {}), _id: jobId, id: jobId, type: needsCancellationReconcile ? 'PAYMENT_RECONCILE' : 'PAYMENT_EXPIRE', businessId: order.id, status: 'PENDING', nextRunAt: now, retryCount: 0, leaseUntil: 0, createdAt: existing && existing.createdAt || now, updatedAt: now } });
     repaired += 1;
   }
-  const refunds = await db.collection(COLLECTIONS.refunds).where({ status: db.command.in([
+  await saveRepairCursor(page);
+  return repaired;
+}
+
+async function repairRefundJobs() {
+  let repaired = 0;
+  const page = await getRepairPage(COLLECTIONS.refunds, [
     REFUND_STATUS.INIT,
     REFUND_STATUS.PENDING_CONFIG,
     REFUND_STATUS.SUBMITTING,
     REFUND_STATUS.PROCESSING
-  ]) }).limit(100).get();
-  for (const refund of refunds.data || []) {
+  ], 'cursor_repair_refunds');
+  for (const refund of page.records) {
     if (await scheduleRefundRetry(refund.orderId, refund.id || refund._id)) repaired += 1;
   }
+  await saveRepairCursor(page);
   return repaired;
+}
+
+async function repairReconciliationJobs(now) {
+  const [payments, refunds] = await Promise.all([repairPaymentJobs(now), repairRefundJobs()]);
+  return payments + refunds;
 }
 
 exports.main = async () => {
   const now = Date.now();
   const repaired = await repairReconciliationJobs(now);
   const [pendingJobs, expiredJobs] = await Promise.all([
-    db.collection(COLLECTIONS.jobs).where({ status: 'PENDING', nextRunAt: db.command.lte(now) }).limit(50).get(),
-    db.collection(COLLECTIONS.jobs).where({ status: 'RUNNING', leaseUntil: db.command.lte(now) }).limit(50).get()
+    db.collection(COLLECTIONS.jobs).where({ status: 'PENDING', nextRunAt: db.command.lte(now) }).orderBy('nextRunAt', 'asc').limit(50).get(),
+    db.collection(COLLECTIONS.jobs).where({ status: 'RUNNING', leaseUntil: db.command.lte(now) }).orderBy('leaseUntil', 'asc').limit(50).get()
   ]);
-  const jobs = [...(pendingJobs.data || []), ...(expiredJobs.data || [])].slice(0, 50);
+  const jobs = fairTakeJobs(pendingJobs.data || [], expiredJobs.data || [], 50);
   const result = { processed: 0, failed: 0, repaired };
   const grouped = new Map();
   for (const job of jobs) {

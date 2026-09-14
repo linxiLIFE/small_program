@@ -31,14 +31,23 @@ function canAdvanceService(order) {
 }
 
 function refundStatusFromProvider(status) {
-  switch (String(status || '').toUpperCase()) {
+  const normalized = String(status || '').toUpperCase().replace(/^REFUND\./, '');
+  switch (normalized) {
     case 'SUCCESS': return REFUND_STATUS.SUCCESS;
     case 'RETRY_REQUIRED':
     case 'CLOSED': return REFUND_STATUS.RETRY_REQUIRED;
+    case 'WAITING_FUNDS':
+    case 'NOT_ENOUGH': return REFUND_STATUS.WAITING_FUNDS;
+    case 'CONFIG_OR_DATA_ERROR': return REFUND_STATUS.CONFIG_OR_DATA_ERROR;
     case 'MANUAL_ACTION':
+    case 'USER_ACCOUNT_ABNORMAL':
     case 'ABNORMAL': return REFUND_STATUS.MANUAL_ACTION;
     default: return REFUND_STATUS.PROCESSING;
   }
+}
+
+function resolveRefundAbnormalStatus(payload = {}) {
+  return refundStatusFromProvider(payload.status || payload.providerStatus);
 }
 
 const RETRYABLE_REFUND_PROVIDER_CODES = new Set(['SYSTEM_ERROR', 'FREQUENCY_LIMITED']);
@@ -130,6 +139,7 @@ module.exports = {
   needsCashRefund,
   canAdvanceService,
   refundStatusFromProvider,
+  resolveRefundAbnormalStatus,
   refundFailureDisposition,
   bookingRequestHash,
   assertServiceTransitionTime,

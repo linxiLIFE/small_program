@@ -9,7 +9,7 @@ const { dateToTimestamp, weekday, minutesOfDay, addMinutes, isWithinDateWindow, 
 const { calculatePointsDiscount, earnPoints, rebalancePoints, awardPoints } = require('./money');
 const { encryptPhone, maskPhone } = require('./contact-crypto');
 const { buildBookingTimeline } = require('./booking-timeline');
-const { needsCashRefund, canAdvanceService, refundStatusFromProvider, bookingRequestHash, assertServiceTransitionTime, canDeleteCustomerOrder } = require('./finance-state');
+const { needsCashRefund, canAdvanceService, resolveRefundAbnormalStatus, bookingRequestHash, assertServiceTransitionTime, canDeleteCustomerOrder } = require('./finance-state');
 
 function idempotencyId(openid, key) {
   return `idem_${crypto.createHash('sha256').update(`${openid}:${key}`).digest('hex').slice(0, 48)}`;
@@ -406,9 +406,10 @@ async function createOrder(payload) {
     // The primary-key row now exists before getDayPlan issues SELECT ... FOR
     // UPDATE. Slot exclusion no longer depends on gap locks or isolation level.
     const day = await getDayPlan(validation.technician.id, payload.date, validation.settings, transaction);
-    assert(!day.leave, 'SLOT_UNAVAILABLE', '该日期技师休息');
-    const conflict = (day.occupancies || []).find((item) => occupancyIsActive(item) && overlaps(order.startAt, order.endAt, item.startAt, item.endAt));
-    assert(!conflict, 'SLOT_TAKEN', '该时段刚刚被其他顾客预约了');
+    // The administrator may have changed this day's shifts or breaks after the
+    // quote was created. Revalidate the complete slot while holding the latest
+    // technician-day row lock, not only its leave/conflict flags.
+    getSlotFromPlan(day, order.startAt, validation.service, validation.settings);
     const currentAccount = await getPointsAccount(context.openid, transaction);
     assert(Number(currentAccount.available || 0) >= price.pointsToUse, 'POINTS_NOT_ENOUGH', '积分余额刚刚发生变化，请重新报价');
     // The user/account rows serialize creates for the same customer before the
@@ -746,9 +747,10 @@ async function markRefundAbnormal(refundId, payload = {}) {
     if (payload.submissionId && refund.submissionId !== payload.submissionId) return { order, duplicate: true, staleSubmission: true };
     const now = Date.now();
     const requestedStatus = String(payload.status || '');
-    const status = [REFUND_STATUS.WAITING_FUNDS, REFUND_STATUS.CONFIG_OR_DATA_ERROR].includes(requestedStatus)
-      ? requestedStatus
-      : refundStatusFromProvider(payload.providerStatus || requestedStatus);
+    // A locally classified state (for example USER_ACCOUNT_ABNORMAL ->
+    // MANUAL_ACTION) is more precise than the raw provider code. Provider
+    // statuses are only the fallback and may include the REFUND.* event prefix.
+    const status = resolveRefundAbnormalStatus({ ...payload, status: requestedStatus });
     const nextRefund = {
       ...refund,
       status,

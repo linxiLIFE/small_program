@@ -47,13 +47,24 @@ async function getStaffAccount(openid) {
   return records[0] || null;
 }
 
+async function getStaffAccountForContext(context = {}, reader = db) {
+  const uid = String(context.uid || '').trim();
+  const openid = String(context.openid || '').trim();
+  if (uid) {
+    const records = await find(COLLECTIONS.staff, { uid, active: true }, { limit: 1 }, reader);
+    if (records.length) return records[0];
+  }
+  if (openid) {
+    const records = await find(COLLECTIONS.staff, { openid, active: true }, { limit: 1 }, reader);
+    if (records.length) return records[0];
+  }
+  return null;
+}
+
 async function requireRole(roles) {
   const context = getContext();
   assert(context.openid || context.uid, 'UNAUTHENTICATED', '请先登录管理账号', 401);
-  const records = [];
-  if (context.uid) records.push(...await find(COLLECTIONS.staff, { uid: context.uid, active: true }, { limit: 1 }));
-  if (!records.length && context.openid) records.push(...await find(COLLECTIONS.staff, { openid: context.openid, active: true }, { limit: 1 }));
-  const account = records[0] || null;
+  const account = await getStaffAccountForContext(context);
   if (!account || !roles.includes(account.role)) {
     throw new AppError('FORBIDDEN', '当前账号没有执行该操作的权限', 403);
   }
@@ -77,4 +88,4 @@ function safeUser(user, points = {}) {
   };
 }
 
-module.exports = { requireOpenId, userIdentityKey, getUser, ensureUser, getStaffAccount, requireRole, safeUser };
+module.exports = { requireOpenId, userIdentityKey, getUser, ensureUser, getStaffAccount, getStaffAccountForContext, requireRole, safeUser };

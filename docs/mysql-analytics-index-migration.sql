@@ -8,7 +8,8 @@ ALTER TABLE `orders`
   ADD COLUMN `paid_fen` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.paidFen')) AS SIGNED)) VIRTUAL,
   ADD INDEX `idx_orders_work_popularity` (`status`, `refund_status`, `work_id`),
   ADD INDEX `idx_orders_paid_at` (`paid_at`),
-  ADD INDEX `idx_orders_completed_at` (`completed_at`);
+  ADD INDEX `idx_orders_completed_at` (`completed_at`),
+  ADD INDEX `idx_orders_user_completed` (`user_id`, `completed_at`);
 
 ALTER TABLE `refunds`
   ADD COLUMN `success_at` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.successAt')) AS SIGNED)) VIRTUAL,

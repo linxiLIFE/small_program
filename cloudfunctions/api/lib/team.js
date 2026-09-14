@@ -1,14 +1,14 @@
 const crypto = require('crypto');
 const { COLLECTIONS } = require('./constants');
-const { db, getOptional, find, getContext } = require('./db');
-const { requireRole } = require('./auth');
+const { db, getOptional, getContext } = require('./db');
+const { getStaffAccountForContext, requireRole } = require('./auth');
 const { AppError, assert } = require('./errors');
 
 async function session() {
   const context = getContext();
   assert(context.uid || context.openid, 'UNAUTHENTICATED','请先登录',401);
-  const records = context.uid ? await find(COLLECTIONS.staff,{uid:context.uid,active:true},{limit:1}) : await find(COLLECTIONS.staff,{openid:context.openid,active:true},{limit:1});
-  if (!records.length) return {role:'UNASSIGNED',name:''};
+  const current = await getStaffAccountForContext(context);
+  if (!current) return {role:'UNASSIGNED',name:''};
   const {account} = await requireRole(['OWNER','STAFF','TECHNICIAN']);
   return {role:account.role,name:account.name || '',technicianId:account.technicianId || ''};
 }

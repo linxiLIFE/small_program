@@ -6,6 +6,7 @@ const { formatCountdown } = require('../utils/format');
 const { formatDateTime, formatDateLabel } = require('../utils/format');
 const { storeDateString } = require('../utils/store-time');
 const { buildBookingTimeline } = require('../cloudfunctions/api/lib/booking-timeline');
+const { getSlotFromPlan } = require('../cloudfunctions/api/lib/booking');
 
 const rule = { unit: 20, discountFen: 100, maxPercent: 10 };
 assert.throws(() => calculatePointsDiscount({ totalFen: Number.MAX_SAFE_INTEGER + 1, availablePoints: 0, requestedPoints: 0, rule }), /安全范围/);
@@ -60,6 +61,15 @@ const bookingTimeline = buildBookingTimeline({
 });
 assert.deepStrictEqual(bookingTimeline.segments.map(item => item.kind), ['available', 'closed', 'available', 'occupied', 'available', 'break', 'available']);
 assert.equal(bookingTimeline.segments.find(item => item.kind === 'occupied').startAt, dateToTimestamp(timelineDate, '14:00'));
+
+const slotSettings = { booking: { slotStepMinutes: 15 } };
+const slotService = { durationMinutes: 60 };
+const slotStart = dateToTimestamp(timelineDate, '14:00');
+assert.strictEqual(getSlotFromPlan({ leave: false, shifts: [{ start: '10:00', end: '20:00', breaks: [] }], occupancies: [] }, slotStart, slotService, slotSettings).endAt, dateToTimestamp(timelineDate, '15:00'));
+assert.throws(
+  () => getSlotFromPlan({ leave: false, shifts: [{ start: '10:00', end: '13:00', breaks: [] }], occupancies: [] }, slotStart, slotService, slotSettings),
+  error => error && error.code === 'SLOT_UNAVAILABLE'
+);
 
 const today = toDateString();
 const todayAtNoon = dateToTimestamp(today, '12:00');

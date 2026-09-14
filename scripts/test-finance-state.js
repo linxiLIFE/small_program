@@ -7,6 +7,7 @@ const {
   needsCashRefund,
   canAdvanceService,
   refundStatusFromProvider,
+  resolveRefundAbnormalStatus,
   refundFailureDisposition,
   bookingRequestHash,
   assertServiceTransitionTime,
@@ -36,6 +37,10 @@ test('unconfirmed payment blocks service', () => assert(!canAdvanceService({ pay
 test('provider success maps to success', () => assert.strictEqual(refundStatusFromProvider('SUCCESS'), REFUND_STATUS.SUCCESS));
 test('provider closed requires a new refund number', () => assert.strictEqual(refundStatusFromProvider('CLOSED'), REFUND_STATUS.RETRY_REQUIRED));
 test('provider abnormal requires manual action', () => assert.strictEqual(refundStatusFromProvider('ABNORMAL'), REFUND_STATUS.MANUAL_ACTION));
+test('refund closed notification requires a new refund number', () => assert.strictEqual(refundStatusFromProvider('REFUND.CLOSED'), REFUND_STATUS.RETRY_REQUIRED));
+test('refund abnormal notification requires manual action', () => assert.strictEqual(refundStatusFromProvider('REFUND.ABNORMAL'), REFUND_STATUS.MANUAL_ACTION));
+test('user account abnormal requires manual action', () => assert.strictEqual(refundStatusFromProvider('USER_ACCOUNT_ABNORMAL'), REFUND_STATUS.MANUAL_ACTION));
+test('local manual disposition wins over the provider code', () => assert.strictEqual(resolveRefundAbnormalStatus({ status: REFUND_STATUS.MANUAL_ACTION, providerStatus: 'USER_ACCOUNT_ABNORMAL' }), REFUND_STATUS.MANUAL_ACTION));
 test('provider processing stays processing', () => assert.strictEqual(refundStatusFromProvider('PROCESSING'), REFUND_STATUS.PROCESSING));
 test('insufficient merchant funds waits for manual retry', () => assert.deepStrictEqual(refundFailureDisposition({ details: { providerCode: 'NOT_ENOUGH' } }), { status: REFUND_STATUS.WAITING_FUNDS, retry: false, providerCode: 'NOT_ENOUGH' }));
 test('invalid refund request never auto retries', () => assert.strictEqual(refundFailureDisposition({ details: { providerCode: 'INVALID_REQUEST' } }).status, REFUND_STATUS.CONFIG_OR_DATA_ERROR));

@@ -2,7 +2,25 @@
 
 > 这份文档是项目继续开发时的上下文记录。内容以实际操作和测试结果为准。
 
-## 2026-09-14 项目安全审阅后续修复（云函数已部署；数据库迁移与前端发布未执行）
+## 2026-09-14 最新安全复审后续修复（云函数、管理后台与统计迁移已更新；小程序未上传）
+
+- 退款状态统一先去掉微信事件的 `REFUND.` 前缀，再映射本地状态；`REFUND.CLOSED` 进入 `RETRY_REQUIRED`，`REFUND.ABNORMAL` / `USER_ACCOUNT_ABNORMAL` 进入 `MANUAL_ACTION`。`markRefundAbnormal()` 优先使用已分类的本地状态，不再被原始 provider code 覆盖回 `PROCESSING`。
+- 创建订单在锁定最新 `technician_days` 行后重新调用完整时段校验，同时复核休息日、最新班次、休息区间和预约占用；管理员刚缩短当天排班时，旧报价不能继续落单。
+- 订单详情从 `paymentConfirming=1` 进入时会继续主动查单，页面重新显示时也会续查；轮询仍未收敛时提供“重新确认支付结果”按钮，并用单实例锁避免重复轮询。全积分订单显示“积分支付完成，无需微信支付”，退回后显示“积分已退回”。
+- `jobs` 分别按最早到期时间读取待处理任务和过期租约，再公平交替领取，持续有新任务时过期 worker 也不会饥饿；支付/退款补偿扫描使用持久 ID 游标分页，每轮推进最多 100 条并在末页回绕，不再永久只扫描前 100 条。
+- 员工身份查询统一为 UID 优先、未命中后回退 openid；`staffSession()` 与权限校验使用同一策略，兼容历史 openid 绑定记录。
+- 新库 schema 与统计迁移增加 `(user_id, completed_at)` 复合索引，降低长期新客/复购查询成本；新增 GitHub Actions CI，覆盖共享模块同步、根目录测试、管理端构建、JavaScript 语法和 diff 校验。
+
+### 本轮验证与边界
+
+- `npm test` 全部通过：45 条资金/退款/并发不变量，以及新增任务公平性、补偿游标、支付确认恢复、全积分文案、排班复核和 UID/openid 回退测试。
+- `npm run prepare:functions` 已同步 `api` 共享模块到 `jobs`、`payment-callback`、`admin-api`、`seed`，逐文件比较一致；全部 JavaScript `node --check`、管理端 `vue-tsc` / Vite 构建和 `git diff --check` 通过。
+- 已将 `api`、`jobs`、`admin-api`、`payment-callback` 四个生产云函数部署到 `cloud1-d9g5pfect2ece00fa`，四个状态均为 `Deployment completed`，部署清单未包含 `seed`。线上 `api/getSettings` 返回 `InvokeResult=0` 且 `minAdvanceMinutes=15`；线上 `jobs` 冒烟返回 `processed: 0, failed: 0, repaired: 1`。
+- 已用 `--safe --verify` 将管理后台重新发布到 `/cloud-admin/`，4 个文件全部上传并通过远端校验，备份保存在 `.cloudbase-backup/1789370433233/`；线上 `index-oQkdSq4Z.js` 与本地产物 SHA-256 均为 `f9d0ba8a07bee0081b58d8862e8e626dfc8e99e51ac21b05d1aded61ad9df7fb`。
+- 已在线执行 `docs/mysql-analytics-index-migration.sql`。反查确认 `orders` 的 `work_id`、`paid_at`、`completed_at`、`paid_fen`，`refunds` 的 `success_at`、`amount_fen` 共 6 个生成列，以及 5 个统计索引全部存在；`idx_orders_user_completed` 列顺序为 `(user_id, completed_at)`。
+- 支付回调公网入口对无效空 GET 返回预期的 HTTP 500。小程序体验版仍未上传，因此订单详情的支付确认恢复和全积分文案等顾客端修改还不会在体验版生效；GitHub Actions 需提交并推送后才会成为仓库检查，真实 MySQL 多连接竞态与真实微信支付/退款仍属于上线验收边界。
+
+## 2026-09-14 项目安全审阅后续修复（历史发布记录；最新线上状态见上节）
 
 - 已移除 `adminBootstrapStatus` / `adminBootstrapOwner` 线上 action 和后台按钮。首个 OWNER 只能由受控终端使用预先指定 CloudBase UID 执行 `npm run admin:bootstrap-owner`；普通已登录用户不再能抢占店主权限。
 - `jobs` 领取写入随机 `claimToken` 和租约，完成、延期、失败重试均以 `jobId + RUNNING + claimToken` 条件更新；旧 worker 无权覆盖新 worker。任务按 `businessId` 分组、最多 4 组并发，同一订单保持串行。
@@ -10,14 +28,15 @@
 - 预约事务先 `INSERT IGNORE` 建立 `technician_days` 主键行，再 `SELECT ... FOR UPDATE` 检查并写入占用；每周排班发布用稳定 guard 与预约事务串行，只在写事务中复核未来有效订单，不再锁历史订单和全部日期记录。
 - 订单详情以 `paymentStatus/paidAt`、`completedAt`、`refundStatus` 分别展示支付、履约和退款事实；支付按钮增加锁，支付成功后按 0/1/2/4/8 秒查单，确认期间禁止重复支付和取消；首屏加载失败可重新加载。预约无有效报价时金额显示 `--`。
 - 服务完成必须达到订单 `endAt`；金额统一要求 JavaScript safe integer，项目价格上限为 1000 万分（10 万元）；数据库连接必须显式设置 `DB_USER`，不再默认 root。
-- 首页热门款式改为 MySQL 按有效状态聚合，后台经营概览改为 SQL 汇总/趋势/排行，不再把全部 orders/refunds 拉入 Node.js。新库 schema 已加入统计生成列和索引；已有库迁移文件为 `docs/mysql-analytics-index-migration.sql`。本轮只读查询 `information_schema` 已确认当前线上尚无这些新增列，迁移尚未执行。
+- 首页热门款式改为 MySQL 按有效状态聚合，后台经营概览改为 SQL 汇总/趋势/排行，不再把全部 orders/refunds 拉入 Node.js。新库 schema 已加入统计生成列和索引；已有库迁移文件为 `docs/mysql-analytics-index-migration.sql`。当次发布尚未执行迁移，现已在上节记录的最新发布中完成。
 - 按用户要求，未修改预约时间轴 `touchmove` 高频 `setData` 逻辑。
 
 ### 本轮验证与边界
 
 - 根目录 `npm test`、相关 JavaScript `node --check`、管理端 `vue-tsc` / Vite 构建已通过；新增安全加固结构回归、safe integer、价格上限和“完成时间不得早于 endAt”断言。
 - 已运行 `npm run prepare:functions` 同步共享模块，并将 `api`、`jobs`、`admin-api`、`payment-callback` 部署到 `cloud1-d9g5pfect2ece00fa`；四个函数均为 `Deployment completed`，部署清单未包含 `seed`。线上 `api/getSettings` 调用成功；旧 `adminBootstrapStatus` action 返回 `UNKNOWN_ACTION`；`jobs` 冒烟返回 `processed: 0, failed: 0, repaired: 0`。
-- 本轮未发布管理后台、未执行线上 MySQL 统计索引迁移、未上传小程序体验版；因此后台按钮移除和小程序界面修复仍需各自发布后才能在用户端生效，统计查询当前继续使用兼容旧表结构的 SQL 路径。
+- 已用 `--safe --verify` 将最新管理后台发布到 `/cloud-admin/`，4 个文件全部上传且远端验证成功；公网 `index.html` 已加载 `index-oQkdSq4Z.js`，远端脚本与本地产物 SHA-256 一致，且不再包含 `adminBootstrapStatus` / `adminBootstrapOwner`。
+- 当次发布未执行线上 MySQL 统计索引迁移、未上传小程序体验版；统计迁移现已在上节记录的最新发布中完成，小程序界面修复仍需上传后才能在用户端生效。
 - 真实扣款、支付成功通知、取消竞态、退款提交和退款到账仍需商户解除“当前商户存在异常”后完成真机 E2E；代码或模拟测试不能代替真实资金验收。
 
 ## 2026-09-14 上一轮完整审计修复（代码与云端已更新）
@@ -312,14 +331,14 @@ docs/
 
 | 命令 | 结果 |
 | --- | --- |
-| `npm test` | 本地通过领域规则、41 条资金状态不变量、安全加固结构、11 个页面/16 个 WXML 资源及管理端回归校验 |
+| `npm test` | 本地通过领域规则、45 条资金状态不变量、任务公平性、支付确认恢复、安全加固结构、11 个页面/16 个 WXML 资源及管理端回归校验 |
 | `find . -name '*.js' ... node --check` | 通过 |
 | `cd admin && npm run build` | 通过 `vue-tsc` 和 Vite 生产构建 |
 | 微信开发者工具模拟器 | 首页编译通过，并切换到项目页看到演示项目、作品和底部导航 |
 | 小程序手机号授权代码 | 本地 `node --check`、WXML 资源校验通过；微信开发者工具已上传 1.0.1；真实手机授权结果仍需在已配置隐私指引且具备手机号能力的体验版中验证 |
-| 管理后台 | 新版本本地构建通过但尚未发布；当前 CloudBase 静态托管仍是上一轮 `/cloud-admin/` 产物。新版本已移除首个店主按钮，首次 OWNER 改用受控脚本。免费套餐不支持新增本地安全域名 |
+| 管理后台 | 最新版本已发布到 CloudBase `/cloud-admin/` 并通过远端校验；公网资源与本地产物哈希一致，首个店主按钮和公开初始化 action 已移除，首次 OWNER 改用受控脚本。免费套餐不支持新增本地安全域名 |
 | CloudBase MySQL | `information_schema` 已确认上一轮资金唯一约束、订单/任务/设置版本索引；本轮 `mysql-analytics-index-migration.sql` 尚未在线执行 |
-| CloudBase 云函数 | 当前只部署 `api`、`jobs`、`admin-api`、`payment-callback`；四个函数均为最新 `Deployment completed`，远端 `seed` 已删除；`api/getSettings` 与 `jobs` 线上冒烟通过 |
+| CloudBase 云函数 | 当前只部署 `api`、`jobs`、`admin-api`、`payment-callback`；四个函数均为上一轮 `Deployment completed`，远端 `seed` 已删除；本节新增退款、排班、任务和身份修复尚未部署 |
 | CloudBase 定时任务 | `jobs` 已确认存在每分钟触发器 `shiguang-jobs-every-minute` |
 
 这些结果证明当前 SQL 线上读链路和函数运行链路可用，但不代表已经完成微信开发者工具真机、真实支付或支付通知验签验证。

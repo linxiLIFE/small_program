@@ -24,12 +24,17 @@ const booking = read('cloudfunctions/api/lib/booking.js');
 const dayInsert = booking.indexOf('transaction.insertIfAbsent(COLLECTIONS.technicianDays');
 const dayLock = booking.indexOf('const day = await getDayPlan', dayInsert);
 assert(dayInsert >= 0 && dayLock > dayInsert);
+assert(booking.indexOf('getSlotFromPlan(day, order.startAt', dayLock) > dayLock);
 assert(booking.includes("scheduleTemplates, 'active'"));
 
 const jobs = read('cloudfunctions/jobs/index.js');
 assert(jobs.includes('const claimToken = crypto.randomBytes(16)'));
 assert((jobs.match(/claimToken: job\.claimToken/g) || []).length >= 2);
 assert(jobs.includes('processJobGroups([...grouped.values()], result, 4)'));
+assert(jobs.includes('fairTakeJobs(pendingJobs.data || [], expiredJobs.data || [], 50)'));
+assert(jobs.includes("orderBy('nextRunAt', 'asc')"));
+assert(jobs.includes("'cursor_repair_payments'"));
+assert(jobs.includes("'cursor_repair_refunds'"));
 
 const refunds = read('cloudfunctions/api/lib/payment-service.js');
 assert(refunds.includes('async function claimRefundSubmission'));
@@ -48,11 +53,20 @@ assert(orderDetail.includes('paymentProgress(order'));
 assert(orderDetail.includes("order.paymentStatus === 'SUCCESS'"));
 assert(orderDetail.includes('loadError'));
 assert(orderDetail.includes('[0, 1000, 2000, 4000, 8000]'));
+assert(orderDetail.includes('resumePaymentConfirmation'));
+assert(orderDetail.includes('retryPaymentConfirmation'));
+assert(read('pages/order-detail/index.wxml').includes('重新确认支付结果'));
+assert(orderDetail.includes('积分支付完成，无需微信支付'));
 assert(!read('pages/booking/index.wxml').includes("quote.totalText || '¥0.00'"));
 
 const schema = read('docs/mysql-schema.sql');
 assert(schema.includes('idx_orders_paid_at'));
 assert(schema.includes('idx_orders_completed_at'));
+assert(schema.includes('idx_orders_user_completed'));
 assert(schema.includes('idx_refunds_success_at'));
+
+const workflow = read('.github/workflows/ci.yml');
+assert(workflow.includes('npm test'));
+assert(workflow.includes('Verify shared cloud modules are synchronized'));
 
 console.log('security hardening passed: controlled OWNER provisioning, tokenized leases, refund claim, row lock, payment UI, SQL aggregation and DB config');

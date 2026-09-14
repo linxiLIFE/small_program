@@ -71,7 +71,10 @@
       <view class="timeline-item {{order.serviceCompleted ? 'active' : ''}}"><view class="timeline-dot"></view><view><text>到店完成</text><text class="timeline-meta">{{order.serviceCompleted ? '本次服务已完成' : '服务完成后更新'}}</text></view></view>
     </view>
 
-    <view wx:if="{{actions.length}}" class="action-bar safe-bottom">
+    <view wx:if="{{paymentConfirming}}" class="action-bar safe-bottom">
+      <button class="action-button primary" loading="{{paymentChecking}}" disabled="{{paymentChecking}}" bindtap="retryPaymentConfirmation">重新确认支付结果</button>
+    </view>
+    <view wx:elif="{{actions.length}}" class="action-bar safe-bottom">
       <button wx:for="{{actions}}" wx:key="id" class="action-button {{item.type}}" loading="{{item.id === 'pay' && paying}}" disabled="{{paying || paymentConfirming}}" data-action="{{item.id}}" bindtap="handleAction">{{item.text}}</button>
     </view>
   </block>
