@@ -25,20 +25,19 @@ const saving = ref(false);
 const error = ref('');
 const notice = ref('');
 const demo = isDemoMode();
-const bootstrapAvailable = ref(false);
-const bootstrapBusy = ref(false);
 const metrics = ref({ paidFen: 0, refundFen: 0, netFen: 0, completedFen: 0, orderCount: 0, completedCount: 0, customerCount: 0, noShowCount: 0 });
 const orders = ref<AdminOrder[]>([]);
 const catalog = ref<CatalogResponse>({ categories: [], services: [], works: [], technicians: [] });
 const settings = reactive<Settings>({ version: 1, store: { storeName: '四个小姐姐的店', address: '', phone: '', notice: '', latitude: null, longitude: null }, booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, noShowGraceMinutes: 30, noShowPolicy: 'MANUAL_REVIEW' }, points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10 } });
 const paymentStatus = ref<{ configured: boolean; missing: string[]; callbackCertificateConfigured: boolean; note: string }>({ configured: false, missing: [], callbackCertificateConfigured: false, note: '' });
 const orderFilter = ref('');
+const refundingOrders = ref<Record<string, boolean>>({});
 const editingService = ref<Service | null>(null);
 const serviceDraft = reactive<Partial<Service>>({});
 const scheduleDate = ref(todayDate());
 const scheduleLoading = ref(false);
 const scheduleSaving = ref(false);
-const schedule = ref<ScheduleResponse>({ date: scheduleDate.value, weekly: [], technicians: [] });
+const schedule = ref<ScheduleResponse>({ date: scheduleDate.value, scheduleVersion: 1, weekly: [], technicians: [] });
 const selectedTechnicianId = ref('');
 const weeklyDraft = ref<WeeklySchedule[]>([]);
 const dayDraft = reactive<TechnicianDayPlan>({ id: '', technicianId: '', date: scheduleDate.value, weekday: 1, leave: false, shifts: [], source: 'weekly', version: 1, occupancyCount: 0, occupiedIntervals: [] });
@@ -78,6 +77,10 @@ function refundStatusLabel(status?: string): string {
 function canRequestRefund(order: AdminOrder): boolean {
   return ['RESERVED', 'ARRIVED', 'IN_SERVICE', 'COMPLETED', 'NO_SHOW_REVIEW', 'CANCEL_PENDING_REFUND', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW'].includes(order.status)
     && ['NOT_REQUIRED', 'RETRY_REQUIRED', 'CLOSED', 'WAITING_FUNDS', 'CONFIG_OR_DATA_ERROR'].includes(order.refundStatus || 'NOT_REQUIRED');
+}
+
+function isRefunding(orderId: string): boolean {
+  return refundingOrders.value[orderId] === true;
 }
 
 const selectedScheduleTechnician = computed(() => schedule.value.technicians.find((item) => item.id === selectedTechnicianId.value) || schedule.value.technicians[0]);
@@ -162,7 +165,6 @@ async function logout() {
   } finally {
     authenticated.value = false;
     currentUser.value = null;
-    bootstrapAvailable.value = false;
     loading.value = false;
     page.value = 'dashboard';
     orders.value = [];
@@ -175,10 +177,8 @@ async function loadAll() {
   error.value = '';
   try {
     sessionInfo.value=await adminApi.session();
+    if(sessionInfo.value.role==='UNASSIGNED')throw new Error('当前账号未被授权。首个店主必须通过受控部署脚本或数据库控制台预先配置。');
     if(sessionInfo.value.role==='TECHNICIAN'){previewTechnicianId.value='';page.value='my-schedule';return;}
-    const bootstrap = await adminApi.bootstrapStatus();
-    bootstrapAvailable.value = bootstrap.available;
-    if (bootstrap.available) return;
     const tasks = [
       async()=>{catalog.value=await adminApi.catalog();},
       async()=>{Object.assign(settings,await adminApi.settings());},
@@ -213,22 +213,6 @@ async function loadSchedule() {
     error.value = err instanceof Error ? err.message : '排班加载失败';
   } finally {
     scheduleLoading.value = false;
-  }
-}
-
-async function bootstrapOwner() {
-  if (!window.confirm('确认把当前 CloudBase 登录账号设为唯一首个店主？之后其他账号必须由店主授权。')) return;
-  bootstrapBusy.value = true;
-  error.value = '';
-  try {
-    await adminApi.bootstrapOwner();
-    bootstrapAvailable.value = false;
-    notice.value = '店主账号已配置，正在加载真实门店数据。';
-    await loadAll();
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '店主账号配置失败';
-  } finally {
-    bootstrapBusy.value = false;
   }
 }
 
@@ -345,7 +329,7 @@ async function saveWeekly() {
   scheduleSaving.value = true;
   error.value = '';
   try {
-    const result = await adminApi.saveWeeklySchedule(clone(weeklyDraft.value), '管理后台发布每周营业排班模板');
+    const result = await adminApi.saveWeeklySchedule(clone(weeklyDraft.value), schedule.value.scheduleVersion, '管理后台发布每周营业排班模板');
     notice.value = `每周模板已发布，当前版本 v${result.version}`;
     await loadSchedule();
   } catch (err) {
@@ -356,8 +340,15 @@ async function saveWeekly() {
 }
 
 async function refund(order: AdminOrder) {
+  if (isRefunding(order.id)) return;
   if (!window.confirm(`确认对订单 ${order.id} 发起整单退款？`)) return;
+  refundingOrders.value = { ...refundingOrders.value, [order.id]: true };
   try { await adminApi.refund(order.id, '管理员在后台发起退款'); notice.value = '退款请求已提交，到账状态请以微信回调/查单为准。'; await loadOrders(); } catch (err) { error.value = err instanceof Error ? err.message : '退款失败'; }
+  finally {
+    const next = { ...refundingOrders.value };
+    delete next[order.id];
+    refundingOrders.value = next;
+  }
 }
 
 watch(scheduleDate, () => {
@@ -407,15 +398,13 @@ onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
       <div v-if="error" class="alert error">{{ error }} <button @click="error = ''">×</button></div>
       <div v-if="notice" class="alert success">{{ notice }} <button @click="notice = ''">×</button></div>
 
-      <section v-if="bootstrapAvailable" class="bootstrap-card panel"><div class="bootstrap-icon">✓</div><h1>配置首个店主账号</h1><button class="primary-button" :disabled="bootstrapBusy" @click="bootstrapOwner">{{ bootstrapBusy ? '配置中…' : '设为首个店主' }}</button><button class="text-button bootstrap-logout" @click="logout">退出当前账号</button></section>
-
-      <div v-else-if="loading" class="loading-state"><div class="loader"></div><span>正在整理门店数据…</span></div>
+      <div v-if="loading" class="loading-state"><div class="loader"></div><span>正在整理门店数据…</span></div>
 
       <template v-else>
         <DashboardPanel v-if="page === 'dashboard'"/>
         <HomeManager v-else-if="page === 'home'" :settings="settings" @saved="Object.assign(settings,$event)"/>
 
-        <section v-else-if="page === 'orders'" class="page-section"><div class="page-intro"><div><h1>预约订单</h1></div><div class="filter-row"><select v-model="orderFilter" @change="loadOrders"><option value="">全部状态</option><option value="PENDING_PAYMENT">待付款</option><option value="RESERVED">待到店</option><option value="ARRIVED">已到店</option><option value="IN_SERVICE">服务中</option><option value="COMPLETED">已完成</option><option value="NO_SHOW_REVIEW">未到店待复核</option><option value="CANCEL_PENDING_REFUND">退款待处理</option><option value="REFUNDED">已退款</option><option value="CANCELLED_BY_USER">已取消</option></select></div></div><section class="panel table-panel"><table><thead><tr><th>预约时间</th><th>项目 / 技师</th><th>顾客</th><th>状态</th><th>实付</th><th>操作</th></tr></thead><tbody><tr v-for="order in orders" :key="order.id"><td><strong>{{ order.startAtLabel }}</strong><small>{{ order.id }}</small></td><td><strong>{{ order.serviceName }}</strong><small v-if="order.work">{{ order.work.title }}</small><small>{{ order.technicianName }}</small></td><td><strong>{{ order.customerName || '—' }}</strong><small>{{ order.phoneMasked || '按权限展示' }}</small></td><td><span :class="['pill', order.status === 'COMPLETED' ? 'green' : order.status === 'RESERVED' ? 'rose' : 'sand']">{{ order.statusLabel }}</span><small v-if="refundStatusLabel(order.refundStatus)">{{ refundStatusLabel(order.refundStatus) }}</small></td><td class="money-cell">{{ money(order.paidFen) }}</td><td><button v-if="['RESERVED', 'ARRIVED', 'IN_SERVICE'].includes(order.status) && order.refundStatus === 'NOT_REQUIRED'" class="link-action" @click="page = 'orders'">工作台处理</button><button v-if="canRequestRefund(order)" class="link-action danger-link" @click="refund(order)">{{ ['RETRY_REQUIRED', 'CLOSED', 'WAITING_FUNDS', 'CONFIG_OR_DATA_ERROR'].includes(order.refundStatus || '') ? '重新退款' : order.status === 'NO_SHOW_REVIEW' ? '确认未到店并退款' : '整单退款' }}</button><span v-if="!canRequestRefund(order) && !['RESERVED', 'ARRIVED', 'IN_SERVICE'].includes(order.status)" class="muted-cell">—</span></td></tr></tbody></table><div v-if="!orders.length" class="empty-inline">没有符合条件的订单。</div></section></section>
+        <section v-else-if="page === 'orders'" class="page-section"><div class="page-intro"><div><h1>预约订单</h1></div><div class="filter-row"><select v-model="orderFilter" @change="loadOrders"><option value="">全部状态</option><option value="PENDING_PAYMENT">待付款</option><option value="RESERVED">待到店</option><option value="ARRIVED">已到店</option><option value="IN_SERVICE">服务中</option><option value="COMPLETED">已完成</option><option value="NO_SHOW_REVIEW">未到店待复核</option><option value="CANCEL_PENDING_REFUND">退款待处理</option><option value="REFUNDED">已退款</option><option value="CANCELLED_BY_USER">已取消</option></select></div></div><section class="panel table-panel"><table><thead><tr><th>预约时间</th><th>项目 / 技师</th><th>顾客</th><th>状态</th><th>实付</th><th>操作</th></tr></thead><tbody><tr v-for="order in orders" :key="order.id"><td><strong>{{ order.startAtLabel }}</strong><small>{{ order.id }}</small></td><td><strong>{{ order.serviceName }}</strong><small v-if="order.work">{{ order.work.title }}</small><small>{{ order.technicianName }}</small></td><td><strong>{{ order.customerName || '—' }}</strong><small>{{ order.phoneMasked || '按权限展示' }}</small></td><td><span :class="['pill', order.status === 'COMPLETED' ? 'green' : order.status === 'RESERVED' ? 'rose' : 'sand']">{{ order.statusLabel }}</span><small v-if="refundStatusLabel(order.refundStatus)">{{ refundStatusLabel(order.refundStatus) }}</small></td><td class="money-cell">{{ money(order.paidFen) }}</td><td><button v-if="['RESERVED', 'ARRIVED', 'IN_SERVICE'].includes(order.status) && order.refundStatus === 'NOT_REQUIRED'" class="link-action" @click="page = 'orders'">工作台处理</button><button v-if="canRequestRefund(order)" class="link-action danger-link" :disabled="isRefunding(order.id)" @click="refund(order)">{{ isRefunding(order.id) ? '提交中…' : ['RETRY_REQUIRED', 'CLOSED', 'WAITING_FUNDS', 'CONFIG_OR_DATA_ERROR'].includes(order.refundStatus || '') ? '重新退款' : order.status === 'NO_SHOW_REVIEW' ? '确认未到店并退款' : '整单退款' }}</button><span v-if="!canRequestRefund(order) && !['RESERVED', 'ARRIVED', 'IN_SERVICE'].includes(order.status)" class="muted-cell">—</span></td></tr></tbody></table><div v-if="!orders.length" class="empty-inline">没有符合条件的订单。</div></section></section>
 
         <CatalogManager v-else-if="page === 'services'" :catalog="catalog" @changed="refreshCatalog"/>
         <TeamManager v-else-if="page === 'team'" :catalog="catalog" @changed="refreshCatalog" @schedule="openTechnicianSchedule" @workspace="openTechnicianWorkspace"/>

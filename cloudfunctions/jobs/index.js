@@ -1,6 +1,7 @@
 const cloud = require('wx-server-sdk');
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const sharedRoot = fs.existsSync(path.join(__dirname, 'lib')) ? './lib' : '../api/lib';
@@ -15,18 +16,39 @@ async function claimJob(job) {
   const now = Date.now();
   const leaseUntil = addMinutes(now, 2);
   const jobId = job._id || job.id;
+  const claimToken = crypto.randomBytes(16).toString('hex');
   const condition = job.status === 'RUNNING'
     ? { _id: jobId, status: 'RUNNING', leaseUntil: db.command.lte(now) }
     : { _id: jobId, status: 'PENDING', nextRunAt: db.command.lte(now) };
-  const result = await db.collection(COLLECTIONS.jobs).where(condition).update({ data: { status: 'RUNNING', leaseUntil, updatedAt: now } });
-  return result && result.stats && result.stats.updated === 1;
+  const result = await db.collection(COLLECTIONS.jobs).where(condition).update({ data: {
+    status: 'RUNNING',
+    claimToken,
+    leaseUntil,
+    attemptCount: db.command.inc(1),
+    updatedAt: now
+  } });
+  if (!result || !result.stats || result.stats.updated !== 1) return null;
+  return { ...job, claimToken, leaseUntil, attemptCount: Number(job.attemptCount || 0) + 1 };
 }
 
 async function finishJob(job, status = 'DONE', errorMessage = '') {
   const nextRetry = Number(job.retryCount || 0) + 1;
   const failed = status === 'FAILED';
   const nextRunAt = addMinutes(Date.now(), Math.min(60, 2 ** Math.min(nextRetry, 5)));
-  await db.collection(COLLECTIONS.jobs).doc(job._id || job.id).update({ data: { status: failed && nextRetry < 8 ? 'PENDING' : status, retryCount: nextRetry, lastError: errorMessage, nextRunAt, leaseUntil: 0, updatedAt: Date.now() } });
+  const result = await db.collection(COLLECTIONS.jobs).where({
+    _id: job._id || job.id,
+    status: 'RUNNING',
+    claimToken: job.claimToken
+  }).update({ data: {
+    status: failed && nextRetry < 8 ? 'PENDING' : status,
+    retryCount: nextRetry,
+    lastError: errorMessage,
+    nextRunAt,
+    leaseUntil: 0,
+    claimToken: '',
+    updatedAt: Date.now()
+  } });
+  return !!(result && result.stats && result.stats.updated === 1);
 }
 
 async function processPaymentExpire(job) {
@@ -84,7 +106,51 @@ async function processRefund(job) {
 
 async function deferJob(job) {
   const jobId = job._id || job.id;
-  await db.collection(COLLECTIONS.jobs).doc(jobId).update({ data: { status: 'PENDING', nextRunAt: addMinutes(Date.now(), 30), leaseUntil: 0, updatedAt: Date.now() } });
+  const result = await db.collection(COLLECTIONS.jobs).where({
+    _id: jobId,
+    status: 'RUNNING',
+    claimToken: job.claimToken
+  }).update({ data: { status: 'PENDING', nextRunAt: addMinutes(Date.now(), 30), leaseUntil: 0, claimToken: '', updatedAt: Date.now() } });
+  return !!(result && result.stats && result.stats.updated === 1);
+}
+
+async function processJob(job, result) {
+  const claimed = await claimJob(job);
+  if (!claimed) return;
+  try {
+    if (claimed.type === 'PAYMENT_EXPIRE') await processPaymentExpire(claimed);
+    else if (claimed.type === 'PAYMENT_RECONCILE') {
+      const paymentResult = await processPaymentReconcile(claimed);
+      if (paymentResult && paymentResult.deferred) {
+        if (await deferJob(claimed)) result.processed += 1;
+        return;
+      }
+    }
+    else if (claimed.type === 'NO_SHOW') await processNoShow(claimed);
+    else if (claimed.type === 'REFUND_RETRY') {
+      const refundResult = await processRefund(claimed);
+      if (refundResult && refundResult.deferred) {
+        if (await deferJob(claimed)) result.processed += 1;
+        return;
+      }
+    }
+    if (await finishJob(claimed, 'DONE')) result.processed += 1;
+  } catch (error) {
+    console.error('后台任务失败', { jobId: claimed._id || claimed.id, type: claimed.type, message: error.message });
+    if (await finishJob(claimed, 'FAILED', error.message || 'unknown error')) result.failed += 1;
+  }
+}
+
+async function processJobGroups(groups, result, concurrency = 4) {
+  let cursor = 0;
+  async function worker() {
+    while (cursor < groups.length) {
+      const group = groups[cursor];
+      cursor += 1;
+      for (const job of group) await processJob(job, result);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, groups.length) }, () => worker()));
 }
 
 async function repairReconciliationJobs(now) {
@@ -127,34 +193,12 @@ exports.main = async () => {
   ]);
   const jobs = [...(pendingJobs.data || []), ...(expiredJobs.data || [])].slice(0, 50);
   const result = { processed: 0, failed: 0, repaired };
+  const grouped = new Map();
   for (const job of jobs) {
-    if (!(await claimJob(job))) continue;
-    try {
-      if (job.type === 'PAYMENT_EXPIRE') await processPaymentExpire(job);
-      else if (job.type === 'PAYMENT_RECONCILE') {
-        const paymentResult = await processPaymentReconcile(job);
-        if (paymentResult && paymentResult.deferred) {
-          await deferJob(job);
-          result.processed += 1;
-          continue;
-        }
-      }
-      else if (job.type === 'NO_SHOW') await processNoShow(job);
-      else if (job.type === 'REFUND_RETRY') {
-        const refundResult = await processRefund(job);
-        if (refundResult && refundResult.deferred) {
-          await deferJob(job);
-          result.processed += 1;
-          continue;
-        }
-      }
-      await finishJob(job, 'DONE');
-      result.processed += 1;
-    } catch (error) {
-      console.error('后台任务失败', { jobId: job._id || job.id, type: job.type, message: error.message });
-      await finishJob(job, 'FAILED', error.message || 'unknown error');
-      result.failed += 1;
-    }
+    const key = job.orderId || job.businessId || job._id || job.id;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(job);
   }
+  await processJobGroups([...grouped.values()], result, 4);
   return result;
 };

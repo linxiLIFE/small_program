@@ -80,8 +80,6 @@ async function route(action, payload) {
     case 'mySchedule': return admin.mySchedule(payload || {});
     case 'saveMySchedule': return admin.saveScheduleDay(payload || {});
     case 'adminSummary': return admin.summary(payload || {});
-    case 'adminBootstrapStatus': return admin.bootstrapStatus();
-    case 'adminBootstrapOwner': return admin.bootstrapOwner();
     case 'adminListOrders': return admin.listOrdersForAdmin(payload || {});
     case 'adminCatalog': return admin.listCatalog();
     case 'adminSchedule': return admin.schedule(payload || {});

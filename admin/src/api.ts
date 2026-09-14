@@ -49,6 +49,7 @@ function today() {
 function demoSchedule(date = today()): ScheduleResponse {
   return {
     date,
+    scheduleVersion: demoSettings.version,
     weekly: JSON.parse(JSON.stringify(demoWeekly)) as WeeklySchedule[],
     technicians: demoTechnicians.map((technician) => ({
       ...technician,
@@ -74,8 +75,6 @@ async function request<T>(action: string, payload: Record<string, unknown> = {})
 }
 
 async function demoRequest<T>(action: string, payload: Record<string, unknown>): Promise<T> {
-  if (action === 'adminBootstrapStatus') return { available: false } as T;
-  if (action === 'adminBootstrapOwner') return { id: 'demo-owner', role: 'OWNER' } as T;
   if (action === 'adminSummary') {
     const days = Math.max(1, Number(payload.days) || 30);
     const end = new Date();
@@ -137,8 +136,6 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
 }
 
 export const adminApi = {
-  bootstrapStatus: () => request<{ available: boolean }>('adminBootstrapStatus'),
-  bootstrapOwner: () => request<{ id: string; role: string }>('adminBootstrapOwner'),
   summary: (days = 30) => request<AnalyticsResponse>('adminSummary',{days}),
   orders: (status = '') => request<{ orders: AdminOrder[]; canRefund: boolean }>('adminListOrders', { status }),
   session: () => request<SessionInfo>('staffSession'),
@@ -152,7 +149,7 @@ export const adminApi = {
   catalog: () => request<CatalogResponse>('adminCatalog'),
   schedule: (date: string) => request<ScheduleResponse>('adminSchedule', { date }),
   saveScheduleDay: (plan: Pick<TechnicianDayPlan, 'technicianId' | 'date' | 'leave' | 'shifts' | 'version'> & { reason?: string }) => request<TechnicianDayPlan>('adminSaveScheduleDay', plan as unknown as Record<string, unknown>),
-  saveWeeklySchedule: (weekly: WeeklySchedule[], reason?: string) => request<{ version: number; weekly: WeeklySchedule[] }>('adminSaveWeeklySchedule', { weekly, reason }),
+  saveWeeklySchedule: (weekly: WeeklySchedule[], version: number, reason?: string) => request<{ version: number; weekly: WeeklySchedule[] }>('adminSaveWeeklySchedule', { weekly, version, reason }),
   paymentStatus: () => request<{ configured: boolean; missing: string[]; callbackCertificateConfigured: boolean; note: string }>('adminPaymentStatus'),
   settings: () => request<Settings>('getSettings'),
   saveWork: (work: Work) => request<Work>('adminSaveWork', work as unknown as Record<string, unknown>),

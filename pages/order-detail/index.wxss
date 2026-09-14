@@ -12,6 +12,39 @@
   margin-top: 20rpx;
 }
 
+.load-error {
+  margin-top: 120rpx;
+  padding: 48rpx 32rpx;
+  color: #876f6b;
+  text-align: center;
+}
+
+.load-error text {
+  display: block;
+  margin-bottom: 28rpx;
+}
+
+.inline-load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 16rpx;
+  background: #fff0ec;
+  color: #a45f59;
+  font-size: 23rpx;
+}
+
+.inline-load-error button {
+  margin: 0;
+  padding: 0 18rpx;
+  background: transparent;
+  color: #a45f59;
+  font-size: 23rpx;
+  line-height: 2;
+}
+
 .order-status-card,
 .detail-card,
 .price-card,

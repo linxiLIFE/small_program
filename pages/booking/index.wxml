@@ -71,10 +71,10 @@
     </view>
 
     <view class="booking-summary card">
-      <view class="summary-row"><text>项目金额</text><text>{{quote.totalText || '¥0.00'}}</text></view>
-      <view class="summary-row discount-row"><text>积分抵扣（{{quote.pointsToUse || 0}} 分）</text><text>- {{quote.discountText || '¥0.00'}}</text></view>
+      <view class="summary-row"><text>项目金额</text><text>{{quote.quoteId ? quote.totalText : '--'}}</text></view>
+      <view class="summary-row discount-row"><text>积分抵扣（{{quote.quoteId ? quote.pointsToUse : 0}} 分）</text><text>{{quote.quoteId ? '- ' + quote.discountText : '--'}}</text></view>
       <view class="divider"></view>
-      <view class="summary-total"><text>微信支付</text><text>{{quote.paidText || '¥0.00'}}</text></view>
+      <view class="summary-total"><text>微信支付</text><text>{{quote.quoteId ? quote.paidText : '--'}}</text></view>
       <button class="primary-button" loading="{{submitting}}" disabled="{{!canSubmit || submitting}}" bindtap="submitBooking">锁定时段并支付</button>
 
     </view>

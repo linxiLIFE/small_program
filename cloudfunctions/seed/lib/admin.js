@@ -1,5 +1,5 @@
 const { COLLECTIONS, DEFAULT_SETTINGS, ORDER_STATUS, ACTIVE_ORDER_STATUSES, REFUND_STATUS } = require('./constants');
-const { db, find, getContext, getOptional } = require('./db');
+const { db, find, getOptional } = require('./db');
 const { AppError, assert } = require('./errors');
 const { requireRole } = require('./auth');
 const { getCurrentSettings, mergeSettings, publicSettings } = require('./settings');
@@ -138,29 +138,7 @@ async function summary(payload = {}) {
   await requireRole(['OWNER', 'STAFF']);
   const days = Number(payload.days || 30);
   assert([7,30,90].includes(days), 'INVALID_RANGE', '请选择 7、30 或 90 天');
-  const [orders,refunds] = await Promise.all([find(COLLECTIONS.orders,{}),find(COLLECTIONS.refunds,{})]);
-  return require('./analytics').analyze(orders,refunds,days);
-}
-
-async function bootstrapStatus() {
-  const context = getContext();
-  assert(context.uid || context.openid, 'UNAUTHENTICATED', '请先登录管理账号', 401);
-  const accounts = await find(COLLECTIONS.staff, { active: true }, { limit: 1 });
-  return { available: accounts.length === 0 };
-}
-
-async function bootstrapOwner() {
-  const context = getContext();
-  assert(context.uid || context.openid, 'UNAUTHENTICATED', '请先登录管理账号', 401);
-  const account = await db.runTransaction(async (transaction) => {
-    const existing = await find(COLLECTIONS.staff, { active: true }, { limit: 1 }, transaction);
-    assert(!existing.length, 'BOOTSTRAP_ALREADY_COMPLETE', '首个店主账号已经配置完成', 409);
-    const now = Date.now();
-    const record = { _id: 'staff_owner', id: 'staff_owner', uid: context.uid || '', openid: context.openid || '', role: 'OWNER', active: true, name: '店主', createdAt: now, updatedAt: now };
-    await transaction.collection(COLLECTIONS.staff).doc(record.id).set({ data: record });
-    return record;
-  });
-  return { id: account.id, role: account.role };
+  return require('./analytics').databaseSummary(days);
 }
 
 async function listOrdersForAdmin(payload = {}) {
@@ -202,7 +180,7 @@ async function schedule(payload = {}) {
     const orders = await find(COLLECTIONS.orders, { technicianId: technician.id, date }, { limit: 200 });
     return { ...technician, plan: publicDayPlan(record, source, orders) };
   }));
-  return { date, weekly: normalizeWeekly(settings.schedule && settings.schedule.weekly || DEFAULT_SETTINGS.schedule.weekly), technicians: plans };
+  return { date, scheduleVersion: Number(settings.version || 1), weekly: normalizeWeekly(settings.schedule && settings.schedule.weekly || DEFAULT_SETTINGS.schedule.weekly), technicians: plans };
 }
 
 async function assertNoScheduleConflict(transaction, technicianId, date, plan, existing) {
@@ -229,27 +207,46 @@ async function saveScheduleDay(payload = {}) {
   const id = `${technicianId}_${date}`;
   let saved;
   await db.runTransaction(async (transaction) => {
+    const now = Date.now();
+    await transaction.insertIfAbsent(COLLECTIONS.technicianDays, id, {
+      _id: id,
+      id,
+      technicianId,
+      date,
+      weekday: weekday(date),
+      leave,
+      shifts,
+      occupancies: [],
+      version: 1,
+      lockOnly: true,
+      source: 'ADMIN_OVERRIDE',
+      createdAt: now,
+      updatedAt: now
+    });
     const existing = await getOptional(COLLECTIONS.technicianDays, id, transaction);
-    const currentVersion = existing ? Number(existing.version || 1) : 1;
+    const persisted = existing && existing.lockOnly !== true ? existing : null;
+    const currentVersion = persisted ? Number(persisted.version || 1) : 1;
     if (expectedVersion !== null) assert(expectedVersion === currentVersion, 'SCHEDULE_VERSION_CONFLICT', '排班已经被其他管理员更新，请刷新后重试', 409);
     const plan = { leave, shifts };
     await assertNoScheduleConflict(transaction, technicianId, date, plan, existing);
-    const now = Date.now();
-    saved = { ...(existing || {}), _id: id, id, technicianId, date, weekday: weekday(date), leave, shifts, occupancies: Array.isArray(existing && existing.occupancies) ? existing.occupancies : [], version: existing ? currentVersion + 1 : 1, source: 'ADMIN_OVERRIDE', createdAt: existing && existing.createdAt || now, updatedAt: now };
+    saved = { ...(persisted || {}), _id: id, id, technicianId, date, weekday: weekday(date), leave, shifts, occupancies: Array.isArray(existing && existing.occupancies) ? existing.occupancies : [], version: persisted ? currentVersion + 1 : 1, lockOnly: false, source: 'ADMIN_OVERRIDE', createdAt: existing && existing.createdAt || now, updatedAt: now };
     await transaction.collection(COLLECTIONS.technicianDays).doc(id).set({ data: saved });
   });
   await audit({ ...account, openid: account.openid }, 'SAVE_SCHEDULE_DAY', 'technician_days', id, { date, technicianId, leave, shiftCount: shifts.length, version: saved.version }, payload.reason);
   return publicDayPlan(saved, 'override');
 }
 
-async function assertWeeklyScheduleDoesNotBreakOrders(transaction, weekly) {
-  const [orders, dayRows] = await Promise.all([
-    find(COLLECTIONS.orders, {}, { limit: 2000 }, transaction),
-    find(COLLECTIONS.technicianDays, {}, { limit: 2000 }, transaction)
-  ]);
-  const overrides = new Map(dayRows.map((item) => [`${item.technicianId}_${item.date}`, item]));
-  for (const order of orders.filter(activeOccupancy)) {
-    if (overrides.has(`${order.technicianId}_${order.date}`)) continue;
+async function assertWeeklyScheduleDoesNotBreakOrders(reader, weekly) {
+  const orders = await find(COLLECTIONS.orders, {
+    status: db.command.in(ACTIVE_ORDER_STATUSES),
+    startAt: db.command.gte(Date.now())
+  }, { orderBy: { field: 'startAt', direction: 'asc' }, limit: 2001 }, reader);
+  assert(orders.length <= 2000, 'SCHEDULE_VALIDATION_LIMIT', '未来有效预约过多，暂不能自动验证排班，请联系运维处理', 409);
+  const overrideCache = new Map();
+  for (const order of orders) {
+    const id = `${order.technicianId}_${order.date}`;
+    if (!overrideCache.has(id)) overrideCache.set(id, await getOptional(COLLECTIONS.technicianDays, id, reader));
+    if (overrideCache.get(id)) continue;
     const entry = weekly.find((item) => item.weekday === weekday(order.date));
     const plan = { leave: !entry || entry.enabled === false, shifts: entry ? entry.shifts : [] };
     if (!planCoversInterval(plan, order.startAt, order.endAt)) {
@@ -261,14 +258,32 @@ async function assertWeeklyScheduleDoesNotBreakOrders(transaction, weekly) {
 async function saveWeeklySchedule(payload = {}) {
   const { account } = await requireRole(['OWNER']);
   const weekly = normalizeWeekly(payload.weekly);
+  const versions = await find(COLLECTIONS.settings, { published: true }, { orderBy: { field: 'version', direction: 'desc' }, limit: 1 });
+  const snapshot = mergeSettings(DEFAULT_SETTINGS, versions[0]);
+  const expectedVersion = payload.version === undefined ? Number(snapshot.version || 1) : Number(payload.version);
+  assert(Number.isSafeInteger(expectedVersion) && expectedVersion > 0, 'INVALID_SCHEDULE', '排班版本号不正确');
+  assert(expectedVersion === Number(snapshot.version || 1), 'SETTINGS_CONFLICT', '门店设置已更新，请刷新后重新保存排班', 409);
+  // Do the potentially longer validation before opening the write transaction.
+  await assertWeeklyScheduleDoesNotBreakOrders(db, weekly);
   return db.runTransaction(async (transaction) => {
-    const versions=await find(COLLECTIONS.settings,{published:true},{orderBy:{field:'version',direction:'desc'},limit:1},transaction);
-    const previous=mergeSettings(DEFAULT_SETTINGS,versions[0]);
+    const previousScheduleRevision = Number(snapshot.scheduleRevision || 1);
+    await transaction.insertIfAbsent(COLLECTIONS.scheduleTemplates, 'active', {
+      _id: 'active', id: 'active', scheduleRevision: previousScheduleRevision, createdAt: Date.now(), updatedAt: Date.now()
+    });
+    const scheduleGuard = await getOptional(COLLECTIONS.scheduleTemplates, 'active', transaction);
+    assert(Number(scheduleGuard && scheduleGuard.scheduleRevision || 1) === previousScheduleRevision, 'SETTINGS_CONFLICT', '排班已更新，请刷新后重新保存', 409);
+    const currentVersions=await find(COLLECTIONS.settings,{published:true},{orderBy:{field:'version',direction:'desc'},limit:1},transaction);
+    const previous=mergeSettings(DEFAULT_SETTINGS,currentVersions[0]);
+    assert(Number(previous.version || 1) === expectedVersion, 'SETTINGS_CONFLICT', '门店设置已更新，请刷新后重新保存排班', 409);
     const version=Number(previous.version||0)+1;const now=Date.now();
-    const record={...mergeSettings(previous,{schedule:{weekly}}),_id:`v${version}`,id:`v${version}`,version,published:true,createdAt:now,createdBy:account.uid||account.openid};
+    const scheduleRevision = Number(previous.scheduleRevision || 1) + 1;
+    const record={...mergeSettings(previous,{schedule:{weekly}}),scheduleRevision,_id:`v${version}`,id:`v${version}`,version,published:true,createdAt:now,createdBy:account.uid||account.openid};
+    // Recheck only future active orders while holding the current settings row.
+    // Historical orders and unrelated technician-day rows are never locked.
     await assertWeeklyScheduleDoesNotBreakOrders(transaction,weekly);
     await transaction.collection(COLLECTIONS.settings).doc(record.id).set({data:record});
     await transaction.collection(COLLECTIONS.scheduleTemplates).doc(record.id).set({data:{id:record.id,weekly,version,published:true,createdAt:now,createdBy:record.createdBy}});
+    await transaction.collection(COLLECTIONS.scheduleTemplates).doc('active').set({data:{...scheduleGuard,_id:'active',id:'active',scheduleRevision,settingsVersion:version,updatedAt:now}});
     await audit(account,'PUBLISH_SCHEDULE_TEMPLATE','schedule_templates',record.id,{previousVersion:previous.version,version},payload.reason,transaction);
     return {version,weekly};
   });
@@ -341,4 +356,4 @@ async function previewTechnicianSchedule(payload = {}) {
 }
 
 const { saveService, saveWork, listCatalog } = require('./catalog-admin');
-module.exports = { previewTechnicianSchedule, mySchedule, normalizeShifts, planCoversInterval, summary, bootstrapStatus, bootstrapOwner, listOrdersForAdmin, schedule, saveScheduleDay, saveWeeklySchedule, saveService, saveWork, saveSettings, getPaymentConfigStatus, refundOrder, listCatalog };
+module.exports = { previewTechnicianSchedule, mySchedule, normalizeShifts, planCoversInterval, summary, listOrdersForAdmin, schedule, saveScheduleDay, saveWeeklySchedule, saveService, saveWork, saveSettings, getPaymentConfigStatus, refundOrder, listCatalog };

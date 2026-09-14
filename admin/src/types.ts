@@ -92,6 +92,7 @@ export interface ScheduledTechnician extends Technician {
 
 export interface ScheduleResponse {
   date: string;
+  scheduleVersion: number;
   weekly: WeeklySchedule[];
   technicians: ScheduledTechnician[];
 }

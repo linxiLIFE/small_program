@@ -7,6 +7,10 @@ const { buildTimePeriods, decorateBookingTimeline, timeLabel } = require('../../
 const TIMELINE_STEP_MINUTES = 15;
 const TIMELINE_HANDLE_WIDTH_PX = 28;
 
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 function loadBookingContext(serviceId, workId) {
   return Promise.all([
     api.getSettings(),
@@ -604,10 +608,10 @@ Page({
         paySign: payment.paySign,
         success: async () => {
           wx.showLoading({ title: '确认支付中' });
-          let confirmed = true;
-          try { await api.queryPayment(orderId); } catch (error) { confirmed = false; } finally { wx.hideLoading(); }
-          if (!confirmed) wx.showToast({ title: '支付结果确认中', icon: 'none' });
-          wx.redirectTo({ url: `/pages/order-detail/index?orderId=${orderId}` });
+          const confirmed = await this.confirmPaymentResult(orderId);
+          wx.hideLoading();
+          if (!confirmed) wx.showToast({ title: '支付结果仍在确认', icon: 'none' });
+          wx.redirectTo({ url: `/pages/order-detail/index?orderId=${orderId}${confirmed ? '' : '&paymentConfirming=1'}` });
           resolve();
         },
         fail: async (error) => {
@@ -618,6 +622,19 @@ Page({
         }
       });
     });
+  },
+
+  async confirmPaymentResult(orderId) {
+    for (const delay of [0, 1000, 2000, 4000, 8000]) {
+      if (delay) await wait(delay);
+      try {
+        const result = await api.queryPayment(orderId);
+        if (result && ['SUCCESS', 'CLOSED'].includes(result.status)) return true;
+      } catch (error) {
+        // The callback and reconciliation job continue when this device cannot query.
+      }
+    }
+    return false;
   },
 
   formatDate(event) {

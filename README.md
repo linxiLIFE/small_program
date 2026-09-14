@@ -50,7 +50,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-后台默认使用 CloudBase Web SDK 的用户名/密码登录、本地持久会话和 `api` 云函数；只有显式设置 `VITE_ADMIN_DEMO=true` 时才启用本地演示数据。首次使用时，在 [CloudBase 身份认证用户管理](https://tcb.cloud.tencent.com/dev?envId=cloud1-d9g5pfect2ece00fa#/identity/user-management) 创建一个用户名密码用户，打开上面的后台登录；当环境还没有 `staff_accounts` 时，登录账号会看到“设为首个店主”，确认后即可完成首个 `OWNER` 授权。之后新增员工必须由受控管理流程写入 `staff_accounts`，不开放公众注册。真实登录请优先使用线上静态地址；浏览器端不保存或显示商户私钥、API v3 密钥、支付平台证书和完整令牌。
+后台默认使用 CloudBase Web SDK 的用户名/密码登录、本地持久会话和 `api` 云函数；只有显式设置 `VITE_ADMIN_DEMO=true` 时才启用本地演示数据。首次使用时，先在 [CloudBase 身份认证用户管理](https://tcb.cloud.tencent.com/dev?envId=cloud1-d9g5pfect2ece00fa#/identity/user-management) 创建用户名密码用户并取得 UID，再由受控运维终端执行 `BOOTSTRAP_OWNER_UID='<UID>' npm run admin:bootstrap-owner`。线上 API 和网页都不提供“当前登录者成为 OWNER”的入口。之后新增员工必须由受控管理流程写入 `staff_accounts`，不开放公众注册。真实登录请优先使用线上静态地址；浏览器端不保存或显示商户私钥、API v3 密钥、支付平台证书和完整令牌。
 
 ## 目录结构
 

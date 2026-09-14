@@ -8,6 +8,8 @@ let actor = {role:'OWNER',uid:'owner'};
 const tables = {categories:{nail:{id:'nail',name:'美甲',enabled:true},brow:{id:'brow',name:'眉毛',enabled:true}},services:{service:{id:'service',name:'法式',categoryId:'nail',categoryName:'美甲',enabled:true,priceFen:9900,durationMinutes:60}},works:{},technicians:{tech:{id:'tech',name:'技师',enabled:true,skills:['service']},other:{id:'other',name:'其他',enabled:true,skills:['service']}},orders:{},technician_days:{},staff_accounts:{},audit_logs:{}};
 const clone = value=>JSON.parse(JSON.stringify(value));
 const db={ collection: table => ({ doc: id => ({ set: async ({data}) => { (tables[table] ||= {})[id]=clone(data); } }) }) };
+db.insertIfAbsent=async(table,id,data)=>{if(tables[table]?.[id])return{inserted:false};(tables[table]||={})[id]=clone(data);return{inserted:true};};
+db.command={in:value=>value,gte:value=>value};
 db.runTransaction=async fn=>{const before=clone(tables);try{return await fn(db);}catch(error){Object.keys(tables).forEach(k=>delete tables[k]);Object.assign(tables,before);throw error;}};
 const stubs={
  './constants':constants,
@@ -26,6 +28,7 @@ function load(name){if(cache[name])return cache[name];const scope={module:{expor
  const catalog=load('catalog-admin');
  const category=await catalog.saveCategory({name:'新大类',enabled:false,sort:3});assert(category.id);assert.equal(category.enabled,false);
  await assert.rejects(catalog.saveService({name:'新项目',categoryId:category.id,priceFen:100,durationMinutes:30}),/INVALID_CATEGORY/);
+ await assert.rejects(catalog.saveService({name:'超限项目',categoryId:'nail',priceFen:10000001,durationMinutes:30}),/INVALID_SERVICE/);
  const service=await catalog.saveService({name:'新项目',categoryId:'nail',categoryName:'伪造',priceFen:100,durationMinutes:30,enabled:true});assert.equal(service.categoryName,'美甲');assert.equal(service.enabled,true);
  const work=await catalog.saveWork({title:'新款',imageUrl:'https://example.com/a.jpg',serviceId:service.id,featured:true,featuredSort:2,published:true});assert(work.id);assert.equal(work.featured,true);
  const listing=await catalog.listCatalog();assert(listing.categories.some(c=>!c.enabled));assert(listing.services.every(s=>typeof s.enabled==='boolean'));assert(listing.works.some(w=>w.featured));

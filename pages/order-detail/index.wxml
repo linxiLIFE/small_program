@@ -1,6 +1,8 @@
 <view class="page-shell order-detail-page">
   <view wx:if="{{loading}}"><view class="skeleton detail-status-skeleton"></view><view class="skeleton detail-order-skeleton"></view></view>
+  <view wx:elif="{{loadError && !order.id}}" class="load-error card"><text>{{loadError}}</text><button class="primary-button" bindtap="retryLoadOrder">重新加载</button></view>
   <block wx:else>
+    <view wx:if="{{loadError}}" class="inline-load-error"><text>{{loadError}}</text><button bindtap="retryLoadOrder">重试</button></view>
     <view class="order-status-card card">
       <view class="status-top">
         <view class="status-heading">
@@ -64,13 +66,13 @@
       <view class="detail-card-heading"><text class="section-title">订单进度</text></view>
       <view class="timeline-item active"><view class="timeline-dot"></view><view><text>提交预约</text><text class="timeline-meta">预约信息已提交</text></view></view>
       <view class="timeline-line"></view>
-      <view class="timeline-item {{order.status === 'PENDING_PAYMENT' ? '' : 'active'}}"><view class="timeline-dot"></view><view><text>支付确认</text><text class="timeline-meta">{{order.status === 'PENDING_PAYMENT' ? '等待完成支付' : '支付已确认'}}</text></view></view>
+      <view class="timeline-item {{order.paymentProgressActive ? 'active' : ''}}"><view class="timeline-dot"></view><view><text>支付确认</text><text class="timeline-meta">{{order.paymentProgressLabel}}</text></view></view>
       <view class="timeline-line"></view>
-      <view class="timeline-item {{order.status === 'COMPLETED' ? 'active' : ''}}"><view class="timeline-dot"></view><view><text>到店完成</text><text class="timeline-meta">{{order.status === 'COMPLETED' ? '本次服务已完成' : '服务完成后更新'}}</text></view></view>
+      <view class="timeline-item {{order.serviceCompleted ? 'active' : ''}}"><view class="timeline-dot"></view><view><text>到店完成</text><text class="timeline-meta">{{order.serviceCompleted ? '本次服务已完成' : '服务完成后更新'}}</text></view></view>
     </view>
 
     <view wx:if="{{actions.length}}" class="action-bar safe-bottom">
-      <button wx:for="{{actions}}" wx:key="id" class="action-button {{item.type}}" data-action="{{item.id}}" bindtap="handleAction">{{item.text}}</button>
+      <button wx:for="{{actions}}" wx:key="id" class="action-button {{item.type}}" loading="{{item.id === 'pay' && paying}}" disabled="{{paying || paymentConfirming}}" data-action="{{item.id}}" bindtap="handleAction">{{item.text}}</button>
     </view>
   </block>
 </view>

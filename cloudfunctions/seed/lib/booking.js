@@ -285,6 +285,7 @@ async function scheduleRefundJob(reader, orderIdValue, refundId, nextRunAt = Dat
     id: jobId,
     type: 'REFUND_RETRY',
     businessId: refundId,
+    orderId: orderIdValue,
     status: 'PENDING',
     nextRunAt,
     retryCount: Number(existing && existing.retryCount || 0),
@@ -385,6 +386,25 @@ async function createOrder(payload) {
       return { orderId: existingIdem.orderId, replay: true };
     }
     await getOptional(COLLECTIONS.users, context.openid, transaction);
+    const scheduleRevision = Number(validation.settings.scheduleRevision || 1);
+    await transaction.insertIfAbsent(COLLECTIONS.scheduleTemplates, 'active', {
+      _id: 'active', id: 'active', scheduleRevision, updatedAt: now, createdAt: now
+    });
+    const scheduleGuard = await getOptional(COLLECTIONS.scheduleTemplates, 'active', transaction);
+    assert(Number(scheduleGuard && scheduleGuard.scheduleRevision || 1) === scheduleRevision, 'QUOTE_CHANGED', '排班规则刚刚更新，请重新选择时段并报价', 409);
+    const technicianDayId = dayId(validation.technician.id, payload.date);
+    await transaction.insertIfAbsent(COLLECTIONS.technicianDays, technicianDayId, {
+      ...validation.plan,
+      _id: technicianDayId,
+      id: technicianDayId,
+      technicianId: validation.technician.id,
+      date: payload.date,
+      occupancies: Array.isArray(validation.plan.occupancies) ? validation.plan.occupancies : [],
+      createdAt: now,
+      updatedAt: now
+    });
+    // The primary-key row now exists before getDayPlan issues SELECT ... FOR
+    // UPDATE. Slot exclusion no longer depends on gap locks or isolation level.
     const day = await getDayPlan(validation.technician.id, payload.date, validation.settings, transaction);
     assert(!day.leave, 'SLOT_UNAVAILABLE', '该日期技师休息');
     const conflict = (day.occupancies || []).find((item) => occupancyIsActive(item) && overlaps(order.startAt, order.endAt, item.startAt, item.endAt));
@@ -684,8 +704,9 @@ async function markRefundSuccess(refundId, payload = {}) {
     const refund = await getOptional(COLLECTIONS.refunds, refundId, transaction);
     assert(refund, 'REFUND_NOT_FOUND', '退款记录不存在', 404);
     if (refund.status === REFUND_STATUS.SUCCESS && order.refundStatus === REFUND_STATUS.SUCCESS) return { order, duplicate: true };
+    if (payload.submissionId && refund.submissionId !== payload.submissionId) return { order, duplicate: true, staleSubmission: true };
     const now = Date.now();
-    const nextRefund = { ...refund, status: REFUND_STATUS.SUCCESS, providerRefundId: payload.refundId || refund.providerRefundId || '', successAt: payload.successAt || now, updatedAt: now };
+    const nextRefund = { ...refund, status: REFUND_STATUS.SUCCESS, providerRefundId: payload.refundId || refund.providerRefundId || '', successAt: payload.successAt || now, submissionId: '', submissionLeaseUntil: 0, updatedAt: now };
     const nextOrder = { ...order, status: ORDER_STATUS.REFUNDED, refundId, refundStatus: REFUND_STATUS.SUCCESS, updatedAt: now };
     await transaction.collection(COLLECTIONS.refunds).doc(refund._id || refund.id).set({ data: nextRefund });
     const pointsConsumed = Number(order.pointsConsumed || 0);
@@ -722,6 +743,7 @@ async function markRefundAbnormal(refundId, payload = {}) {
     const refund = await getOptional(COLLECTIONS.refunds, refundId, transaction);
     assert(refund, 'REFUND_NOT_FOUND', '退款记录不存在', 404);
     if (refund.status === REFUND_STATUS.SUCCESS && order.refundStatus === REFUND_STATUS.SUCCESS) return { order, duplicate: true };
+    if (payload.submissionId && refund.submissionId !== payload.submissionId) return { order, duplicate: true, staleSubmission: true };
     const now = Date.now();
     const requestedStatus = String(payload.status || '');
     const status = [REFUND_STATUS.WAITING_FUNDS, REFUND_STATUS.CONFIG_OR_DATA_ERROR].includes(requestedStatus)
@@ -733,6 +755,8 @@ async function markRefundAbnormal(refundId, payload = {}) {
       providerRefundId: payload.refundId || refund.providerRefundId || '',
       providerStatus: payload.providerStatus || refund.providerStatus || '',
       errorMessage: payload.message || refund.errorMessage || '',
+      submissionId: '',
+      submissionLeaseUntil: 0,
       updatedAt: now
     };
     const nextOrder = order.refundId === refundId
@@ -753,8 +777,9 @@ async function markRefundProcessing(orderIdValue, refundId, payload = {}) {
     assert(refund, 'REFUND_NOT_FOUND', '退款记录不存在', 404);
     if (order.refundId && order.refundId !== refundId) return refund;
     if (refund.status === REFUND_STATUS.SUCCESS || order.refundStatus === REFUND_STATUS.SUCCESS) return refund;
+    if (payload.submissionId && refund.submissionId !== payload.submissionId) return { ...refund, staleSubmission: true };
     const now = Date.now();
-    const nextRefund = { ...refund, status: REFUND_STATUS.PROCESSING, providerRefundId: payload.refundId || refund.providerRefundId || '', providerStatus: payload.providerStatus || refund.providerStatus || 'PROCESSING', updatedAt: now };
+    const nextRefund = { ...refund, status: REFUND_STATUS.PROCESSING, providerRefundId: payload.refundId || refund.providerRefundId || '', providerStatus: payload.providerStatus || refund.providerStatus || 'PROCESSING', submissionId: '', submissionLeaseUntil: 0, updatedAt: now };
     await transaction.collection(COLLECTIONS.refunds).doc(refundId).set({ data: nextRefund });
     await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: { ...order, refundId, refundStatus: REFUND_STATUS.PROCESSING, updatedAt: now } });
     return nextRefund;
@@ -810,7 +835,7 @@ async function transitionStaff(orderIdValue, action) {
     const now = Date.now();
     if (action === 'checkIn' && order.status === ORDER_STATUS.ARRIVED) return order;
     const timing = assertServiceTransitionTime(order, action, now);
-    assert(timing.allowed, timing.code, ({ CHECK_IN_TOO_EARLY: '仅可在预约前 60 分钟内办理到店', CHECK_IN_TOO_LATE: '已超过到店时间窗口，请由店主复核', SERVICE_TOO_EARLY: '服务开始时间过早', SERVICE_COMPLETE_TOO_EARLY: '不能提前完成未来预约', ORDER_TIME_INVALID: '订单预约时间无效' })[timing.code] || '当前时间不允许此操作', 409);
+    assert(timing.allowed, timing.code, ({ CHECK_IN_TOO_EARLY: '仅可在预约前 60 分钟内办理到店', CHECK_IN_TOO_LATE: '已超过到店时间窗口，请由店主复核', SERVICE_TOO_EARLY: '服务开始时间过早', SERVICE_COMPLETE_TOO_EARLY: '预约服务尚未到结束时间，不能提前完成', ORDER_TIME_INVALID: '订单预约时间无效' })[timing.code] || '当前时间不允许此操作', 409);
     const next = { ...order, status: targetStatus, updatedAt: now };
     if (targetStatus === ORDER_STATUS.ARRIVED) next.arrivedAt = now;
     if (targetStatus === ORDER_STATUS.IN_SERVICE) next.serviceStartedAt = now;

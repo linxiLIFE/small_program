@@ -86,15 +86,22 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `payment_status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.paymentStatus')), '')) VIRTUAL,
   `refund_status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.refundStatus')), '')) VIRTUAL,
   `technician_id` VARCHAR(191) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.technicianId')), '')) VIRTUAL,
+  `work_id` VARCHAR(191) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.workSnapshot.id')), '')) VIRTUAL,
   `booking_date` VARCHAR(10) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.date')), '')) VIRTUAL,
   `start_at` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.startAt')) AS SIGNED)) VIRTUAL,
+  `paid_at` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.paidAt')) AS SIGNED)) VIRTUAL,
+  `completed_at` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.completedAt')) AS SIGNED)) VIRTUAL,
+  `paid_fen` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.paidFen')) AS SIGNED)) VIRTUAL,
   PRIMARY KEY (`id`),
   KEY `idx_orders_created_at` (`created_at`),
   KEY `idx_orders_user_status` (`user_id`, `status`),
   KEY `idx_orders_technician_start` (`technician_id`, `start_at`),
   KEY `idx_orders_technician_date` (`technician_id`, `booking_date`, `start_at`),
+  KEY `idx_orders_work_popularity` (`status`, `refund_status`, `work_id`),
   KEY `idx_orders_payment_status` (`payment_status`),
-  KEY `idx_orders_refund_status` (`refund_status`)
+  KEY `idx_orders_refund_status` (`refund_status`),
+  KEY `idx_orders_paid_at` (`paid_at`),
+  KEY `idx_orders_completed_at` (`completed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `payments` (
@@ -122,10 +129,13 @@ CREATE TABLE IF NOT EXISTS `refunds` (
   `order_id` VARCHAR(191) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.orderId')), '')) VIRTUAL,
   `refund_no` VARCHAR(64) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.refundNo')), '')) VIRTUAL,
   `status` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.status')), '')) VIRTUAL,
+  `success_at` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.successAt')) AS SIGNED)) VIRTUAL,
+  `amount_fen` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.amountFen')) AS SIGNED)) VIRTUAL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_refunds_refund_no` (`refund_no`),
   KEY `idx_refunds_order_id` (`order_id`),
   KEY `idx_refunds_status` (`status`),
+  KEY `idx_refunds_success_at` (`success_at`),
   KEY `idx_refunds_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

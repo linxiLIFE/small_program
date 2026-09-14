@@ -9,9 +9,11 @@ const requestContext = new AsyncLocalStorage();
 function getPool() {
   if (pool) return pool;
   const host = String(process.env.DB_HOST || '').trim();
+  const user = String(process.env.DB_USER || '').trim();
   const password = process.env.DB_PASSWORD;
   const missing = [];
   if (!host) missing.push('DB_HOST');
+  if (!user) missing.push('DB_USER');
   if (password === undefined || password === '') missing.push('DB_PASSWORD');
   if (missing.length) {
     const error = new Error(`SQL 数据库未配置，请设置 ${missing.join('、')}`);
@@ -21,7 +23,7 @@ function getPool() {
   pool = mysql.createPool({
     host,
     port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER || 'root',
+    user,
     password,
     database: process.env.DB_NAME || 'tcb',
     waitForConnections: true,
@@ -167,9 +169,9 @@ function parseData(row) {
 }
 
 const GENERATED_FIELDS = {
-  orders: { userId: 'user_id', status: 'status', paymentStatus: 'payment_status', refundStatus: 'refund_status', technicianId: 'technician_id', date: 'booking_date', startAt: 'start_at' },
+  orders: { userId: 'user_id', status: 'status', paymentStatus: 'payment_status', refundStatus: 'refund_status', technicianId: 'technician_id', workId: 'work_id', date: 'booking_date', startAt: 'start_at', paidAt: 'paid_at', completedAt: 'completed_at', paidFen: 'paid_fen' },
   payments: { orderId: 'order_id', merchantOrderNo: 'merchant_order_no', transactionId: 'transaction_id', status: 'status' },
-  refunds: { orderId: 'order_id', refundNo: 'refund_no', status: 'status' },
+  refunds: { orderId: 'order_id', refundNo: 'refund_no', status: 'status', successAt: 'success_at', amountFen: 'amount_fen' },
   jobs: { type: 'type', status: 'status', nextRunAt: 'next_run_at', leaseUntil: 'lease_until' },
   settings_versions: { version: 'version_num' }
 };
@@ -308,6 +310,19 @@ class SQLReader {
 
   collection(table) {
     return new SQLCollection(assertTableName(table), this);
+  }
+
+  async insertIfAbsent(table, id, data) {
+    const name = assertTableName(table);
+    const payload = clone(data) || {};
+    const now = Date.now();
+    const createdAt = Number(payload.createdAt || now);
+    const updatedAt = Number(payload.updatedAt || now);
+    const [result] = await this.query(
+      `INSERT IGNORE INTO \`${name}\` (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+      [String(id), JSON.stringify(payload), createdAt, updatedAt]
+    );
+    return { inserted: Number(result.affectedRows || 0) === 1 };
   }
 }
 

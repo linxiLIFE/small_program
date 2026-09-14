@@ -9,11 +9,29 @@ function getPaymentDeadline(order) {
   return 0;
 }
 
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function paymentProgress(order, confirming = false) {
+  const paid = order.paymentStatus === 'SUCCESS' || Number(order.paidAt || 0) > 0;
+  if (order.refundStatus === 'SUCCESS') return { active: true, label: '已支付，退款已到账' };
+  if (paid) return { active: true, label: '支付成功' };
+  if (confirming) return { active: false, label: '支付结果确认中，请勿重复支付' };
+  if (order.paymentStatus === 'CLOSED' || order.status !== 'PENDING_PAYMENT') return { active: false, label: '订单已关闭，未发生支付' };
+  if (['PREPAY_SUBMITTING', 'UNKNOWN', 'CLOSE_PENDING'].includes(order.paymentStatus)) return { active: false, label: '支付状态确认中' };
+  return { active: false, label: '等待完成支付' };
+}
+
 Page({
-  data: { loading: true, order: {}, actions: [], canCancel: false },
+  data: { loading: true, loadError: '', order: {}, actions: [], canCancel: false, paying: false, paymentConfirming: false },
 
   onLoad(options) {
     this.orderId = options.orderId || '';
+    if (options.paymentConfirming === '1') {
+      this.setData({ paymentConfirming: true }, () => this.loadOrder());
+      return;
+    }
     this.loadOrder();
   },
 
@@ -31,53 +49,74 @@ Page({
   },
 
   async loadOrder() {
-    const order = await api.getOrder(this.orderId);
-    if (!order) {
-      this.setData({ loading: false, order: {} });
+    if (!this.orderId) {
+      this.setData({ loading: false, loadError: '缺少订单编号，无法加载订单。', order: {} });
       return;
     }
-    const refundStatus = order.refundStatus || '';
-    const visibleRefundStatuses = ['INIT', 'PENDING_CONFIG', 'SUBMITTING', 'PROCESSING', 'SUCCESS', 'RETRY_REQUIRED', 'WAITING_FUNDS', 'CONFIG_OR_DATA_ERROR', 'MANUAL_ACTION', 'CLOSED', 'ABNORMAL'];
-    const displayTitle = order.work && order.work.title ? order.work.title : order.serviceName || '预约服务';
-    const canCancel = ['PENDING_PAYMENT', 'RESERVED'].includes(order.status);
-    const paymentDeadline = getPaymentDeadline(order);
-    const remaining = paymentDeadline ? paymentDeadline - Date.now() : 0;
-    this.hasLoaded = true;
-    this.setData({
-      loading: false,
-      order: {
-        ...order,
-        displayTitle,
-        showServiceSubtitle: !!order.serviceName && displayTitle !== order.serviceName,
-        statusLabel: order.statusLabel || ORDER_STATUS_LABELS[order.status] || '处理中',
-        timeLabel: order.startAt ? formatDateTimeRange(order.startAt, order.endAt, order.durationMinutes) : order.startAtLabel || '待确定',
-        totalText: formatMoney(order.totalFen),
-        discountText: formatMoney(order.discountFen || 0),
-        paidText: formatMoney(order.paidFen),
-        paidLabel: order.status === 'PENDING_PAYMENT' ? '待支付金额' : order.refundStatus === 'SUCCESS' ? '退款金额' : '实付金额',
-        refundStatus: visibleRefundStatuses.includes(refundStatus) ? refundStatus : '',
-        refundStatusLabel: {
-          INIT: '退款待提交',
-          PENDING_CONFIG: '退款待配置',
-          SUBMITTING: '退款提交中',
-          PROCESSING: '退款处理中',
-          SUCCESS: '已到账',
-          RETRY_REQUIRED: '退款需重新发起',
-          WAITING_FUNDS: '商户余额不足，等待处理',
-          CONFIG_OR_DATA_ERROR: '退款配置或数据异常',
-          MANUAL_ACTION: '退款需人工处理',
-          CLOSED: '退款已关闭',
-          ABNORMAL: '退款异常'
-        }[refundStatus] || '',
-        durationText: formatDuration(order.durationMinutes),
-        paymentDeadline,
-        countdownText: paymentDeadline ? formatCountdown(remaining) : '',
-        countdownUrgent: paymentDeadline && remaining <= 60 * 1000
-      },
-      canCancel,
-      actions: this.getActions(order)
-    });
-    this.startCountdown();
+    if (!this.data.order.id) this.setData({ loading: true, loadError: '' });
+    try {
+      const order = await api.getOrder(this.orderId);
+      if (!order) {
+        this.setData({ loading: false, loadError: '订单不存在或已被移除。', order: {} });
+        return;
+      }
+      const refundStatus = order.refundStatus || '';
+      const visibleRefundStatuses = ['INIT', 'PENDING_CONFIG', 'SUBMITTING', 'PROCESSING', 'SUCCESS', 'RETRY_REQUIRED', 'WAITING_FUNDS', 'CONFIG_OR_DATA_ERROR', 'MANUAL_ACTION', 'CLOSED', 'ABNORMAL'];
+      const displayTitle = order.work && order.work.title ? order.work.title : order.serviceName || '预约服务';
+      const confirming = this.data.paymentConfirming === true;
+      const progress = paymentProgress(order, confirming);
+      const canCancel = !confirming && ['PENDING_PAYMENT', 'RESERVED'].includes(order.status);
+      const paymentDeadline = getPaymentDeadline(order);
+      const remaining = paymentDeadline ? paymentDeadline - Date.now() : 0;
+      this.hasLoaded = true;
+      this.setData({
+        loading: false,
+        loadError: '',
+        order: {
+          ...order,
+          displayTitle,
+          showServiceSubtitle: !!order.serviceName && displayTitle !== order.serviceName,
+          statusLabel: order.statusLabel || ORDER_STATUS_LABELS[order.status] || '处理中',
+          timeLabel: order.startAt ? formatDateTimeRange(order.startAt, order.endAt, order.durationMinutes) : order.startAtLabel || '待确定',
+          totalText: formatMoney(order.totalFen),
+          discountText: formatMoney(order.discountFen || 0),
+          paidText: formatMoney(order.paidFen),
+          paidLabel: order.status === 'PENDING_PAYMENT' ? '待支付金额' : order.refundStatus === 'SUCCESS' ? '退款金额' : '实付金额',
+          paymentProgressActive: progress.active,
+          paymentProgressLabel: progress.label,
+          serviceCompleted: Number(order.completedAt || 0) > 0,
+          refundStatus: visibleRefundStatuses.includes(refundStatus) ? refundStatus : '',
+          refundStatusLabel: {
+            INIT: '退款待提交',
+            PENDING_CONFIG: '退款待配置',
+            SUBMITTING: '退款提交中',
+            PROCESSING: '退款处理中',
+            SUCCESS: '已到账',
+            RETRY_REQUIRED: '退款需重新发起',
+            WAITING_FUNDS: '商户余额不足，等待处理',
+            CONFIG_OR_DATA_ERROR: '退款配置或数据异常',
+            MANUAL_ACTION: '退款需人工处理',
+            CLOSED: '退款已关闭',
+            ABNORMAL: '退款异常'
+          }[refundStatus] || '',
+          durationText: formatDuration(order.durationMinutes),
+          paymentDeadline,
+          countdownText: paymentDeadline ? formatCountdown(remaining) : '',
+          countdownUrgent: paymentDeadline && remaining <= 60 * 1000
+        },
+        canCancel,
+        actions: confirming ? [] : this.getActions(order)
+      });
+      this.startCountdown();
+    } catch (error) {
+      this.stopCountdown();
+      this.setData({ loading: false, loadError: error.message || '订单加载失败，请检查网络后重试。' });
+    }
+  },
+
+  retryLoadOrder() {
+    api.clearCache('getOrder');
+    this.loadOrder();
   },
 
   getActions(order) {
@@ -89,6 +128,7 @@ Page({
   },
 
   async handleAction(event) {
+    if (this.data.paying || this.data.paymentConfirming) return;
     const action = event.currentTarget.dataset.action;
     if (action === 'pay') return this.payOrder();
     if (action === 'cancel') return this.confirmCancel();
@@ -96,16 +136,19 @@ Page({
   },
 
   async payOrder() {
+    if (this.data.paying || this.data.paymentConfirming) return;
     if (this.data.order.paymentDeadline && Number(this.data.order.paymentDeadline) <= Date.now()) {
       await this.reconcileExpiredOrder();
       wx.showToast({ title: '支付时间已结束，订单已自动取消', icon: 'none' });
       return;
     }
+    this.setData({ paying: true });
     wx.showLoading({ title: '准备支付' });
     try {
       const payment = await api.preparePayment(this.data.order.id);
       wx.hideLoading();
       if (!payment || !payment.configured || !payment.timeStamp) {
+        this.setData({ paying: false });
         wx.showModal({ title: '微信支付待配置', content: (payment && payment.message) || '请先在服务端完成商户资质配置。', showCancel: false });
         return;
       }
@@ -113,22 +156,49 @@ Page({
         timeStamp: String(payment.timeStamp), nonceStr: payment.nonceStr, package: payment.package,
         signType: payment.signType || 'RSA', paySign: payment.paySign,
         success: async () => {
-          try { await api.queryPayment(this.data.order.id); } catch (error) { wx.showToast({ title: '支付结果确认中', icon: 'none' }); }
-          this.loadOrder();
+          this.stopCountdown();
+          this.setData({ paying: false, paymentConfirming: true, canCancel: false, actions: [], 'order.paymentProgressLabel': '支付结果确认中，请勿重复支付' });
+          await this.confirmPaymentResult();
         },
         fail: async () => {
           try { await api.queryPayment(this.data.order.id); } catch (error) { /* 后台任务会继续查单。 */ }
+          this.setData({ paying: false, paymentConfirming: false });
           wx.showToast({ title: '请查看订单支付状态', icon: 'none' });
           this.loadOrder();
         }
       });
     } catch (error) {
       wx.hideLoading();
+      this.setData({ paying: false });
       wx.showToast({ title: error.message || '支付准备失败', icon: 'none' });
     }
   },
 
+  async confirmPaymentResult() {
+    let lastError;
+    for (const delay of [0, 1000, 2000, 4000, 8000]) {
+      if (delay) await wait(delay);
+      if (this.destroyed) return;
+      try {
+        const result = await api.queryPayment(this.data.order.id);
+        const status = result && result.status;
+        if (status === 'SUCCESS' || status === 'CLOSED') {
+          this.setData({ paymentConfirming: false });
+          api.clearCache('getOrder');
+          await this.loadOrder();
+          return;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (this.destroyed) return;
+    this.setData({ paymentConfirming: true, paying: false, canCancel: false, actions: [], 'order.paymentProgressLabel': '支付结果仍在确认，请稍后刷新' });
+    wx.showToast({ title: lastError ? '网络异常，支付结果仍在确认' : '支付结果仍在确认', icon: 'none' });
+  },
+
   confirmCancel() {
+    if (this.data.paying || this.data.paymentConfirming) return;
     const paid = Number(this.data.order.paidFen || 0) > 0 && this.data.order.status !== 'PENDING_PAYMENT';
     wx.showModal({
       title: paid ? '确认取消并退款？' : '确认取消订单？',
@@ -178,7 +248,7 @@ Page({
 
   startCountdown() {
     this.stopCountdown();
-    if (this.destroyed || this.data.order.status !== 'PENDING_PAYMENT' || !this.data.order.paymentDeadline) return;
+    if (this.destroyed || this.data.paymentConfirming || this.data.order.status !== 'PENDING_PAYMENT' || !this.data.order.paymentDeadline) return;
     this.refreshCountdown();
     this.countdownTimer = setInterval(() => this.refreshCountdown(), 1000);
   },

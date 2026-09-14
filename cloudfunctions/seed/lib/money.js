@@ -2,7 +2,7 @@ const { assert } = require('./errors');
 
 function integer(value, name) {
   const number = Number(value);
-  assert(Number.isInteger(number) && number >= 0, 'INVALID_AMOUNT', `${name}必须是非负整数`);
+  assert(Number.isSafeInteger(number) && number >= 0, 'INVALID_AMOUNT', `${name}必须是安全范围内的非负整数`);
   return number;
 }
 

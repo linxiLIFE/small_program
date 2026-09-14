@@ -92,7 +92,8 @@ function assertServiceTransitionTime(order, action, now = Date.now()) {
     return { allowed: now >= startAt - 15 * 60 * 1000, code: 'SERVICE_TOO_EARLY' };
   }
   if (action === 'complete') {
-    return { allowed: now >= startAt, code: 'SERVICE_COMPLETE_TOO_EARLY' };
+    if (!Number.isFinite(endAt) || endAt <= startAt) return { allowed: false, code: 'ORDER_TIME_INVALID' };
+    return { allowed: now >= endAt, code: 'SERVICE_COMPLETE_TOO_EARLY' };
   }
   return { allowed: false, code: 'INVALID_TRANSITION' };
 }

@@ -12,14 +12,17 @@ async function scheduleRefundRetry(orderId, refundId) {
   const jobId = `job_refund_retry_${refundId}`;
   const existing = await getOptional(COLLECTIONS.jobs, jobId);
   const now = Date.now();
-  if (existing && existing.status === 'RUNNING' && existing.businessId === refundId) return false;
-  if (existing && existing.status === 'PENDING' && existing.businessId === refundId) return false;
+  if (existing && ['RUNNING', 'PENDING'].includes(existing.status) && existing.businessId === refundId) {
+    if (!existing.orderId) await db.collection(COLLECTIONS.jobs).doc(jobId).update({ data: { orderId, updatedAt: now } });
+    return false;
+  }
   await db.collection(COLLECTIONS.jobs).doc(jobId).set({ data: {
     ...(existing || {}),
     _id: jobId,
     id: jobId,
     type: 'REFUND_RETRY',
     businessId: refundId,
+    orderId,
     status: 'PENDING',
     nextRunAt: addMinutes(now, 2),
     retryCount: Number(existing && existing.retryCount || 0),
@@ -298,6 +301,36 @@ async function ensureDurableRefundIntent(orderId, reason, options = {}) {
   });
 }
 
+async function claimRefundSubmission(orderId, refundId) {
+  const submissionId = crypto.randomBytes(16).toString('hex');
+  return db.runTransaction(async (transaction) => {
+    const order = await getOptional(COLLECTIONS.orders, orderId, transaction);
+    const refund = await getOptional(COLLECTIONS.refunds, refundId, transaction);
+    assert(order, 'ORDER_NOT_FOUND', '订单不存在', 404);
+    assert(refund, 'REFUND_NOT_FOUND', '退款记录不存在', 404);
+    const now = Date.now();
+    if (refund.status === REFUND_STATUS.SUCCESS || order.refundStatus === REFUND_STATUS.SUCCESS) return { acquired: false, refund };
+    if ([REFUND_STATUS.PROCESSING, REFUND_STATUS.MANUAL_ACTION, REFUND_STATUS.ABNORMAL, REFUND_STATUS.RETRY_REQUIRED, REFUND_STATUS.WAITING_FUNDS, REFUND_STATUS.CONFIG_OR_DATA_ERROR].includes(refund.status)) {
+      return { acquired: false, refund };
+    }
+    if (refund.status === REFUND_STATUS.SUBMITTING && refund.submissionId && Number(refund.submissionLeaseUntil || 0) > now) {
+      return { acquired: false, refund };
+    }
+    const next = {
+      ...refund,
+      status: REFUND_STATUS.SUBMITTING,
+      submissionId,
+      submissionGeneration: Number(refund.submissionGeneration || 0) + 1,
+      submissionLeaseUntil: addMinutes(now, 2),
+      submitAttemptedAt: now,
+      updatedAt: now
+    };
+    await transaction.collection(COLLECTIONS.refunds).doc(refundId).set({ data: next });
+    await transaction.collection(COLLECTIONS.orders).doc(orderId).set({ data: { ...order, refundId, refundStatus: REFUND_STATUS.SUBMITTING, updatedAt: now } });
+    return { acquired: true, submissionId, refund: next };
+  });
+}
+
 async function requestRefund(orderId, reason = '预约取消退款', options = {}) {
   let context = await ensureDurableRefundIntent(orderId, reason, options);
   if (context.refund.status === REFUND_STATUS.SUCCESS) return context.refund;
@@ -321,14 +354,9 @@ async function requestRefund(orderId, reason = '预约取消退款', options = {
     if (reconciled) return reconciled;
   }
   const refundId = context.refund.id || context.refund._id;
-  await db.runTransaction(async (transaction) => {
-    const order = await getOptional(COLLECTIONS.orders, orderId, transaction);
-    const refund = await getOptional(COLLECTIONS.refunds, refundId, transaction);
-    if (refund.status === REFUND_STATUS.SUCCESS) return;
-    const next = { ...refund, status: REFUND_STATUS.SUBMITTING, submitAttemptedAt: Date.now(), updatedAt: Date.now() };
-    await transaction.collection(COLLECTIONS.refunds).doc(refundId).set({ data: next });
-    await transaction.collection(COLLECTIONS.orders).doc(orderId).set({ data: { ...order, refundId, refundStatus: REFUND_STATUS.SUBMITTING, updatedAt: Date.now() } });
-  });
+  const claim = await claimRefundSubmission(orderId, refundId);
+  if (!claim.acquired) return claim.refund;
+  context = { ...context, refund: claim.refund };
   let result;
   try {
     result = await wechat.createRefund({ outTradeNo: context.payment.merchantOrderNo, outRefundNo: context.refund.refundNo, amountFen: context.refund.amountFen, totalFen: context.payment.amountFen, reason });
@@ -341,18 +369,19 @@ async function requestRefund(orderId, reason = '预约取消退款', options = {
     await markRefundAbnormal(refundId, {
       status: disposition.status,
       providerStatus: disposition.providerCode,
-      message: error && error.details && error.details.providerMessage || error.message || ''
+      message: error && error.details && error.details.providerMessage || error.message || '',
+      submissionId: claim.submissionId
     });
     return getOptional(COLLECTIONS.refunds, refundId);
   }
   const providerStatus = String(result.status || 'PROCESSING').toUpperCase();
   const localStatus = refundStatusFromProvider(providerStatus);
   if (localStatus === REFUND_STATUS.SUCCESS) {
-    await markRefundSuccess(refundId, { refundId: result.refund_id || '', successAt: parseProviderTime(result.success_time) });
+    await markRefundSuccess(refundId, { refundId: result.refund_id || '', successAt: parseProviderTime(result.success_time), submissionId: claim.submissionId });
   } else if ([REFUND_STATUS.RETRY_REQUIRED, REFUND_STATUS.MANUAL_ACTION].includes(localStatus)) {
-    await markRefundAbnormal(refundId, { status: localStatus, refundId: result.refund_id || '', providerStatus, message: result.refund_remark || result.reason || '' });
+    await markRefundAbnormal(refundId, { status: localStatus, refundId: result.refund_id || '', providerStatus, message: result.refund_remark || result.reason || '', submissionId: claim.submissionId });
   } else {
-    await markRefundProcessing(orderId, refundId, { refundId: result.refund_id || '', providerStatus });
+    await markRefundProcessing(orderId, refundId, { refundId: result.refund_id || '', providerStatus, submissionId: claim.submissionId });
     await scheduleRefundRetry(orderId, refundId);
   }
   return await getOptional(COLLECTIONS.refunds, refundId);

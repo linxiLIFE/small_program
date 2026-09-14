@@ -6,6 +6,7 @@ const { requireRole } = require('./auth');
 const { assert } = require('./errors');
 const { integer } = require('./money');
 const { publicCategory, publicService, publicWork, publicTechnician } = require('./catalog');
+const MAX_SERVICE_PRICE_FEN = 10_000_000;
 const idOf = (payload, prefix) => {
   const id = payload.id || `${prefix}-${crypto.randomUUID()}`;
   assert(/^[a-zA-Z0-9_-]{1,100}$/.test(id), 'INVALID_ID', '记录编号不正确'); return id;
@@ -36,7 +37,7 @@ async function saveService(payload = {}) {
   const category = await getOptional(COLLECTIONS.categories, payload.categoryId);
   assert(category && category.enabled !== false, 'INVALID_CATEGORY', '请选择已启用的大类');
   const priceFen = integer(payload.priceFen, '价格'); const durationMinutes = integer(payload.durationMinutes, '时长');
-  assert(priceFen > 0 && durationMinutes > 0 && durationMinutes <= 720, 'INVALID_SERVICE', '价格必须大于零，时长须在 1 到 720 分钟之间');
+  assert(priceFen > 0 && priceFen <= MAX_SERVICE_PRICE_FEN && durationMinutes > 0 && durationMinutes <= 720, 'INVALID_SERVICE', '价格须在 0.01 元到 10 万元之间，时长须在 1 到 720 分钟之间');
   const record = await persist(COLLECTIONS.services, idOf(payload, 'svc'), { name: nameOf(payload.name, '项目名称'), categoryId: category.id || category._id, categoryName: category.name, coverUrl: imageOf(payload, 'coverUrl', true), description: String(payload.description || '').slice(0, 1000), tags: Array.isArray(payload.tags) ? payload.tags.slice(0, 12) : [], priceFen, durationMinutes, sort: 0, enabled: payload.enabled !== false }, account);
   return { ...publicService(record), enabled: record.enabled, sort: record.sort };
 }

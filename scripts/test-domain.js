@@ -8,6 +8,7 @@ const { storeDateString } = require('../utils/store-time');
 const { buildBookingTimeline } = require('../cloudfunctions/api/lib/booking-timeline');
 
 const rule = { unit: 20, discountFen: 100, maxPercent: 10 };
+assert.throws(() => calculatePointsDiscount({ totalFen: Number.MAX_SAFE_INTEGER + 1, availablePoints: 0, requestedPoints: 0, rule }), /安全范围/);
 const fullLimit = calculatePointsDiscount({ totalFen: 20000, availablePoints: 1000, requestedPoints: 1000, rule });
 assert.deepStrictEqual(fullLimit, { totalFen: 20000, discountFen: 2000, paidFen: 18000, pointsToUse: 400, maxDiscountFen: 2000 });
 
