@@ -1,4 +1,4 @@
-import type { AnalyticsResponse, Category, Technician, MySchedule, SessionInfo, Work, AdminOrder, CatalogResponse, MetricSummary, ScheduleResponse, Service, Settings, TechnicianDayPlan, WeeklySchedule } from './types';
+import type { AnalyticsResponse, AdminOrderPage, AdminOrderQuery, Category, Technician, MySchedule, SessionInfo, Work, AdminOrder, CatalogResponse, ScheduleResponse, Service, Settings, TechnicianDayPlan, WeeklySchedule } from './types';
 import { callBusiness } from './cloudbase';
 
 const demoWorks: Work[] = [];
@@ -26,8 +26,9 @@ let demoOrders: AdminOrder[] = [
 const demoSettings: Settings = {
   version: 1,
   store: { storeName: '四个小姐姐的店', address: '预约成功后展示详细地址', phone: '', notice: '每次预约只安排一位顾客和一位技师，请提前 5 分钟到店。' },
-  booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, noShowGraceMinutes: 30, noShowPolicy: 'MANUAL_REVIEW' },
-  points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10 }
+  booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, refundCutoffMinutes: 120, noShowGraceMinutes: 15, noShowPenaltyFen: 3000, noShowPolicy: 'AUTO_PARTIAL_REFUND' },
+  points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10, inviteRewardPoints: 10 },
+  notifications: { enabled:false, arrivalLeadMinutes:120, templates: { appointmentSuccess:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',technicianKey:'thing3'}, arrivalReminder:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',addressKey:'thing3'}, checkInSuccess:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',technicianKey:'thing3'}, noShowRefund:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',amountKey:'amount2',statusKey:'phrase3'} } }
 };
 
 const demoTechnicians = [
@@ -83,9 +84,10 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
       date.setDate(end.getDate() - (days - index - 1));
       return { date: date.toISOString().slice(0, 10), paidFen: 0, completedCount: 0, customerCount: 0 };
     });
-    return { date: trend[trend.length - 1].date, days, rangeStart: trend[0].date, metrics: { paidFen: 49800, refundFen: 0, netFen: 49800, completedFen: 19900, orderCount: 2, completedCount: 1, customerCount: 2, noShowCount: 0, newCustomerCount: 2, returningCustomerCount: 0, repeatRate: 0, averageOrderFen: 24900 }, trend, works: [], services: [], technicians: [] } as T;
+    return { date: trend[trend.length - 1].date, days, rangeStart: trend[0].date, metrics: { paidFen: 49800, refundFen: 0, netFen: 49800, completedFen: 19900, orderCount: 2, completedCount: 1, customerCount: 2, noShowCount: 0, newCustomerCount: 2, returningCustomerCount: 0, repeatRate: 0, averageOrderFen: 24900, cancelledCount:0, arrivedCount:1, refundCount:0, completionRate:50, noShowRate:0 }, trend, works: [], services: [], technicians: [], categories:[], statuses:[], timeSlots:[] } as T;
   }
-  if (action === 'adminListOrders') return { orders: payload.status ? demoOrders.filter((item) => item.status === payload.status) : demoOrders, canRefund: true } as T;
+  if (action === 'adminListOrders') { const rows=payload.status ? demoOrders.filter((item) => item.status === payload.status) : demoOrders; return { orders:rows, canRefund:true, page:1, limit:30, total:rows.length, pages:1 } as T; }
+  if (action === 'redeemCheckInCode') return { order:{...demoOrders[0],status:'ARRIVED',statusLabel:'已到店'},duplicate:false } as T;
   if (action === 'staffSession') return {role:'OWNER',name:'店主'} as T;
   if (action === 'adminCatalog') return { categories: [{id:'nail',name:'美甲',enabled:true,icon:'✦',color:'#f1ded8',sort:0},{id:'brow',name:'美眉',enabled:true,icon:'⌁',color:'#eee6d9',sort:1}], services: demoServices, works: demoWorks, technicians: demoTechnicians } as T;
   if (action === 'adminSchedule') return demoSchedule(String(payload.date || today())) as T;
@@ -136,8 +138,9 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
 }
 
 export const adminApi = {
-  summary: (days = 30) => request<AnalyticsResponse>('adminSummary',{days}),
-  orders: (status = '') => request<{ orders: AdminOrder[]; canRefund: boolean }>('adminListOrders', { status }),
+  summary: (range: number | {dateFrom:string;dateTo:string} = 30) => request<AnalyticsResponse>('adminSummary',typeof range==='number'?{days:range}:range),
+  orders: (query: AdminOrderQuery | string = {}) => request<AdminOrderPage>('adminListOrders', typeof query==='string'?{status:query}:query as Record<string,unknown>),
+  redeemCheckInCode: (code:string) => request<{order:AdminOrder;duplicate:boolean}>('redeemCheckInCode',{code}),
   session: () => request<SessionInfo>('staffSession'),
   uploadImage: (base64:string) => request<{fileID:string;url:string}>('adminUploadImage',{base64}),
   saveCategory: (category:Category) => request<Category>('adminSaveCategory',category as unknown as Record<string,unknown>),

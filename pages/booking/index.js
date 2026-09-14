@@ -57,7 +57,9 @@ Page({
     canSubmit: false,
     pointHint: '',
     emptyImage: '',
-    emptyCategory: ''
+    emptyCategory: '',
+    refundRuleText: '',
+    noShowRuleText: ''
   },
 
   onLoad(options) {
@@ -175,6 +177,8 @@ Page({
         selectedDate,
         selectedTechnicianId,
         profile: { ...(profile || {}), phoneLabel: profile && (profile.phoneMasked || maskPhone(profile.phone)) }
+        ,refundRuleText: `距预约开始不足 ${Number(settings.booking?.refundCutoffMinutes || 120)} 分钟不能自行取消或退款`,
+        noShowRuleText: `开始后 ${Number(settings.booking?.noShowGraceMinutes || 15)} 分钟仍未核销，将扣除 ${formatMoney(Number(settings.booking?.noShowPenaltyFen || 3000))}；订单金额不足该费用时不退款，积分抵扣部分优先扣除`
       });
       this.loadedKey = bookingKey;
       this.hasLoaded = true;
@@ -426,6 +430,9 @@ Page({
     const range = this.timelineRangeFromX(touchState.edge, handleX);
     const snappedRange = this.timelineRangeFromX(touchState.edge, handleX, true);
     if (!range) return;
+    const now = Date.now();
+    if (now - Number(this.lastTimelinePaintAt || 0) < 32) return;
+    this.lastTimelinePaintAt = now;
     this.updateTimelineSelectionRange(range.startAt, range.endAt, true, snappedRange?.startAt, snappedRange?.endAt);
   },
 
@@ -541,6 +548,11 @@ Page({
       wx.showToast({ title: '请先授权手机号', icon: 'none' });
       return;
     }
+    try {
+      await api.requestSubscriptionEvents(this.bookingSettings, ['appointmentSuccess', 'arrivalReminder', 'noShowRefund']);
+    } catch (error) {
+      console.warn('预约提醒授权未完成', { code: error.code || error.errCode || '' });
+    }
     this.setData({ submitting: true });
     wx.showLoading({ title: '锁定时段中' });
     try {
@@ -616,8 +628,10 @@ Page({
         },
         fail: async (error) => {
           const cancelled = error && (error.errMsg || '').includes('cancel');
-          try { await api.queryPayment(orderId); } catch (queryError) { /* 订单详情和后台任务会继续主动查单。 */ }
-          wx.showModal({ title: cancelled ? '已返回订单' : '支付待确认', content: '请在订单倒计时结束前到订单详情确认支付结果；系统也会继续主动查单。', showCancel: false, success: () => wx.redirectTo({ url: `/pages/order-detail/index?orderId=${orderId}` }) });
+          let status = '';
+          try { const result = await api.queryPayment(orderId); status = result && result.status || ''; } catch (queryError) { status = 'UNKNOWN'; }
+          const confirming = ['PREPAY_SUBMITTING', 'PREPAY_CREATED', 'UNKNOWN', 'CLOSE_PENDING'].includes(status);
+          wx.showModal({ title: confirming ? '支付待确认' : cancelled ? '已返回订单' : '请查看订单', content: confirming ? '支付结果尚未确定，请勿重复支付；系统会继续查单。' : '请在订单倒计时结束前查看支付状态。', showCancel: false, success: () => wx.redirectTo({ url: `/pages/order-detail/index?orderId=${orderId}${confirming ? '&paymentConfirming=1' : ''}` }) });
           resolve();
         }
       });

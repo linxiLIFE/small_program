@@ -9,6 +9,12 @@
       "runtime": "Nodejs20.19",
       "handler": "index.main",
       "description": "四个小姐姐的店预约小程序业务 API",
+      "publicNetConfig": {
+        "publicNetStatus": "ENABLE",
+        "eipConfig": {
+          "eipStatus": "DISABLE"
+        }
+      },
       "vpc": {
         "vpcId": "vpc-92zwp758",
         "subnetId": "subnet-6sf7e7m9"
@@ -21,6 +27,12 @@
       "runtime": "Nodejs20.19",
       "handler": "index.main",
       "description": "四个小姐姐的店预约、支付和退款补偿任务",
+      "publicNetConfig": {
+        "publicNetStatus": "ENABLE",
+        "eipConfig": {
+          "eipStatus": "DISABLE"
+        }
+      },
       "triggers": [
         {
           "name": "shiguang-jobs-every-minute",
@@ -40,6 +52,12 @@
       "runtime": "Nodejs20.19",
       "handler": "index.main",
       "description": "四个小姐姐的店管理后台 HTTPS API",
+      "publicNetConfig": {
+        "publicNetStatus": "ENABLE",
+        "eipConfig": {
+          "eipStatus": "DISABLE"
+        }
+      },
       "vpc": {
         "vpcId": "vpc-92zwp758",
         "subnetId": "subnet-6sf7e7m9"

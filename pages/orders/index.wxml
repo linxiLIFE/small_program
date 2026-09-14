@@ -50,5 +50,6 @@
       </view>
     </view>
   </view>
-  <empty-state wx:else title="还没有预约记录" button-text="选款" bindaction="goBooking"></empty-state>
+  <button wx:if="{{orders.length && nextCursor !== null}}" class="load-more-button" loading="{{loadingMore}}" disabled="{{loadingMore}}" bindtap="loadMore">{{loadingMore ? '加载中' : '加载更多预约'}}</button>
+  <empty-state wx:if="{{!loading && !orders.length}}" title="还没有预约记录" button-text="选款" bindaction="goBooking"></empty-state>
 </view>

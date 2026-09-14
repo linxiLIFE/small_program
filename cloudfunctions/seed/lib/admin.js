@@ -29,6 +29,7 @@ function normalizeBreaks(breaks, shiftStart, shiftEnd, shiftIndex) {
     assert(item && TIME_PATTERN.test(String(item.start || '')) && TIME_PATTERN.test(String(item.end || '')), 'INVALID_SCHEDULE', `第 ${shiftIndex + 1} 个班次的第 ${index + 1} 个休息时间不正确`);
     const start = String(item.start);
     const end = String(item.end);
+    assert(timeMinutes(start) % 15 === 0 && timeMinutes(end) % 15 === 0, 'INVALID_SCHEDULE', '休息时间必须按 15 分钟整格设置');
     assert(timeMinutes(start) < timeMinutes(end), 'INVALID_SCHEDULE', '休息时间的开始时间必须早于结束时间');
     assert(timeMinutes(start) >= shiftStart && timeMinutes(end) <= shiftEnd, 'INVALID_SCHEDULE', '休息时间必须位于班次范围内');
     return { start, end };
@@ -48,6 +49,7 @@ function normalizeShifts(shifts) {
     const end = String(item.end);
     const startMinutes = timeMinutes(start);
     const endMinutes = timeMinutes(end);
+    assert(startMinutes % 15 === 0 && endMinutes % 15 === 0, 'INVALID_SCHEDULE', '班次时间必须按 15 分钟整格设置');
     assert(startMinutes < endMinutes, 'INVALID_SCHEDULE', '班次的开始时间必须早于结束时间');
     return { start, end, breaks: normalizeBreaks(item.breaks, startMinutes, endMinutes, index) };
   }).sort((left, right) => timeMinutes(left.start) - timeMinutes(right.start));
@@ -137,15 +139,52 @@ async function audit(account, action, objectType, objectId, summary, reason, rea
 async function summary(payload = {}) {
   await requireRole(['OWNER', 'STAFF']);
   const days = Number(payload.days || 30);
-  assert([7,30,90].includes(days), 'INVALID_RANGE', '请选择 7、30 或 90 天');
+  if (payload.dateFrom || payload.dateTo) {
+    const dateFrom = normalizeDate(payload.dateFrom);
+    const dateTo = normalizeDate(payload.dateTo);
+    const start = dateToTimestamp(dateFrom);
+    const end = dateToTimestamp(dateTo) + 86400000;
+    assert(end > start && end - start <= 366 * 86400000, 'INVALID_RANGE', '自定义统计范围需为 1 到 366 天');
+    return require('./analytics').databaseSummary({ start, end, dateFrom, dateTo });
+  }
+  assert([7,30,90,365].includes(days), 'INVALID_RANGE', '请选择 7、30、90 或 365 天');
   return require('./analytics').databaseSummary(days);
 }
 
 async function listOrdersForAdmin(payload = {}) {
   const { account } = await requireRole(['OWNER', 'STAFF']);
-  const where = { ...(payload.status ? { status: payload.status } : {}), ...(payload.date ? { date: payload.date } : {}) };
-  const orders = await find(COLLECTIONS.orders, where, { orderBy: { field: 'createdAt', direction: 'desc' }, limit: Math.min(Number(payload.limit || 100), 200) });
-  return { orders: orders.map(publicOrder), canRefund: account.role === 'OWNER' };
+  const clauses = ["COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.deletedAt')), '') = ''"];
+  const params = [];
+  const equal = (sql, value) => { if (value) { clauses.push(`${sql} = ?`); params.push(String(value)); } };
+  equal('status', payload.status);
+  equal('technician_id', payload.technicianId);
+  equal("JSON_UNQUOTE(JSON_EXTRACT(data, '$.serviceId'))", payload.serviceId);
+  equal('work_id', payload.workId);
+  const dateFrom = payload.dateFrom ? normalizeDate(payload.dateFrom) : '';
+  const dateTo = payload.dateTo ? normalizeDate(payload.dateTo) : '';
+  assert(!dateFrom || !dateTo || dateFrom <= dateTo, 'INVALID_RANGE', '订单筛选的开始日期不能晚于结束日期');
+  if (dateFrom) { clauses.push('start_at >= ?'); params.push(dateToTimestamp(dateFrom)); }
+  if (dateTo) { clauses.push('start_at < ?'); params.push(dateToTimestamp(dateTo) + 86400000); }
+  const query = String(payload.query || '').trim().slice(0, 50);
+  if (query) {
+    clauses.push("(id LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(data, '$.customerSnapshot.nickname')) LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(data, '$.customerSnapshot.phoneMasked')) LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(data, '$.workSnapshot.title')) LIKE ?)");
+    params.push(...Array(4).fill(`%${query}%`));
+  }
+  const requestedPage = Number(payload.page || 1);
+  const requestedLimit = Number(payload.limit || 30);
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const limit = Number.isSafeInteger(requestedLimit) ? Math.min(100, Math.max(10, requestedLimit)) : 30;
+  const sortColumns = { startAt: 'start_at', createdAt: 'created_at', paidFen: 'paid_fen' };
+  const sortColumn = sortColumns[payload.sortBy] || 'start_at';
+  const sortDirection = payload.sortDirection === 'asc' ? 'ASC' : 'DESC';
+  const whereSql = clauses.join(' AND ');
+  const [rowsResult, countResult] = await Promise.all([
+    db.query(`SELECT data FROM orders WHERE ${whereSql} ORDER BY ${sortColumn} ${sortDirection}, id DESC LIMIT ? OFFSET ?`, [...params, limit, (page - 1) * limit]),
+    db.query(`SELECT COUNT(*) AS total FROM orders WHERE ${whereSql}`, params)
+  ]);
+  const records = (rowsResult[0] || []).map((row) => typeof row.data === 'string' ? JSON.parse(row.data) : row.data);
+  const total = Number(countResult[0] && countResult[0][0] && countResult[0][0].total || 0);
+  return { orders: records.map(publicOrder), canRefund: account.role === 'OWNER', page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) };
 }
 
 async function listAllTechnicians() {
@@ -296,7 +335,7 @@ async function saveSettings(payload = {}) {
     const previous = mergeSettings(DEFAULT_SETTINGS,versions[0]);
     assert(!payload.version || Number(payload.version)===Number(previous.version), 'SETTINGS_CONFLICT', '设置已更新，请刷新页面后重新保存',409);
     const allowed = {};
-    for(const key of ['store','home','booking','points'])if(payload[key]!==undefined)allowed[key]=payload[key];
+    for(const key of ['store','home','booking','points','notifications'])if(payload[key]!==undefined)allowed[key]=payload[key];
     const next = require('./settings-validation').validateSettings(mergeSettings(previous,allowed));
     const version=Number(previous.version)+1;
     const data={...next,_id:`v${version}`,id:`v${version}`,version,published:true,createdAt:Date.now(),createdBy:account.uid||account.openid};

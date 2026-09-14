@@ -23,6 +23,12 @@ function getCountdownFields(order, now = Date.now()) {
   };
 }
 
+function amountLabel(order) {
+  if (order.status === 'PENDING_PAYMENT') return '待支付';
+  const refund = { INIT:'退款待提交', PENDING_CONFIG:'退款待配置', SUBMITTING:'退款提交中', PROCESSING:'退款处理中', SUCCESS:'已退款', RETRY_REQUIRED:'退款待重试', WAITING_FUNDS:'退款待充值', CONFIG_OR_DATA_ERROR:'退款配置异常', MANUAL_ACTION:'退款待人工处理', CLOSED:'退款已关闭', ABNORMAL:'退款异常' };
+  return refund[order.refundStatus] || '实付';
+}
+
 Page({
   data: {
     tabs: [
@@ -36,7 +42,9 @@ Page({
     activeStatus: '',
     orders: [],
     skeletons: [1, 2],
-    loading: true
+    loading: true,
+    loadingMore: false,
+    nextCursor: null
   },
 
   onLoad(options) {
@@ -57,9 +65,9 @@ Page({
     this.stopCountdown();
   },
 
-  async loadOrders(status) {
+  async loadOrders(status, append = false) {
     const hasData = this.hasLoaded || this.data.orders.length > 0;
-    this.setData({ loading: !hasData });
+    this.setData({ loading: !append && !hasData, loadingMore: append });
     const requestId = (this.requestId || 0) + 1;
     this.requestId = requestId;
     try {
@@ -67,12 +75,8 @@ Page({
         ACTIVE_SERVICE: ['ARRIVED', 'IN_SERVICE'],
         CANCELLED: ['CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW', 'CANCEL_PENDING_REFUND', 'REFUNDED']
       };
-      const result = statusGroups[status]
-        ? await Promise.all(statusGroups[status].map((value) => api.listOrders(value))).then((responses) => ({
-          orders: responses.reduce((list, response) => list.concat(response.orders || []), [])
-            .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0))
-        }))
-        : await api.listOrders(status);
+      const requestedStatus = statusGroups[status] || status;
+      const result = await api.listOrders(requestedStatus, append ? Number(this.data.nextCursor || 0) : 0, 20);
       if (requestId !== this.requestId) return;
       const orders = (result.orders || []).map((item) => ({
         ...item,
@@ -84,21 +88,16 @@ Page({
         paidText: formatMoney(item.paidFen),
         durationText: formatDuration(item.durationMinutes),
         technicianLabel: item.technicianName || '待安排',
-        amountLabel: item.status === 'PENDING_PAYMENT'
-          ? '待支付'
-          : item.refundStatus === 'SUCCESS'
-            ? '已退款'
-            : item.refundStatus === 'PROCESSING'
-              ? '退款中'
-              : '实付'
+        amountLabel: amountLabel(item)
       }));
       this.hasLoaded = true;
-      this.setData({ orders, loading: false });
+      const combined = append ? this.data.orders.concat(orders) : orders;
+      this.setData({ orders: combined, nextCursor: result.nextCursor, loading: false, loadingMore: false });
       this.startCountdown();
     } catch (error) {
       if (requestId !== this.requestId) return;
       this.hasLoaded = true;
-      this.setData({ orders: hasData ? this.data.orders : [], loading: false });
+      this.setData({ orders: hasData ? this.data.orders : [], loading: false, loadingMore: false });
       if (!hasData) wx.showToast({ title: error.message || '预约记录加载失败', icon: 'none' });
     }
   },
@@ -107,6 +106,11 @@ Page({
     const status = event.currentTarget.dataset.status || '';
     this.setData({ activeStatus: status });
     this.loadOrders(status);
+  },
+
+  loadMore() {
+    if (this.data.loadingMore || this.data.nextCursor === null) return;
+    this.loadOrders(this.data.activeStatus, true);
   },
 
   openOrder(event) {

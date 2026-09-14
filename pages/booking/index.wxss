@@ -252,6 +252,12 @@
   padding: 24rpx;
 }
 
+.booking-policy-card { display:flex; gap:20rpx; margin:24rpx 0; padding:28rpx; background:linear-gradient(135deg,#fff8ef,#f9ece8); border:1rpx solid rgba(184,120,116,.16); }
+.policy-mark { width:42rpx; height:42rpx; flex:0 0 42rpx; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#b8767b; color:#fff; font-weight:700; }
+.booking-policy-card > view:last-child { display:flex; flex-direction:column; gap:10rpx; }
+.booking-policy-card text { color:#8b6c67; font-size:23rpx; line-height:1.65; }
+.booking-policy-card .policy-title { color:#5f4745; font-size:27rpx; font-weight:600; }
+
 .points-title,
 .points-balance,
 .contact-label,

@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS `users` (
   `data` JSON NOT NULL,
   `created_at` BIGINT NULL,
   `updated_at` BIGINT NULL,
+  `invite_code` VARCHAR(32) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.inviteCode')), '')) VIRTUAL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_users_invite_code` (`invite_code`),
   KEY `idx_users_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -154,7 +156,9 @@ CREATE TABLE IF NOT EXISTS `points_ledger` (
   `data` JSON NOT NULL,
   `created_at` BIGINT NULL,
   `updated_at` BIGINT NULL,
+  `user_id` VARCHAR(191) GENERATED ALWAYS AS (NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.userId')), '')) VIRTUAL,
   PRIMARY KEY (`id`),
+  KEY `idx_points_ledger_user_created` (`user_id`, `created_at`),
   KEY `idx_points_ledger_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -217,6 +221,19 @@ CREATE TABLE IF NOT EXISTS `idempotency_keys` (
   `data` JSON NOT NULL,
   `created_at` BIGINT NULL,
   `updated_at` BIGINT NULL,
+  `expires_at` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.expiresAt')) AS SIGNED)) VIRTUAL,
   PRIMARY KEY (`id`),
-  KEY `idx_idempotency_keys_created_at` (`created_at`)
+  KEY `idx_idempotency_keys_created_at` (`created_at`),
+  KEY `idx_idempotency_keys_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `rate_limits` (
+  `id` VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `data` JSON NOT NULL,
+  `created_at` BIGINT NULL,
+  `updated_at` BIGINT NULL,
+  `expires_at` BIGINT GENERATED ALWAYS AS (CAST(JSON_UNQUOTE(JSON_EXTRACT(`data`, '$.expiresAt')) AS SIGNED)) VIRTUAL,
+  PRIMARY KEY (`id`),
+  KEY `idx_rate_limits_updated_at` (`updated_at`),
+  KEY `idx_rate_limits_expires` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

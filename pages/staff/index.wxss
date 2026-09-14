@@ -9,6 +9,10 @@
   padding: 10rpx 4rpx 22rpx;
 }
 
+.scan-button { margin:0; padding:0 28rpx; height:74rpx; display:flex; align-items:center; gap:12rpx; border-radius:37rpx; background:linear-gradient(135deg,#ad747d,#8d5f68); color:#fff; font-size:24rpx; box-shadow:0 14rpx 32rpx rgba(137,83,94,.2); }
+.scan-button::after { border:0; }
+.scan-corners { font-size:34rpx; }
+
 .page-title {
   display: block;
   margin-top: 12rpx;
@@ -122,3 +126,4 @@
 .staff-button.check { background: #bb6f79; color: #ffffff; }
 .staff-button.start { background: #906a95; color: #ffffff; }
 .staff-button.complete { background: #6d9677; color: #ffffff; }
+.staff-load-more { margin: 26rpx auto 0; border: 1rpx solid #ead7d2; border-radius: 999rpx; background: #fffaf7; color: #9f6e70; font-size: 24rpx; }

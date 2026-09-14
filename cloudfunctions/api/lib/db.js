@@ -169,12 +169,18 @@ function parseData(row) {
 }
 
 const GENERATED_FIELDS = {
+  users: { inviteCode: 'invite_code' },
   orders: { userId: 'user_id', status: 'status', paymentStatus: 'payment_status', refundStatus: 'refund_status', technicianId: 'technician_id', workId: 'work_id', date: 'booking_date', startAt: 'start_at', paidAt: 'paid_at', completedAt: 'completed_at', paidFen: 'paid_fen' },
   payments: { orderId: 'order_id', merchantOrderNo: 'merchant_order_no', transactionId: 'transaction_id', status: 'status' },
   refunds: { orderId: 'order_id', refundNo: 'refund_no', status: 'status', successAt: 'success_at', amountFen: 'amount_fen' },
   jobs: { type: 'type', status: 'status', nextRunAt: 'next_run_at', leaseUntil: 'lease_until' },
-  settings_versions: { version: 'version_num' }
+  settings_versions: { version: 'version_num' },
+  points_ledger: { userId: 'user_id' },
+  idempotency_keys: { expiresAt: 'expires_at' },
+  rate_limits: { expiresAt: 'expires_at' }
 };
+
+const NUMERIC_JSON_FIELDS = new Set(['sort', 'version', 'createdAt', 'updatedAt', 'startAt', 'endAt', 'completedAt', 'paidAt', 'successAt', 'nextRunAt', 'leaseUntil', 'expiresAt']);
 
 function sqlField(field, table = '') {
   const value = String(field || '');
@@ -183,7 +189,8 @@ function sqlField(field, table = '') {
   if (generated) return `\`${generated}\``;
   if (!/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(value)) return '';
   const path = value.split('.').map((part) => `.${part}`).join('');
-  return `JSON_UNQUOTE(JSON_EXTRACT(data, '$${path}'))`;
+  const extracted = `JSON_UNQUOTE(JSON_EXTRACT(data, '$${path}'))`;
+  return NUMERIC_JSON_FIELDS.has(value) ? `CAST(COALESCE(${extracted}, '0') AS SIGNED)` : extracted;
 }
 
 function scalarParameter(value) {
@@ -574,6 +581,31 @@ async function find(collection, where, options = {}, reader = db) {
   return result.data || [];
 }
 
+async function findAll(collection, where, options = {}, reader = db) {
+  const pageSize = Math.min(500, Math.max(1, Number(options.pageSize || 500)));
+  const maxRecords = Math.min(50000, Math.max(pageSize, Number(options.maxRecords || 10000)));
+  const records = [];
+  const requestedOrder = options.orderBy;
+  const finish = () => {
+    if (!requestedOrder) return records;
+    const factor = requestedOrder.direction === 'desc' ? -1 : 1;
+    return records.sort((left,right) => {
+      const a = getPath(left,requestedOrder.field,left.id||left._id);
+      const b = getPath(right,requestedOrder.field,right.id||right._id);
+      if (a === b) return String(left.id||left._id||'').localeCompare(String(right.id||right._id||''));
+      return (a > b ? 1 : -1) * factor;
+    });
+  };
+  while (records.length < maxRecords) {
+    const page = await find(collection, where, { ...options, orderBy:{field:'_id',direction:'asc'}, limit:pageSize, skip:records.length }, reader);
+    records.push(...page);
+    if (page.length < pageSize) return finish();
+  }
+  const error = new Error(`${collection} 数据量超过单次安全读取上限`);
+  error.code = 'COLLECTION_READ_LIMIT';
+  throw error;
+}
+
 function cleanId(data, fallback = '') {
   if (!data) return fallback;
   return data.id || data._id || fallback;
@@ -617,4 +649,4 @@ async function runTransaction(callback, options = {}) {
 
 db.runTransaction = runTransaction;
 
-module.exports = { cloud, db, command, getContext, withRequestContext, getOptional, getRequired, find, cleanId, isRetryableTransactionError, compileWhere };
+module.exports = { cloud, db, command, getContext, withRequestContext, getOptional, getRequired, find, findAll, cleanId, isRetryableTransactionError, compileWhere };

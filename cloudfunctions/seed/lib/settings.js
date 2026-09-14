@@ -3,6 +3,14 @@ const { db, getOptional } = require('./db');
 
 function mergeSettings(base, override) {
   const source = override || {};
+  const templateNames = new Set([
+    ...Object.keys(base.notifications && base.notifications.templates || {}),
+    ...Object.keys(source.notifications && source.notifications.templates || {})
+  ]);
+  const templates = Object.fromEntries([...templateNames].map((name) => [name, {
+    ...(base.notifications && base.notifications.templates && base.notifications.templates[name] || {}),
+    ...(source.notifications && source.notifications.templates && source.notifications.templates[name] || {})
+  }]));
   return {
     ...base,
     ...source,
@@ -10,6 +18,11 @@ function mergeSettings(base, override) {
     home: { banners: [], ...(base.home || {}), ...(source.home || {}) },
     booking: { ...base.booking, ...(source.booking || {}), slotStepMinutes: 15 },
     points: { ...base.points, ...(source.points || {}) },
+    notifications: {
+      ...base.notifications,
+      ...(source.notifications || {}),
+      templates
+    },
     schedule: { ...base.schedule, ...(source.schedule || {}) }
   };
 }
@@ -32,7 +45,8 @@ function publicSettings(settings) {
     store: settings.store,
     home: settings.home || { banners: [] },
     booking: settings.booking,
-    points: settings.points
+    points: settings.points,
+    notifications: settings.notifications
   };
 }
 

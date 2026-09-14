@@ -215,7 +215,7 @@ async function createJsapiPrepay({ description, outTradeNo, amountFen, openid, t
     payer: { openid }
   });
   assert(result.prepay_id, 'PAYMENT_BAD_RESPONSE', '微信支付未返回预支付标识', 502);
-  return buildJsapiPayParams(result.prepay_id, current);
+  return { prepayId: result.prepay_id, ...buildJsapiPayParams(result.prepay_id, current) };
 }
 
 function queryOrder(outTradeNo) {
@@ -253,10 +253,17 @@ function verifyNotifySignature({ timestamp, nonce, signature, serialNo, body }) 
 function decryptNotification(resource) {
   const current = config();
   assert(current.apiV3Key && current.apiV3Key.length === 32, 'PAYMENT_KEY_INVALID', '微信支付 API v3 密钥必须为 32 字节', 503);
+  assert(resource && resource.nonce && resource.ciphertext, 'PAYMENT_NOTIFY_INVALID', '微信支付回调加密资源不完整');
+  const encrypted = Buffer.from(resource.ciphertext, 'base64');
+  assert(encrypted.length > 16, 'PAYMENT_NOTIFY_INVALID', '微信支付回调密文长度不正确');
+  // API v3 does not send a separate `tag` field. The 16-byte GCM auth tag is
+  // appended to the decoded ciphertext.
+  const ciphertext = encrypted.subarray(0, encrypted.length - 16);
+  const authTag = encrypted.subarray(encrypted.length - 16);
   const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(current.apiV3Key, 'utf8'), Buffer.from(resource.nonce, 'utf8'));
-  decipher.setAuthTag(Buffer.from(resource.tag, 'base64'));
+  decipher.setAuthTag(authTag);
   decipher.setAAD(Buffer.from(resource.associated_data || '', 'utf8'));
-  const plaintext = Buffer.concat([decipher.update(Buffer.from(resource.ciphertext, 'base64')), decipher.final()]).toString('utf8');
+  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
   return JSON.parse(plaintext);
 }
 

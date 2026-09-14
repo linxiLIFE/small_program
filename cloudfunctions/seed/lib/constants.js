@@ -17,7 +17,8 @@ const COLLECTIONS = {
   auditLogs: 'audit_logs',
   dailyMetrics: 'daily_metrics',
   settings: 'settings_versions',
-  idempotency: 'idempotency_keys'
+  idempotency: 'idempotency_keys',
+  rateLimits: 'rate_limits'
 };
 
 const ORDER_STATUS = Object.freeze({
@@ -82,14 +83,27 @@ const DEFAULT_SETTINGS = {
     minAdvanceMinutes: 60,
     slotStepMinutes: 15,
     unpaidHoldMinutes: 5,
-    noShowGraceMinutes: 30,
-    noShowPolicy: 'MANUAL_REVIEW'
+    refundCutoffMinutes: 120,
+    noShowGraceMinutes: 15,
+    noShowPenaltyFen: 3000,
+    noShowPolicy: 'AUTO_PARTIAL_REFUND'
   },
   points: {
     pointRateFen: 100,
     unit: 20,
     discountFen: 100,
-    maxPercent: 10
+    maxPercent: 10,
+    inviteRewardPoints: 10
+  },
+  notifications: {
+    enabled: true,
+    arrivalLeadMinutes: 120,
+    templates: {
+      appointmentSuccess: { templateId: '', page: 'pages/order-detail/index', serviceKey: 'thing1', timeKey: 'time2', technicianKey: 'thing3' },
+      arrivalReminder: { templateId: '', page: 'pages/order-detail/index', serviceKey: 'thing1', timeKey: 'time2', addressKey: 'thing3' },
+      checkInSuccess: { templateId: '', page: 'pages/order-detail/index', serviceKey: 'thing1', timeKey: 'time2', technicianKey: 'thing3' },
+      noShowRefund: { templateId: '', page: 'pages/order-detail/index', serviceKey: 'thing1', amountKey: 'amount2', statusKey: 'phrase3' }
+    }
   },
   schedule: {
     weekly: [

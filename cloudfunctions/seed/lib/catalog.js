@@ -1,7 +1,8 @@
 const { COLLECTIONS } = require('./constants');
-const { db, getOptional, find } = require('./db');
+const { db, getOptional, find, findAll } = require('./db');
 const { assert } = require('./errors');
 const { bookingCounts, byPopularity } = require('./analytics');
+const loadAll = findAll || find;
 
 function publicCategory(item) {
   return {
@@ -84,7 +85,7 @@ async function loadCatalog(categoryId = '') {
   const [serviceRecords, categoryRecords, styles] = await Promise.all([
     find(COLLECTIONS.services, where, { orderBy: { field: 'sort', direction: 'asc' } }),
     find(COLLECTIONS.categories, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } }),
-    find(COLLECTIONS.works, {}, { limit: 2000 })
+    loadAll(COLLECTIONS.works, {}, { orderBy: { field: 'sort', direction: 'asc' } })
   ]);
   const categories = categoryRecords.map(publicCategory);
   const categoryById = new Map(categories.map((item) => [item.id, item]));
@@ -151,7 +152,7 @@ async function getService(serviceId) {
   assert(record && record.enabled !== false, 'SERVICE_NOT_FOUND', '项目不存在或已下架', 404);
   const [category, styles] = await Promise.all([
     getOptional(COLLECTIONS.categories, record.categoryId),
-    find(COLLECTIONS.works, { serviceId: record.id || record._id }, { limit: 2000 })
+    loadAll(COLLECTIONS.works, { serviceId: record.id || record._id }, { orderBy: { field: 'sort', direction: 'asc' } })
   ]);
   assert(category && category.enabled !== false, 'SERVICE_NOT_FOUND', '所属大类已停用', 404);
   return { ...publicService(record), styleCount: styles.filter(item => item.published !== false).length, categoryName: category.name };
@@ -164,7 +165,7 @@ async function listServiceStyles(serviceId) {
   const serviceKey = record.id || record._id;
   const [category, styles] = await Promise.all([
     getOptional(COLLECTIONS.categories, record.categoryId),
-    find(COLLECTIONS.works, { serviceId: serviceKey }, { orderBy: { field: 'sort', direction: 'asc' }, limit: 2000 })
+    loadAll(COLLECTIONS.works, { serviceId: serviceKey }, { orderBy: { field: 'sort', direction: 'asc' } })
   ]);
   assert(category && category.enabled !== false, 'SERVICE_NOT_FOUND', '所属大类已停用', 404);
   const service = { ...publicService(record), styleCount: styles.filter(item => item.published !== false).length, categoryName: category.name };

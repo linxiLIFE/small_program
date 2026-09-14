@@ -100,8 +100,37 @@ function technicianCanServe(technician, service) {
 }
 
 async function getPointsAccount(openid, reader = db) {
+  const now = Date.now();
+  if (reader && typeof reader.insertIfAbsent === 'function') {
+    await reader.insertIfAbsent(COLLECTIONS.pointsAccounts, openid, { _id: openid, id: openid, userId: openid, available: 0, frozen: 0, debt: 0, version: 1, createdAt: now, updatedAt: now });
+  }
   const account = await getOptional(COLLECTIONS.pointsAccounts, openid, reader);
-  return account || { _id: openid, userId: openid, available: 0, frozen: 0, debt: 0, version: 1, updatedAt: Date.now() };
+  return account || { _id: openid, id: openid, userId: openid, available: 0, frozen: 0, debt: 0, version: 1, createdAt: now, updatedAt: now };
+}
+
+function noShowSettlement(order) {
+  const rule = order.bookingRuleSnapshot || {};
+  const pointRule = order.pointRuleSnapshot || {};
+  const totalFen = Math.max(0, Number(order.totalFen || 0));
+  const paidFen = Math.max(0, Number(order.paidFen || 0));
+  const pointsConsumed = Math.max(0, Number(order.pointsConsumed || order.pointsUsed || 0));
+  const configuredPenalty = Math.max(0, Number(rule.noShowPenaltyFen || 0));
+  const penaltyFen = Math.min(totalFen, configuredPenalty);
+  const noRefund = totalFen < configuredPenalty;
+  if (noRefund) return { penaltyFen: totalFen, penaltyPoints: pointsConsumed, refundPoints: 0, refundCashFen: 0, noRefund: true };
+  const unit = Math.max(1, Number(pointRule.unit || 1));
+  const discountFen = Math.max(1, Number(pointRule.discountFen || 1));
+  const penaltyUnits = Math.floor(penaltyFen / discountFen);
+  const penaltyPoints = Math.min(pointsConsumed, penaltyUnits * unit);
+  const pointsPenaltyFen = Math.floor(penaltyPoints / unit) * discountFen;
+  const cashPenaltyFen = Math.max(0, penaltyFen - pointsPenaltyFen);
+  return {
+    penaltyFen,
+    penaltyPoints,
+    refundPoints: Math.max(0, pointsConsumed - penaltyPoints),
+    refundCashFen: Math.max(0, paidFen - cashPenaltyFen),
+    noRefund: false
+  };
 }
 
 function isBreak(startMinutes, endMinutes, breaks) {
@@ -200,7 +229,7 @@ async function createQuote(payload) {
   };
   const price = calculatePointsDiscount({ totalFen: validation.service.priceFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
   const expiresAt = Date.now() + 10 * 60 * 1000;
-  const quoteId = createQuoteId({ workId: work.id, serviceId: validation.service.id, technicianId: validation.technician.id, date: payload.date, startAt: Number(payload.startAt), pointsToUse: price.pointsToUse, totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen, settingsVersion: validation.settings.version, expiresAt });
+  const quoteId = createQuoteId({ workId: work.id, serviceId: validation.service.id, technicianId: validation.technician.id, date: payload.date, startAt: Number(payload.startAt), durationMinutes: Number(validation.service.durationMinutes), pointsToUse: price.pointsToUse, totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen, settingsVersion: validation.settings.version, expiresAt });
   return {
     quoteId,
     expiresAt,
@@ -221,6 +250,7 @@ async function createQuote(payload) {
 
 function publicOrder(order) {
   if (!order) return null;
+  const cancelDeadline = order.status === ORDER_STATUS.RESERVED ? addMinutes(order.startAt, -Number(order.bookingRuleSnapshot && order.bookingRuleSnapshot.refundCutoffMinutes || 0)) : 0;
   return {
     id: order.id || order._id,
     status: order.status,
@@ -249,7 +279,15 @@ function publicOrder(order) {
     completedAt: order.completedAt || 0,
     paymentStatus: order.paymentStatus || PAYMENT_STATUS.NOT_STARTED,
     deadline: order.paymentDeadline || 0,
-    canDelete: canDeleteCustomerOrder(order)
+    canDelete: canDeleteCustomerOrder(order),
+    canShowCheckInCode: [ORDER_STATUS.RESERVED, ORDER_STATUS.NO_SHOW_REVIEW].includes(order.status),
+    arrivedAt: order.arrivedAt || 0,
+    refundAmountFen: Number(order.refundAmountFen === undefined ? order.paidFen || 0 : order.refundAmountFen),
+    refundPoints: Number(order.refundPoints === undefined ? order.pointsConsumed || order.pointsUsed || 0 : order.refundPoints),
+    noShowPenaltyFen: Number(order.noShowPenaltyFen || 0),
+    noShowNoRefund: !!order.noShowNoRefund,
+    cancelDeadline,
+    canCancel: order.status === ORDER_STATUS.PENDING_PAYMENT || order.status === ORDER_STATUS.RESERVED && Date.now() < cancelDeadline
   };
 }
 
@@ -278,6 +316,7 @@ async function addLedger(reader, id, data) {
 async function scheduleRefundJob(reader, orderIdValue, refundId, nextRunAt = Date.now()) {
   const jobId = `job_refund_retry_${refundId}`;
   const existing = await getOptional(COLLECTIONS.jobs, jobId, reader);
+  if (existing && ['PENDING', 'RUNNING'].includes(existing.status)) return false;
   const now = Date.now();
   await reader.collection(COLLECTIONS.jobs).doc(jobId).set({ data: {
     ...(existing || {}),
@@ -293,10 +332,12 @@ async function scheduleRefundJob(reader, orderIdValue, refundId, nextRunAt = Dat
     leaseUntil: 0,
     updatedAt: now
   } });
+  return true;
 }
 
-async function ensureRefundIntent(reader, order, reason) {
-  if (Number(order.paidFen || 0) <= 0) return { order, refund: null };
+async function ensureRefundIntent(reader, order, reason, options = {}) {
+  const amountFen = Math.max(0, Number(options.amountFen === undefined ? order.refundAmountFen === undefined ? order.paidFen : order.refundAmountFen : options.amountFen));
+  if (amountFen <= 0) return { order, refund: null };
   const refundId = order.refundId || `rf_${order.id}`;
   const existing = await getOptional(COLLECTIONS.refunds, refundId, reader);
   if (existing && existing.status === REFUND_STATUS.SUCCESS) {
@@ -311,7 +352,7 @@ async function ensureRefundIntent(reader, order, reason) {
     userId: order.userId,
     refundNo: existing && existing.refundNo || refundId,
     attempt: Number(existing && existing.attempt || 1),
-    amountFen: Number(order.paidFen),
+    amountFen,
     status: existing && existing.status || REFUND_STATUS.INIT,
     reason: reason || existing && existing.reason || '预约退款',
     retryCount: Number(existing && existing.retryCount || 0),
@@ -323,15 +364,15 @@ async function ensureRefundIntent(reader, order, reason) {
   return { order: { ...order, refundId, refundStatus: refund.status }, refund };
 }
 
-async function returnConsumedPoints(reader, order, description) {
-  const points = Number(order.pointsConsumed || 0);
+async function returnConsumedPoints(reader, order, description, pointsToReturn) {
+  const points = Math.max(0, Number(pointsToReturn === undefined ? order.pointsConsumed || 0 : pointsToReturn));
   if (points <= 0 || order.pointsReturnedAt) return order;
   const now = Date.now();
   const account = await getPointsAccount(order.userId, reader);
   const balance = rebalancePoints({ availablePoints: account.available || 0, debtPoints: account.debt || 0, returnedPoints: points });
   await reader.collection(COLLECTIONS.pointsAccounts).doc(order.userId).set({ data: { ...account, available: balance.available, debt: balance.debt, version: Number(account.version || 0) + 1, updatedAt: now } });
   await addLedger(reader, `refund_points_${order.id}`, { userId: order.userId, orderId: order.id, type: 'REFUND', amount: points, balanceAfter: balance.available, debtAfter: balance.debt, description });
-  return { ...order, pointsReturnedAt: now };
+  return { ...order, pointsReturnedAt: now, pointsReturned: points };
 }
 
 async function createOrder(payload) {
@@ -347,7 +388,12 @@ async function createOrder(payload) {
   const price = calculatePointsDiscount({ totalFen: validation.service.priceFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
   const claims = readQuoteId(payload.quoteId);
   assert(claims.workId === work.id && claims.serviceId === validation.service.id && claims.technicianId === validation.technician.id && claims.date === payload.date && Number(claims.startAt) === Number(payload.startAt), 'QUOTE_MISMATCH', '预约信息发生变化，请重新报价');
-  assert(Number(claims.pointsToUse) === price.pointsToUse && Number(claims.paidFen) === price.paidFen, 'QUOTE_CHANGED', '价格或积分规则发生变化，请重新报价');
+  assert(Number(claims.pointsToUse) === price.pointsToUse
+    && Number(claims.totalFen) === price.totalFen
+    && Number(claims.discountFen) === price.discountFen
+    && Number(claims.paidFen) === price.paidFen
+    && Number(claims.durationMinutes) === Number(validation.service.durationMinutes)
+    && Number(claims.settingsVersion) === Number(validation.settings.version), 'QUOTE_CHANGED', '价格、时长或预约规则发生变化，请重新报价');
   const now = Date.now();
   const holdMinutes = Number(validation.settings.booking.unpaidHoldMinutes || 5);
   const deadline = addMinutes(now, holdMinutes);
@@ -373,15 +419,16 @@ async function createOrder(payload) {
     pointsFrozen: price.paidFen > 0 ? price.pointsToUse : 0,
     pointsConsumed: price.paidFen === 0 ? price.pointsToUse : 0,
     pointsEarned: 0,
-    pointRuleSnapshot: { ...validation.settings.points }, bookingRuleSnapshot: { ...validation.settings.booking }, settingsVersion: validation.settings.version,
+    pointRuleSnapshot: { ...validation.settings.points }, bookingRuleSnapshot: { ...validation.settings.booking }, notificationRuleSnapshot: { arrivalLeadMinutes: Number(validation.settings.notifications && validation.settings.notifications.arrivalLeadMinutes || 120) }, settingsVersion: validation.settings.version,
     status, paymentStatus: price.paidFen > 0 ? PAYMENT_STATUS.NOT_STARTED : PAYMENT_STATUS.SUCCESS,
     paymentDeadline: price.paidFen > 0 ? deadline : 0, refundStatus: REFUND_STATUS.NOT_REQUIRED,
+    checkInNonce: crypto.randomBytes(18).toString('base64url'),
     createdAt: now, updatedAt: now
   };
 
   const result = await db.runTransaction(async (transaction) => {
     const existingIdem = await getOptional(COLLECTIONS.idempotency, idem, transaction);
-    if (existingIdem && existingIdem.orderId) {
+    if (existingIdem && existingIdem.orderId && Number(existingIdem.expiresAt || 0) > now) {
       assert(existingIdem.requestHash === requestHash, 'IDEMPOTENCY_CONFLICT', '预约内容已变化，请重新提交', 409);
       return { orderId: existingIdem.orderId, replay: true };
     }
@@ -416,6 +463,10 @@ async function createOrder(payload) {
     // unpaid-order check, so concurrent requests cannot both pass it.
     const activeUnpaid = await find(COLLECTIONS.orders, { userId: context.openid, status: ORDER_STATUS.PENDING_PAYMENT }, { limit: 1 }, transaction);
     assert(!activeUnpaid.length, 'UNPAID_ORDER_EXISTS', '你已有待付款订单，请先处理后再预约');
+    const activeOrders = await find(COLLECTIONS.orders, { userId: context.openid, status: db.command.in(ACTIVE_ORDER_STATUSES) }, { orderBy: { field: 'startAt', direction: 'asc' }, limit: 201 }, transaction);
+    assert(activeOrders.length <= 200, 'ACTIVE_ORDER_LIMIT', '有效预约过多，请联系门店处理后再下单', 409);
+    const userConflict = activeOrders.find((item) => item.status !== ORDER_STATUS.PENDING_PAYMENT && overlaps(order.startAt, order.endAt, item.startAt, item.endAt));
+    assert(!userConflict, 'CUSTOMER_SLOT_TAKEN', '你在这个时间段已有其他预约', 409);
     const occupancy = { orderId: id, startAt: order.startAt, endAt: order.endAt, status, createdAt: now };
     const nextDay = { ...day, _id: day._id || dayId(validation.technician.id, payload.date), occupancies: [...(day.occupancies || []), occupancy], version: Number(day.version || 0) + 1, updatedAt: now };
     await transaction.collection(COLLECTIONS.technicianDays).doc(nextDay._id).set({ data: nextDay });
@@ -441,18 +492,28 @@ async function createOrder(payload) {
       const noShowJobId = `job_no_show_${id}`;
       const noShowAt = addMinutes(order.startAt, Number(order.bookingRuleSnapshot.noShowGraceMinutes || 30));
       await transaction.collection(COLLECTIONS.jobs).doc(noShowJobId).set({ data: { _id: noShowJobId, id: noShowJobId, type: 'NO_SHOW', businessId: id, status: 'PENDING', nextRunAt: noShowAt, retryCount: 0, createdAt: now, updatedAt: now } });
+      const reminderJobId = `job_appointment_reminder_${id}`;
+      const reminderAt = Math.max(now, addMinutes(order.startAt, -Number(validation.settings.notifications && validation.settings.notifications.arrivalLeadMinutes || 120)));
+      await transaction.collection(COLLECTIONS.jobs).doc(reminderJobId).set({ data: { _id: reminderJobId, id: reminderJobId, type: 'APPOINTMENT_REMINDER', businessId: id, orderId: id, status: 'PENDING', nextRunAt: reminderAt, retryCount: 0, createdAt: now, updatedAt: now } });
     }
     return { orderId: id, replay: false };
   });
   const storedOrder = await getOptional(COLLECTIONS.orders, result.orderId);
+  if (storedOrder && storedOrder.status === ORDER_STATUS.RESERVED && !result.replay) {
+    await require('./notification-service').notifyOrderEvent('appointmentSuccess', storedOrder);
+  }
   return { order: publicOrder(storedOrder), paymentRequired: storedOrder.paymentStatus !== PAYMENT_STATUS.SUCCESS, holdUntil: storedOrder.paymentDeadline || 0, replay: !!result.replay };
 }
 
-async function listOrders(status = '') {
+async function listOrders(payload = {}) {
   const { openid } = requireOpenId();
-  const where = status ? { userId: openid, status } : { userId: openid };
-  const orders = await find(COLLECTIONS.orders, where, { orderBy: { field: 'createdAt', direction: 'desc' }, limit: 50 });
-  return { orders: orders.filter((order) => !order.deletedAt).map(publicOrder) };
+  const status = typeof payload === 'string' ? payload : String(payload.status || '');
+  const statuses = Array.isArray(payload.statuses) ? [...new Set(payload.statuses.map(String).filter((item) => Object.values(ORDER_STATUS).includes(item)))] : [];
+  const limit = Math.min(30, Math.max(1, Number(payload.limit || 20)));
+  const cursor = Math.max(0, Number(payload.cursor || 0));
+  const where = { userId: openid, deletedAt: db.command.exists(false), ...(statuses.length ? { status: db.command.in(statuses) } : status ? { status } : {}) };
+  const page = await find(COLLECTIONS.orders, where, { orderBy: { field: 'createdAt', direction: 'desc' }, limit: limit + 1, skip: cursor });
+  return { orders: page.slice(0, limit).map(publicOrder), nextCursor: page.length > limit ? cursor + limit : null };
 }
 
 async function getOrder(orderIdValue) {
@@ -476,9 +537,13 @@ async function bindPhone(payload) {
   assert(phone, 'PHONE_EXCHANGE_FAILED', '没有从微信获取到手机号');
   const cipher = encryptPhone(phone);
   const masked = maskPhone(phone);
-  const user = await ensureUser(context.openid, context);
-  const updated = { ...user, phoneCipher: cipher, phoneMasked: masked, updatedAt: Date.now() };
-  await db.collection(COLLECTIONS.users).doc(context.openid).set({ data: updated });
+  await ensureUser(context.openid, context);
+  const updated = await db.runTransaction(async (transaction) => {
+    const user = await getOptional(COLLECTIONS.users, context.openid, transaction);
+    const next = { ...user, phoneCipher: cipher, phoneMasked: masked, updatedAt: Date.now() };
+    await transaction.collection(COLLECTIONS.users).doc(context.openid).set({ data: next });
+    return next;
+  });
   return safeUser(updated, await getPointsAccount(context.openid));
 }
 
@@ -486,15 +551,19 @@ async function updateProfile(payload = {}) {
   const context = requireOpenId();
   const nickname = String(payload.nickname || '').trim();
   assert(nickname && nickname.length <= 20, 'INVALID_NICKNAME', '用户名需填写 1 到 20 个字符');
-  const user = await ensureUser(context.openid, context);
-  const updated = { ...user, nickname, updatedAt: Date.now() };
-  await db.collection(COLLECTIONS.users).doc(context.openid).set({ data: updated });
+  await ensureUser(context.openid, context);
+  const updated = await db.runTransaction(async (transaction) => {
+    const user = await getOptional(COLLECTIONS.users, context.openid, transaction);
+    const next = { ...user, nickname, updatedAt: Date.now() };
+    await transaction.collection(COLLECTIONS.users).doc(context.openid).set({ data: next });
+    return next;
+  });
   return safeUser(updated, await getPointsAccount(context.openid));
 }
 
 async function getProfile() {
   const context = requireOpenId();
-  const user = await ensureUser(context.openid, context);
+  const user = await require('./invitation').ensureInviteCode(context.openid, context);
   const staff = await requireStaffIfAny(context.openid);
   const points = await getPointsAccount(context.openid);
   const technician = staff && staff.role === 'TECHNICIAN' ? await getOptional(COLLECTIONS.technicians, staff.technicianId) : null;
@@ -519,6 +588,10 @@ async function cancelOrder(orderIdValue) {
   const result = await db.runTransaction(async (transaction) => {
     const order = await getOwnedOrder(orderIdValue, openid, transaction);
     assert([ORDER_STATUS.PENDING_PAYMENT, ORDER_STATUS.RESERVED].includes(order.status), 'ORDER_NOT_CANCELLABLE', '当前订单状态不支持取消');
+    if (order.status === ORDER_STATUS.RESERVED) {
+      const cutoffMinutes = Number(order.bookingRuleSnapshot && order.bookingRuleSnapshot.refundCutoffMinutes || 0);
+      assert(Date.now() < addMinutes(order.startAt, -cutoffMinutes), 'REFUND_CUTOFF_REACHED', `预约开始前 ${cutoffMinutes} 分钟内不能自行取消或退款，请联系门店`, 409);
+    }
     const payment = await getOptional(COLLECTIONS.payments, `pay_${order.id}`, transaction);
     const paymentStatus = payment ? payment.status : PAYMENT_STATUS.NOT_STARTED;
     const cashPaid = paymentStatus === PAYMENT_STATUS.SUCCESS && Number(order.paidFen || 0) > 0;
@@ -615,6 +688,9 @@ async function markPaymentSuccess(orderIdValue, paymentPayload = {}) {
       const noShowJobId = `job_no_show_${order.id}`;
       const noShowAt = addMinutes(order.startAt, Number(order.bookingRuleSnapshot && order.bookingRuleSnapshot.noShowGraceMinutes || 30));
       await transaction.collection(COLLECTIONS.jobs).doc(noShowJobId).set({ data: { _id: noShowJobId, id: noShowJobId, type: 'NO_SHOW', businessId: order.id, status: 'PENDING', nextRunAt: noShowAt, retryCount: 0, createdAt: now, updatedAt: now } });
+      const reminderJobId = `job_appointment_reminder_${order.id}`;
+      const reminderAt = Math.max(now, addMinutes(order.startAt, -Number(order.notificationRuleSnapshot && order.notificationRuleSnapshot.arrivalLeadMinutes || 120)));
+      await transaction.collection(COLLECTIONS.jobs).doc(reminderJobId).set({ data: { _id: reminderJobId, id: reminderJobId, type: 'APPOINTMENT_REMINDER', businessId: order.id, orderId: order.id, status: 'PENDING', nextRunAt: reminderAt, retryCount: 0, createdAt: now, updatedAt: now } });
       return { order: nextOrder, duplicate, shouldRefund: false };
     }
     let nextOrder = { ...order, paymentStatus: PAYMENT_STATUS.SUCCESS, paidAt: order.paidAt || successPayment.paidAt, updatedAt: now };
@@ -627,6 +703,9 @@ async function markPaymentSuccess(orderIdValue, paymentPayload = {}) {
     await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: nextOrder });
     return { order: nextOrder, duplicate, shouldRefund };
   });
+  if (result.order && result.order.status === ORDER_STATUS.RESERVED && !result.duplicate) {
+    await require('./notification-service').notifyOrderEvent('appointmentSuccess', result.order);
+  }
   return { order: publicOrder(result.order), duplicate: result.duplicate, shouldRefund: result.shouldRefund };
 }
 
@@ -659,23 +738,28 @@ async function markNoShow(orderIdValue) {
     assert(Date.now() >= addMinutes(order.startAt, grace), 'NO_SHOW_TOO_EARLY', '尚未达到未到店处理时间');
     const now = Date.now();
     const cashPaid = Number(order.paidFen || 0) > 0 && order.paymentStatus === PAYMENT_STATUS.SUCCESS;
-    const policy = order.bookingRuleSnapshot && order.bookingRuleSnapshot.noShowPolicy || 'MANUAL_REVIEW';
-    if (policy !== 'AUTO_REFUND') {
-      const next = { ...order, status: ORDER_STATUS.NO_SHOW_REVIEW, noShowReviewAt: now, updatedAt: now };
-      await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: next });
-      await updateDayOccupancy(transaction, order, next.status);
-      return { order: next, changed: true, cashPaid: false };
-    }
-    let next = { ...order, status: ORDER_STATUS.CANCELLED_NO_SHOW, refundStatus: cashPaid ? REFUND_STATUS.INIT : REFUND_STATUS.NOT_REQUIRED, updatedAt: now };
-    if (cashPaid) {
-      const intent = await ensureRefundIntent(transaction, next, '预约开始后未核销');
+    const settlement = noShowSettlement(order);
+    let next = {
+      ...order,
+      status: ORDER_STATUS.CANCELLED_NO_SHOW,
+      refundStatus: cashPaid && settlement.refundCashFen > 0 ? REFUND_STATUS.INIT : REFUND_STATUS.NOT_REQUIRED,
+      refundAmountFen: settlement.refundCashFen,
+      refundPoints: settlement.refundPoints,
+      noShowPenaltyFen: settlement.penaltyFen,
+      noShowPenaltyPoints: settlement.penaltyPoints,
+      noShowNoRefund: settlement.noRefund,
+      noShowAt: now,
+      updatedAt: now
+    };
+    if (cashPaid && settlement.refundCashFen > 0) {
+      const intent = await ensureRefundIntent(transaction, next, `预约开始后 ${grace} 分钟仍未核销，扣除未到店费用后退款`, { amountFen: settlement.refundCashFen });
       next = intent.order;
-    } else if (Number(order.pointsConsumed || 0) > 0) {
-      next = await returnConsumedPoints(transaction, next, '未核销全积分预约，退还抵扣积分');
+    } else if (settlement.refundPoints > 0) {
+      next = await returnConsumedPoints(transaction, next, '未到店扣除费用后退还剩余积分', settlement.refundPoints);
     }
     await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: next });
     await updateDayOccupancy(transaction, order, next.status);
-    return { order: next, changed: true, cashPaid };
+    return { order: next, changed: true, cashPaid: cashPaid && settlement.refundCashFen > 0 };
   });
   if (result.changed && result.cashPaid) {
     try {
@@ -692,7 +776,9 @@ async function markNoShow(orderIdValue) {
       }
     }
   }
-  return result.order ? publicOrder(await getOptional(COLLECTIONS.orders, orderIdValue)) : null;
+  const latest = result.order ? await getOptional(COLLECTIONS.orders, orderIdValue) : null;
+  if (result.changed && latest && !result.cashPaid) await require('./notification-service').notifyOrderEvent('noShowRefund', latest);
+  return latest ? publicOrder(latest) : null;
 }
 
 async function markRefundSuccess(refundId, payload = {}) {
@@ -707,10 +793,10 @@ async function markRefundSuccess(refundId, payload = {}) {
     if (refund.status === REFUND_STATUS.SUCCESS && order.refundStatus === REFUND_STATUS.SUCCESS) return { order, duplicate: true };
     if (payload.submissionId && refund.submissionId !== payload.submissionId) return { order, duplicate: true, staleSubmission: true };
     const now = Date.now();
-    const nextRefund = { ...refund, status: REFUND_STATUS.SUCCESS, providerRefundId: payload.refundId || refund.providerRefundId || '', successAt: payload.successAt || now, submissionId: '', submissionLeaseUntil: 0, updatedAt: now };
-    const nextOrder = { ...order, status: ORDER_STATUS.REFUNDED, refundId, refundStatus: REFUND_STATUS.SUCCESS, updatedAt: now };
+    const nextRefund = { ...refund, status: REFUND_STATUS.SUCCESS, providerStatus: REFUND_STATUS.SUCCESS, providerRefundId: payload.refundId || refund.providerRefundId || '', successAt: payload.successAt || now, submissionId: '', submissionLeaseUntil: 0, updatedAt: now };
+    const nextOrder = { ...order, status: order.noShowAt ? ORDER_STATUS.CANCELLED_NO_SHOW : ORDER_STATUS.REFUNDED, refundId, refundStatus: REFUND_STATUS.SUCCESS, updatedAt: now };
     await transaction.collection(COLLECTIONS.refunds).doc(refund._id || refund.id).set({ data: nextRefund });
-    const pointsConsumed = Number(order.pointsConsumed || 0);
+    const pointsConsumed = Number(order.refundPoints === undefined ? order.pointsConsumed || 0 : order.refundPoints);
     const pointsEarned = Number(order.pointsEarned || 0);
     const shouldReturnPoints = pointsConsumed > 0 && !order.pointsReturnedAt;
     const shouldReverseEarned = pointsEarned > 0 && !order.pointsReversedAt;
@@ -720,7 +806,7 @@ async function markRefundSuccess(refundId, payload = {}) {
       const finalBalance = rebalancePoints({ availablePoints: returnedBalance.available, debtPoints: returnedBalance.debt, earnedPoints: shouldReverseEarned ? pointsEarned : 0 });
       await transaction.collection(COLLECTIONS.pointsAccounts).doc(order.userId).set({ data: { ...account, available: finalBalance.available, debt: finalBalance.debt, version: Number(account.version || 0) + 1, updatedAt: now } });
       if (shouldReturnPoints) {
-        await addLedger(transaction, `refund_points_${order.id}`, { userId: order.userId, orderId: order.id, type: 'REFUND', amount: pointsConsumed, balanceAfter: returnedBalance.available, debtAfter: returnedBalance.debt, description: '整单退款成功，退还抵扣积分' });
+        await addLedger(transaction, `refund_points_${order.id}`, { userId: order.userId, orderId: order.id, type: 'REFUND', amount: pointsConsumed, balanceAfter: returnedBalance.available, debtAfter: returnedBalance.debt, description: order.noShowAt ? '未到店费用结算后退还剩余积分' : '整单退款成功，退还抵扣积分' });
         nextOrder.pointsReturnedAt = now;
       }
       if (shouldReverseEarned) {
@@ -732,6 +818,9 @@ async function markRefundSuccess(refundId, payload = {}) {
     await updateDayOccupancy(transaction, order, ORDER_STATUS.REFUNDED);
     return { order: nextOrder, duplicate: false };
   });
+  if (!result.duplicate && result.order && result.order.noShowAt) {
+    await require('./notification-service').notifyOrderEvent('noShowRefund', result.order);
+  }
   return { order: publicOrder(result.order), duplicate: result.duplicate };
 }
 
@@ -855,14 +944,20 @@ async function transitionStaff(orderIdValue, action) {
     }
     return next;
   });
+  if (action === 'checkIn' && result && result.status === ORDER_STATUS.ARRIVED) {
+    await require('./notification-service').notifyOrderEvent('checkInSuccess', result);
+  }
   return publicOrder(result);
 }
 
-async function staffListOrders(status = '') {
+async function staffListOrders(payload = {}) {
   const { account } = await requireRole(['OWNER', 'STAFF', 'TECHNICIAN']);
+  const status = typeof payload === 'string' ? payload : String(payload.status || '');
+  const cursor = Math.max(0, Number(payload.cursor || 0));
+  const limit = Math.min(50, Math.max(1, Number(payload.limit || 20)));
   const where = { ...(status ? { status } : {}), ...(account.role === 'TECHNICIAN' ? { technicianId: account.technicianId } : {}) };
-  const orders = await find(COLLECTIONS.orders, where, { orderBy: { field: 'startAt', direction: 'asc' }, limit: 100 });
-  return { orders: orders.map(publicOrder) };
+  const orders = await find(COLLECTIONS.orders, where, { orderBy: { field: 'startAt', direction: 'asc' }, limit: limit + 1, skip: cursor });
+  return { orders: orders.slice(0,limit).map(publicOrder), nextCursor: orders.length > limit ? cursor + limit : null };
 }
 
 async function preparePaymentRecord(orderIdValue) {
@@ -910,5 +1005,6 @@ module.exports = {
   COLLECTIONS,
   ORDER_STATUS,
   REFUND_STATUS,
-  PAYMENT_STATUS
+  PAYMENT_STATUS,
+  noShowSettlement
 };

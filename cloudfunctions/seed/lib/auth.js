@@ -84,7 +84,10 @@ function safeUser(user, points = {}) {
     role: user.role || 'CUSTOMER',
     roleLabel: ROLE_LABELS[user.role] || '顾客',
     points: Number(points.available || 0),
-    status: user.status || 'ACTIVE'
+    status: user.status || 'ACTIVE',
+    inviteCode: user.inviteCode || '',
+    invited: !!user.invitedBy,
+    subscriptions: user.subscriptions || {}
   };
 }
 

@@ -16,8 +16,11 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: admin/package-lock.json
+          cache-dependency-path: |
+            admin/package-lock.json
+            cloudfunctions/api/package-lock.json
       - run: npm ci --prefix admin
+      - run: npm ci --prefix cloudfunctions/api
       - run: npm run prepare:functions
       - run: npm test
       - run: npm --prefix admin run build -- --emptyOutDir=false

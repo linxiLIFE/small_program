@@ -12,6 +12,7 @@ const { requestRefund, scheduleRefundRetry, reconcilePaymentBeforeCancellation }
 const wechat = require(`${sharedRoot}/wechat-pay`);
 const { addMinutes } = require(`${sharedRoot}/time`);
 const { fairTakeJobs, nextRepairCursor } = require(`${sharedRoot}/job-scheduling`);
+const { notifyOrderEvent } = require(`${sharedRoot}/notification-service`);
 
 const REPAIR_PAGE_SIZE = 100;
 
@@ -92,6 +93,13 @@ async function processNoShow(job) {
   await markNoShow(job.businessId);
 }
 
+async function processAppointmentReminder(job) {
+  const order = await getOptional(COLLECTIONS.orders, job.businessId);
+  if (!order || order.status !== ORDER_STATUS.RESERVED) return;
+  const result = await notifyOrderEvent('arrivalReminder', order);
+  if (result && result.reason === 'SEND_FAILED') throw new Error('订阅消息发送失败');
+}
+
 async function processPaymentReconcile(job) {
   const order = await getOptional(COLLECTIONS.orders, job.businessId);
   const payment = await getOptional(COLLECTIONS.payments, `pay_${job.businessId}`);
@@ -130,6 +138,7 @@ async function processJob(job, result) {
       }
     }
     else if (claimed.type === 'NO_SHOW') await processNoShow(claimed);
+    else if (claimed.type === 'APPOINTMENT_REMINDER') await processAppointmentReminder(claimed);
     else if (claimed.type === 'REFUND_RETRY') {
       const refundResult = await processRefund(claimed);
       if (refundResult && refundResult.deferred) {
@@ -200,10 +209,13 @@ async function repairPaymentJobs(now) {
     if (!order || (order.status === ORDER_STATUS.PENDING_PAYMENT && Number(order.paymentDeadline || 0) > now && payment.status !== PAYMENT_STATUS.CLOSE_PENDING)) continue;
     const needsCancellationReconcile = payment.status === PAYMENT_STATUS.CLOSE_PENDING || order.status !== ORDER_STATUS.PENDING_PAYMENT;
     const jobId = needsCancellationReconcile ? `job_payment_reconcile_${order.id}` : `job_payment_expire_${order.id}`;
-    const existing = await getOptional(COLLECTIONS.jobs, jobId);
-    if (existing && ['PENDING', 'RUNNING'].includes(existing.status)) continue;
-    await db.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { ...(existing || {}), _id: jobId, id: jobId, type: needsCancellationReconcile ? 'PAYMENT_RECONCILE' : 'PAYMENT_EXPIRE', businessId: order.id, status: 'PENDING', nextRunAt: now, retryCount: 0, leaseUntil: 0, createdAt: existing && existing.createdAt || now, updatedAt: now } });
-    repaired += 1;
+    const revived = await db.runTransaction(async (transaction) => {
+      const existing = await getOptional(COLLECTIONS.jobs, jobId, transaction);
+      if (existing && ['PENDING', 'RUNNING'].includes(existing.status)) return false;
+      await transaction.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { ...(existing || {}), _id: jobId, id: jobId, type: needsCancellationReconcile ? 'PAYMENT_RECONCILE' : 'PAYMENT_EXPIRE', businessId: order.id, status: 'PENDING', nextRunAt: now, retryCount: Number(existing && existing.retryCount || 0), leaseUntil: 0, claimToken: '', createdAt: existing && existing.createdAt || now, updatedAt: now } });
+      return true;
+    });
+    if (revived) repaired += 1;
   }
   await saveRepairCursor(page);
   return repaired;
@@ -229,15 +241,24 @@ async function repairReconciliationJobs(now) {
   return payments + refunds;
 }
 
+async function cleanupExpiredOperationalRecords(now) {
+  let cleaned = 0;
+  for (const collection of [COLLECTIONS.idempotency, COLLECTIONS.rateLimits]) {
+    const result = await db.collection(collection).where({ expiresAt: db.command.lte(now) }).limit(100).remove();
+    cleaned += Number(result && result.stats && result.stats.removed || 0);
+  }
+  return cleaned;
+}
+
 exports.main = async () => {
   const now = Date.now();
-  const repaired = await repairReconciliationJobs(now);
+  const [repaired,cleaned] = await Promise.all([repairReconciliationJobs(now),cleanupExpiredOperationalRecords(now)]);
   const [pendingJobs, expiredJobs] = await Promise.all([
     db.collection(COLLECTIONS.jobs).where({ status: 'PENDING', nextRunAt: db.command.lte(now) }).orderBy('nextRunAt', 'asc').limit(50).get(),
     db.collection(COLLECTIONS.jobs).where({ status: 'RUNNING', leaseUntil: db.command.lte(now) }).orderBy('leaseUntil', 'asc').limit(50).get()
   ]);
   const jobs = fairTakeJobs(pendingJobs.data || [], expiredJobs.data || [], 50);
-  const result = { processed: 0, failed: 0, repaired };
+  const result = { processed: 0, failed: 0, repaired, cleaned };
   const grouped = new Map();
   for (const job of jobs) {
     const key = job.orderId || job.businessId || job._id || job.id;

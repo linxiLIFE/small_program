@@ -69,6 +69,8 @@
   gap: 18rpx;
 }
 
+.load-more-button { margin: 28rpx auto 0; border: 1rpx solid #ead7d2; border-radius: 999rpx; background: #fffaf7; color: #9f6e70; font-size: 24rpx; }
+
 .order-card {
   display: flex;
   gap: 20rpx;

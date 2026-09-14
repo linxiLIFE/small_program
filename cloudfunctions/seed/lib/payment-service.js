@@ -10,26 +10,20 @@ const { refundStatusFromProvider, refundFailureDisposition, nextRefundIdentity, 
 
 async function scheduleRefundRetry(orderId, refundId) {
   const jobId = `job_refund_retry_${refundId}`;
-  const existing = await getOptional(COLLECTIONS.jobs, jobId);
-  const now = Date.now();
-  if (existing && ['RUNNING', 'PENDING'].includes(existing.status) && existing.businessId === refundId) {
-    if (!existing.orderId) await db.collection(COLLECTIONS.jobs).doc(jobId).update({ data: { orderId, updatedAt: now } });
-    return false;
-  }
-  await db.collection(COLLECTIONS.jobs).doc(jobId).set({ data: {
-    ...(existing || {}),
-    _id: jobId,
-    id: jobId,
-    type: 'REFUND_RETRY',
-    businessId: refundId,
-    orderId,
-    status: 'PENDING',
-    nextRunAt: addMinutes(now, 2),
-    retryCount: Number(existing && existing.retryCount || 0),
-    createdAt: existing && existing.createdAt || now,
-    updatedAt: now
-  } });
-  return true;
+  return db.runTransaction(async (transaction) => {
+    const existing = await getOptional(COLLECTIONS.jobs, jobId, transaction);
+    const now = Date.now();
+    if (existing && ['RUNNING', 'PENDING'].includes(existing.status) && existing.businessId === refundId) {
+      if (!existing.orderId) await transaction.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { ...existing, orderId, updatedAt: now } });
+      return false;
+    }
+    await transaction.collection(COLLECTIONS.jobs).doc(jobId).set({ data: {
+      ...(existing || {}), _id: jobId, id: jobId, type: 'REFUND_RETRY', businessId: refundId, orderId,
+      status: 'PENDING', nextRunAt: addMinutes(now, 2), retryCount: Number(existing && existing.retryCount || 0),
+      leaseUntil: 0, claimToken: '', createdAt: existing && existing.createdAt || now, updatedAt: now
+    } });
+    return true;
+  });
 }
 
 function parseProviderTime(value, fallback = Date.now()) {
@@ -167,30 +161,51 @@ async function preparePayment(orderId) {
     return { configured: false, missing: wechat.getConfigIssues(), message: '微信支付资质尚未配置或配置无效，订单已保留。检查商户配置后可重新发起支付。' };
   }
   const paymentAttemptId = crypto.randomBytes(16).toString('hex');
-  await db.runTransaction(async (transaction) => {
+  const claim = await db.runTransaction(async (transaction) => {
     const latestOrder = await getOptional(COLLECTIONS.orders, order.id, transaction);
     const latestPayment = await getOptional(COLLECTIONS.payments, payment.id || payment._id, transaction);
     assert(latestOrder && latestOrder.status === ORDER_STATUS.PENDING_PAYMENT, 'ORDER_NOT_PAYABLE', '当前订单不需要支付', 409);
     assert(Number(latestOrder.paymentDeadline || 0) > Date.now(), 'PAYMENT_DEADLINE_EXPIRED', '支付时间已结束', 409);
     assert(latestPayment && ![PAYMENT_STATUS.SUCCESS, PAYMENT_STATUS.CLOSED, PAYMENT_STATUS.CLOSE_PENDING].includes(latestPayment.status), 'ORDER_NOT_PAYABLE', '当前订单不能继续支付', 409);
     const now = Date.now();
-    const nextPayment = { ...latestPayment, status: PAYMENT_STATUS.PREPAY_SUBMITTING, providerState: 'PREPAY_SUBMITTING', paymentAttemptId, prepareGeneration: Number(latestPayment.prepareGeneration || 0) + 1, updatedAt: now };
+    if (latestPayment.status === PAYMENT_STATUS.PREPAY_CREATED && latestPayment.prepayId) {
+      return { reused: true, payment: latestPayment, order: latestOrder };
+    }
+    if (latestPayment.status === PAYMENT_STATUS.PREPAY_SUBMITTING && Number(latestPayment.prepareLeaseUntil || 0) > now) {
+      throw new AppError('PAYMENT_PREPARING', '支付参数正在生成，请稍后重试', 409);
+    }
+    const nextPayment = { ...latestPayment, status: PAYMENT_STATUS.PREPAY_SUBMITTING, providerState: 'PREPAY_SUBMITTING', paymentAttemptId, prepareGeneration: Number(latestPayment.prepareGeneration || 0) + 1, prepareLeaseUntil: addMinutes(now, 2), updatedAt: now };
     await transaction.collection(COLLECTIONS.payments).doc(payment.id || payment._id).set({ data: nextPayment });
     await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: { ...latestOrder, paymentStatus: PAYMENT_STATUS.PREPAY_SUBMITTING, updatedAt: now } });
+    return { reused: false, payment: nextPayment, order: latestOrder };
   });
-  const payParams = await wechat.createJsapiPrepay({
-    description: order.serviceSnapshot.name,
-    outTradeNo: payment.merchantOrderNo,
-    amountFen: order.paidFen,
+  if (claim.reused) return { configured: true, ...wechat.buildJsapiPayParams(claim.payment.prepayId), orderId: order.id, reused: true };
+  let payParams;
+  try {
+    payParams = await wechat.createJsapiPrepay({
+    description: claim.order.serviceSnapshot.name,
+    outTradeNo: claim.payment.merchantOrderNo,
+    amountFen: claim.order.paidFen,
     openid,
-    timeExpire: order.paymentDeadline
+    timeExpire: claim.order.paymentDeadline
   });
+  } catch (error) {
+    await db.runTransaction(async (transaction) => {
+      const latestOrder = await getOptional(COLLECTIONS.orders, order.id, transaction);
+      const latestPayment = await getOptional(COLLECTIONS.payments, payment.id || payment._id, transaction);
+      if (!canCommitPaymentAttempt(latestOrder, latestPayment, paymentAttemptId)) return;
+      const now = Date.now();
+      await transaction.collection(COLLECTIONS.payments).doc(payment.id || payment._id).set({ data: { ...latestPayment, status: PAYMENT_STATUS.UNKNOWN, providerState: error.code || 'PREPAY_ERROR', prepareLeaseUntil: 0, updatedAt: now } });
+      await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: { ...latestOrder, paymentStatus: PAYMENT_STATUS.UNKNOWN, updatedAt: now } });
+    });
+    throw error;
+  }
   const accepted = await db.runTransaction(async (transaction) => {
     const latestOrder = await getOptional(COLLECTIONS.orders, order.id, transaction);
     const latestPayment = await getOptional(COLLECTIONS.payments, payment.id || payment._id, transaction);
     if (!canCommitPaymentAttempt(latestOrder, latestPayment, paymentAttemptId)) return false;
     const now = Date.now();
-    await transaction.collection(COLLECTIONS.payments).doc(payment.id || payment._id).set({ data: { ...latestPayment, appid, mchid: wechat.config().mchid, status: PAYMENT_STATUS.PREPAY_CREATED, providerState: 'PREPAY_CREATED', prepayCreatedAt: now, updatedAt: now } });
+    await transaction.collection(COLLECTIONS.payments).doc(payment.id || payment._id).set({ data: { ...latestPayment, appid, mchid: wechat.config().mchid, status: PAYMENT_STATUS.PREPAY_CREATED, providerState: 'PREPAY_CREATED', prepayId: payParams.prepayId, prepareLeaseUntil: 0, prepayCreatedAt: now, updatedAt: now } });
     await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: { ...latestOrder, paymentStatus: PAYMENT_STATUS.PREPAY_CREATED, updatedAt: now } });
     return true;
   });
@@ -202,7 +217,8 @@ async function preparePayment(orderId) {
     }
     throw new AppError('ORDER_NOT_PAYABLE', '订单状态已变化，不能继续支付', 409);
   }
-  return { configured: true, ...payParams, orderId: order.id };
+  const { prepayId, ...clientParams } = payParams;
+  return { configured: true, ...clientParams, orderId: order.id };
 }
 
 async function queryPayment(orderId) {
@@ -288,13 +304,13 @@ async function ensureDurableRefundIntent(orderId, reason, options = {}) {
       if (!options.allowClosedRetry) return { order, payment, refund: { ...existing, status: REFUND_STATUS.RETRY_REQUIRED } };
       const identity = nextRefundIdentity(orderId, existing);
       refundId = identity.id;
-      existing = { _id: refundId, id: refundId, orderId, userId: order.userId, refundNo: identity.refundNo, attempt: identity.attempt, previousRefundId: order.refundId || '', amountFen: Number(payment.amountFen), status: REFUND_STATUS.INIT, reason, retryCount: 0, createdAt: Date.now(), updatedAt: Date.now() };
+      existing = { _id: refundId, id: refundId, orderId, userId: order.userId, refundNo: identity.refundNo, attempt: identity.attempt, previousRefundId: order.refundId || '', amountFen: Math.max(0, Number(order.refundAmountFen === undefined ? payment.amountFen : order.refundAmountFen)), status: REFUND_STATUS.INIT, reason, retryCount: 0, createdAt: Date.now(), updatedAt: Date.now() };
     }
     if (existing && options.manualRetry && [REFUND_STATUS.WAITING_FUNDS, REFUND_STATUS.CONFIG_OR_DATA_ERROR].includes(existing.status)) {
       existing = { ...existing, status: REFUND_STATUS.INIT, lastManualRetryAt: Date.now(), errorCode: '', errorMessage: '', updatedAt: Date.now() };
     }
     const now = Date.now();
-    const refund = existing || { _id: refundId, id: refundId, orderId, userId: order.userId, refundNo: refundId, attempt: 1, amountFen: Number(payment.amountFen), status: REFUND_STATUS.INIT, reason, retryCount: 0, createdAt: now, updatedAt: now };
+    const refund = existing || { _id: refundId, id: refundId, orderId, userId: order.userId, refundNo: refundId, attempt: 1, amountFen: Math.max(0, Number(order.refundAmountFen === undefined ? payment.amountFen : order.refundAmountFen)), status: REFUND_STATUS.INIT, reason, retryCount: 0, createdAt: now, updatedAt: now };
     await transaction.collection(COLLECTIONS.refunds).doc(refundId).set({ data: refund });
     await transaction.collection(COLLECTIONS.orders).doc(orderId).set({ data: { ...order, refundId, refundStatus: refund.status, updatedAt: now } });
     return { order: { ...order, refundId, refundStatus: refund.status }, payment, refund };
@@ -426,6 +442,7 @@ async function handleNotify(event) {
   try { notification = JSON.parse(body); } catch (error) { throw new AppError('PAYMENT_NOTIFY_INVALID', '支付回调 JSON 无法解析'); }
   assert(notification && notification.id && notification.event_type && notification.resource, 'PAYMENT_NOTIFY_INVALID', '支付回调缺少事件标识或资源');
   const claim = await beginNotification(notification);
+  if (claim.inFlight) throw new AppError('PAYMENT_NOTIFY_IN_FLIGHT', '同一支付通知仍在处理中，请稍后重试', 503);
   if (claim.duplicate) return { ok: true, duplicate: true };
   try {
     const resource = wechat.decryptNotification(notification.resource);
@@ -459,7 +476,7 @@ async function handleNotify(event) {
     await finishNotification(claim.id, claim.claimToken, 'DONE', result);
     return result;
   } catch (error) {
-    await finishNotification(claim.id, claim.claimToken, 'FAILED', {}, error);
+    await finishNotification(claim.id, claim.claimToken, 'FAILED', {}, `${error.code || 'ERROR'}: ${error.message || error}\n${error.stack || ''}`);
     throw error;
   }
 }

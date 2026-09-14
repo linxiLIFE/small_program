@@ -31,13 +31,13 @@ function paymentProgress(order, confirming = false) {
   if (pointsOnly) return { active: true, label: '积分支付完成，无需微信支付' };
   if (paid) return { active: true, label: '支付成功' };
   if (confirming) return { active: false, label: '支付结果确认中，请勿重复支付' };
-  if (order.paymentStatus === 'CLOSED' || order.status !== 'PENDING_PAYMENT') return { active: false, label: '订单已关闭，未发生支付' };
   if (['PREPAY_SUBMITTING', 'UNKNOWN', 'CLOSE_PENDING'].includes(order.paymentStatus)) return { active: false, label: '支付状态确认中' };
+  if (order.paymentStatus === 'CLOSED' || order.status !== 'PENDING_PAYMENT') return { active: false, label: '订单已关闭，未发生支付' };
   return { active: false, label: '等待完成支付' };
 }
 
 Page({
-  data: { loading: true, loadError: '', order: {}, actions: [], canCancel: false, paying: false, paymentConfirming: false, paymentChecking: false },
+  data: { loading: true, loadError: '', order: {}, actions: [], canCancel: false, paying: false, paymentConfirming: false, paymentChecking: false, qrVisible: false, qrLoading: false, qrDataUrl: '' },
 
   onLoad(options) {
     this.orderId = options.orderId || '';
@@ -79,7 +79,7 @@ Page({
       const confirming = this.data.paymentConfirming === true && !isPaymentResolved(order);
       const pointsOnly = isPointsOnlyPayment(order);
       const progress = paymentProgress(order, confirming);
-      const canCancel = !confirming && ['PENDING_PAYMENT', 'RESERVED'].includes(order.status);
+      const canCancel = !confirming && order.canCancel === true;
       const paymentDeadline = getPaymentDeadline(order);
       const remaining = paymentDeadline ? paymentDeadline - Date.now() : 0;
       this.hasLoaded = true;
@@ -95,7 +95,7 @@ Page({
           timeLabel: order.startAt ? formatDateTimeRange(order.startAt, order.endAt, order.durationMinutes) : order.startAtLabel || '待确定',
           totalText: formatMoney(order.totalFen),
           discountText: formatMoney(order.discountFen || 0),
-          paidText: pointsOnly ? (order.refundStatus === 'SUCCESS' ? '已退回积分' : '积分支付') : formatMoney(order.paidFen),
+          paidText: pointsOnly ? (order.refundStatus === 'SUCCESS' ? '已退回积分' : '积分支付') : formatMoney(order.refundStatus === 'SUCCESS' ? order.refundAmountFen : order.paidFen),
           paidLabel: pointsOnly ? '支付方式' : order.status === 'PENDING_PAYMENT' ? '待支付金额' : order.refundStatus === 'SUCCESS' ? '退款金额' : '实付金额',
           paymentProgressActive: progress.active,
           paymentProgressLabel: progress.label,
@@ -147,9 +147,36 @@ Page({
   getActions(order) {
     const status = order.status;
     if (status === 'PENDING_PAYMENT') return [{ id: 'pay', text: '继续支付', type: 'primary' }, { id: 'cancel', text: '取消订单', type: 'ghost' }];
-    if (status === 'RESERVED') return [{ id: 'cancel', text: '取消并退款', type: 'danger' }];
+    if (status === 'RESERVED' && order.canCancel) return [{ id: 'cancel', text: '取消并退款', type: 'danger' }];
     if (order.canDelete) return [{ id: 'delete', text: '删除订单', type: 'danger' }];
     return [];
+  },
+
+  async openCheckInCode() {
+    if (this.data.qrLoading) return;
+    this.setData({ qrVisible: true, qrLoading: true });
+    try {
+      const result = await api.getCheckInCode(this.data.order.id);
+      this.setData({ qrDataUrl: result.dataUrl || '', qrLoading: false });
+    } catch (error) {
+      this.setData({ qrVisible: false, qrLoading: false });
+      wx.showToast({ title: error.message || '核销码生成失败', icon: 'none' });
+    }
+  },
+
+  closeCheckInCode() {
+    this.setData({ qrVisible: false });
+  },
+
+  async enableCheckInReminder() {
+    try {
+      const settings = await api.getSettings();
+      const result = await api.requestSubscriptionEvents(settings, ['checkInSuccess']);
+      const accepted = Object.values(result.statuses || {}).some((status) => status === 'accept');
+      wx.showToast({ title: accepted ? '核销提醒已开启' : '未开启提醒', icon: 'none' });
+    } catch (error) {
+      wx.showToast({ title: '提醒授权未完成', icon: 'none' });
+    }
   },
 
   async handleAction(event) {
@@ -186,10 +213,12 @@ Page({
           await this.confirmPaymentResult();
         },
         fail: async () => {
-          try { await api.queryPayment(this.data.order.id); } catch (error) { /* 后台任务会继续查单。 */ }
-          this.setData({ paying: false, paymentConfirming: false });
-          wx.showToast({ title: '请查看订单支付状态', icon: 'none' });
-          this.loadOrder();
+          let status = '';
+          try { const result = await api.queryPayment(this.data.order.id); status = result && result.status || ''; } catch (error) { status = 'UNKNOWN'; }
+          const confirming = ['PREPAY_SUBMITTING', 'PREPAY_CREATED', 'UNKNOWN', 'CLOSE_PENDING'].includes(status);
+          this.setData({ paying: false, paymentConfirming: confirming, canCancel: false, actions: confirming ? [] : this.data.actions });
+          wx.showToast({ title: confirming ? '支付结果正在确认' : '请查看订单支付状态', icon: 'none' });
+          if (confirming) this.confirmPaymentResult(); else this.loadOrder();
         }
       });
     } catch (error) {
@@ -235,7 +264,7 @@ Page({
     const paid = Number(this.data.order.paidFen || 0) > 0 && this.data.order.status !== 'PENDING_PAYMENT';
     wx.showModal({
       title: paid ? '确认取消并退款？' : '确认取消订单？',
-      content: paid ? '到店核销前可全额退款，退款结果以微信回调为准。' : '取消后，当前预约占位会释放。',
+      content: paid ? '仅在退款截止时间前可取消；退款结果以微信回调为准。' : '取消后，当前预约占位会释放。',
       confirmText: '确认取消',
       success: async (result) => {
         if (!result.confirm) return;
@@ -316,5 +345,7 @@ Page({
       this.nextExpireCheckAt = Date.now() + 5000;
       this.reconcilingExpired = false;
     }
-  }
+  },
+
+  noop() {}
 });

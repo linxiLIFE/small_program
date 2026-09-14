@@ -3,7 +3,7 @@ const { ORDER_STATUS_LABELS, ROLE_LABELS } = require('../../utils/constants');
 const { formatDateTimeRange } = require('../../utils/format');
 
 Page({
-  data: { loading: true, profile: {}, orders: [], skeletons: [1, 2], activeStatus: 'RESERVED', tabs: [{ id: 'RESERVED', label: '待到店' }, { id: 'NO_SHOW_REVIEW', label: '未到店复核' }, { id: 'ARRIVED', label: '已到店' }, { id: 'IN_SERVICE', label: '服务中' }] },
+  data: { loading: true, loadingMore:false, nextCursor:null, profile: {}, orders: [], skeletons: [1, 2], activeStatus: 'RESERVED', tabs: [{ id: 'RESERVED', label: '待到店' }, { id: 'NO_SHOW_REVIEW', label: '未到店复核' }, { id: 'ARRIVED', label: '已到店' }, { id: 'IN_SERVICE', label: '服务中' }] },
 
   onLoad() {
     this.loadStaff();
@@ -24,21 +24,21 @@ Page({
     }
   },
 
-  async loadOrders(status) {
+  async loadOrders(status, append=false) {
     const hasData = this.hasLoaded || this.data.orders.length > 0;
-    this.setData({ loading: !hasData });
+    this.setData({ loading: !append&&!hasData, loadingMore:append });
     const requestId = (this.requestId || 0) + 1;
     this.requestId = requestId;
     try {
-      const result = await api.staffListOrders(status);
+      const result = await api.staffListOrders(status,append?Number(this.data.nextCursor||0):0,20);
       if (requestId !== this.requestId) return;
       const orders = (result.orders || []).map((item) => ({ ...item, statusLabel: item.statusLabel || ORDER_STATUS_LABELS[item.status] || '处理中', timeLabel: item.startAt ? formatDateTimeRange(item.startAt, item.endAt, item.durationMinutes) : item.startAtLabel || '待确定' }));
       this.hasLoaded = true;
-      this.setData({ orders, loading: false });
+      this.setData({ orders:append?this.data.orders.concat(orders):orders, nextCursor:result.nextCursor, loading: false, loadingMore:false });
     } catch (error) {
       if (requestId !== this.requestId) return;
       this.hasLoaded = true;
-      this.setData({ orders: hasData ? this.data.orders : [], loading: false });
+      this.setData({ orders: hasData ? this.data.orders : [], loading: false, loadingMore:false });
       if (!hasData) wx.showToast({ title: error.message || '订单加载失败', icon: 'none' });
     }
   },
@@ -47,6 +47,28 @@ Page({
     const status = event.currentTarget.dataset.status;
     this.setData({ activeStatus: status });
     this.loadOrders(status);
+  },
+
+  loadMore(){if(this.data.loadingMore||this.data.nextCursor===null)return;this.loadOrders(this.data.activeStatus,true);},
+
+  async scanCheckIn() {
+    if (this.scanning) return;
+    this.scanning = true;
+    try {
+      const scan = await new Promise((resolve, reject) => wx.scanCode({ onlyFromCamera: true, scanType: ['qrCode'], success: resolve, fail: reject }));
+      wx.showLoading({ title: '核销中' });
+      const result = await api.redeemCheckInCode(scan.result || '');
+      const order = result.order || result;
+      wx.hideLoading();
+      wx.showModal({ title: '核销成功', content: `${order.customerName || '预约顾客'}\n${order.serviceName || ''}\n${order.startAtLabel || ''}`, showCancel: false });
+      await this.loadOrders(this.data.activeStatus);
+    } catch (error) {
+      wx.hideLoading();
+      const cancelled = String(error.errMsg || '').includes('cancel');
+      if (!cancelled) wx.showModal({ title: '无法核销', content: error.message || '请确认二维码属于当前技师的有效预约', showCancel: false });
+    } finally {
+      this.scanning = false;
+    }
   },
 
   async transition(event) {

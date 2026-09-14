@@ -47,6 +47,7 @@ async function getBookingContext(payload = {}) {
 }
 
 async function route(action, payload) {
+  await require('./lib/rate-limit').enforceActionRateLimit(action);
   switch (action) {
     case 'getHome': return catalog.getHome(await getCurrentSettings());
     case 'listServices': return catalog.listServiceCatalog(payload && payload.categoryId);
@@ -62,14 +63,18 @@ async function route(action, payload) {
     case 'bindPhone': return booking.bindPhone(payload || {});
     case 'createQuote': return booking.createQuote(payload || {});
     case 'createOrder': return booking.createOrder(payload || {});
-    case 'listOrders': return booking.listOrders(payload && payload.status);
+    case 'listOrders': return booking.listOrders(payload || {});
     case 'getOrder': return booking.getOrder(payload && payload.orderId);
+    case 'getCheckInCode': return require('./lib/checkin').getCheckInCode(payload && payload.orderId);
+    case 'redeemCheckInCode': return require('./lib/checkin').redeemCheckInCode(payload && payload.code);
     case 'cancelOrder': return booking.cancelOrder(payload && payload.orderId);
     case 'deleteOrder': return booking.deleteOrder(payload && payload.orderId);
     case 'preparePayment': return payment.preparePayment(payload && payload.orderId);
     case 'queryPayment': return payment.queryPayment(payload && payload.orderId);
     case 'listPoints': return booking.listPoints();
-    case 'staffListOrders': return booking.staffListOrders(payload && payload.status);
+    case 'bindInviteCode': return require('./lib/invitation').bindInviteCode(payload || {});
+    case 'saveSubscriptionPreferences': return require('./lib/notification-service').saveSubscriptionPreferences(payload && payload.statuses || {});
+    case 'staffListOrders': return booking.staffListOrders(payload || {});
     case 'staffTransition': return booking.transitionStaff(payload && payload.orderId, payload && payload.action);
     case 'adminUploadImage': return require('./lib/media').uploadImage(payload || {});
     case 'adminSaveCategory': return require('./lib/catalog-admin').saveCategory(payload || {});

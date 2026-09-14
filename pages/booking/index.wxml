@@ -70,6 +70,11 @@
       <text wx:else class="bound-mark">已绑定 ✓</text>
     </view>
 
+    <view class="booking-policy-card card">
+      <view class="policy-mark">!</view>
+      <view><text class="policy-title">预约与退款规则</text><text>{{refundRuleText}}</text><text>{{noShowRuleText}}</text></view>
+    </view>
+
     <view class="booking-summary card">
       <view class="summary-row"><text>项目金额</text><text>{{quote.quoteId ? quote.totalText : '--'}}</text></view>
       <view class="summary-row discount-row"><text>积分抵扣（{{quote.quoteId ? quote.pointsToUse : 0}} 分）</text><text>{{quote.quoteId ? '- ' + quote.discountText : '--'}}</text></view>

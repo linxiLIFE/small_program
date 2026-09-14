@@ -16,7 +16,7 @@ async function main(event = {}) {
     const result = await handleNotify(event);
     return response(200, { code: 'SUCCESS', message: '成功', data: result });
   } catch (error) {
-    console.error('微信支付回调处理失败', error.code || error.message || error);
+    console.error('微信支付回调处理失败', error && error.stack || error && error.message || error);
     const status = ['PAYMENT_NOTIFY_SIGNATURE_INVALID', 'PAYMENT_NOTIFY_EXPIRED'].includes(error.code) ? 401 : 500;
     return response(status, { code: 'FAIL', message: '回调处理失败' });
   }

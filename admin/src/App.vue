@@ -5,10 +5,11 @@ import HomeManager from './components/HomeManager.vue';
 import CatalogManager from './components/CatalogManager.vue';
 import TeamManager from './components/TeamManager.vue';
 import MySchedulePanel from './components/MySchedulePanel.vue';
+import AdminOrdersPanel from './components/AdminOrdersPanel.vue';
 import type { SessionInfo } from './types';
-import { adminApi, isDemoMode, money } from './api';
+import { adminApi, isDemoMode } from './api';
 import { getCurrentUser, signIn as cloudSignIn, signOut as cloudSignOut, type AuthUser } from './cloudbase';
-import type { Work, AdminOrder, BreakWindow, CatalogResponse, PageKey, ScheduleResponse, Service, Settings, Shift, TechnicianDayPlan, WeeklySchedule } from './types';
+import type { Work, BreakWindow, CatalogResponse, PageKey, ScheduleResponse, Service, Settings, Shift, TechnicianDayPlan, WeeklySchedule } from './types';
 
 const authReady = ref(false);
 const authenticated = ref(false);
@@ -25,13 +26,9 @@ const saving = ref(false);
 const error = ref('');
 const notice = ref('');
 const demo = isDemoMode();
-const metrics = ref({ paidFen: 0, refundFen: 0, netFen: 0, completedFen: 0, orderCount: 0, completedCount: 0, customerCount: 0, noShowCount: 0 });
-const orders = ref<AdminOrder[]>([]);
 const catalog = ref<CatalogResponse>({ categories: [], services: [], works: [], technicians: [] });
-const settings = reactive<Settings>({ version: 1, store: { storeName: '四个小姐姐的店', address: '', phone: '', notice: '', latitude: null, longitude: null }, booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, noShowGraceMinutes: 30, noShowPolicy: 'MANUAL_REVIEW' }, points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10 } });
+const settings = reactive<Settings>({ version: 1, store: { storeName: '四个小姐姐的店', address: '', phone: '', notice: '', latitude: null, longitude: null }, booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, refundCutoffMinutes: 120, noShowGraceMinutes: 15, noShowPenaltyFen: 3000, noShowPolicy: 'AUTO_PARTIAL_REFUND' }, points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10, inviteRewardPoints: 10 }, notifications: { enabled:false, arrivalLeadMinutes:120, templates:{ appointmentSuccess:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',technicianKey:'thing3'}, arrivalReminder:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',addressKey:'thing3'}, checkInSuccess:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',technicianKey:'thing3'}, noShowRefund:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',amountKey:'amount2',statusKey:'phrase3'} } } });
 const paymentStatus = ref<{ configured: boolean; missing: string[]; callbackCertificateConfigured: boolean; note: string }>({ configured: false, missing: [], callbackCertificateConfigured: false, note: '' });
-const orderFilter = ref('');
-const refundingOrders = ref<Record<string, boolean>>({});
 const editingService = ref<Service | null>(null);
 const serviceDraft = reactive<Partial<Service>>({});
 const scheduleDate = ref(todayDate());
@@ -47,6 +44,7 @@ const mapPickerOpen = ref(false);
 const mapPickerUrl = computed(() => mapPickerKey
   ? `https://apis.map.qq.com/tools/locpicker?search=1&type=1&key=${encodeURIComponent(mapPickerKey)}&referer=shiguang-admin`
   : '');
+const noShowPenaltyYuan = computed({ get:()=>Number(settings.booking.noShowPenaltyFen||0)/100, set:(value:number)=>{settings.booking.noShowPenaltyFen=Math.max(0,Math.round(Number(value||0)*100));} });
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const storeDateFormatter = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric' });
@@ -68,19 +66,6 @@ function weekdayLabel(value: number): string {
 
 function timeLabel(timestamp: number): string {
   return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(timestamp));
-}
-
-function refundStatusLabel(status?: string): string {
-  return ({ INIT: '退款待提交', PENDING_CONFIG: '退款待配置', SUBMITTING: '退款提交中', PROCESSING: '退款处理中', SUCCESS: '退款已到账', RETRY_REQUIRED: '退款需重新发起', WAITING_FUNDS: '商户余额不足，充值后重试', CONFIG_OR_DATA_ERROR: '退款配置或数据异常', MANUAL_ACTION: '退款需人工处理', CLOSED: '退款已关闭', ABNORMAL: '退款异常' } as Record<string, string>)[status || ''] || '';
-}
-
-function canRequestRefund(order: AdminOrder): boolean {
-  return ['RESERVED', 'ARRIVED', 'IN_SERVICE', 'COMPLETED', 'NO_SHOW_REVIEW', 'CANCEL_PENDING_REFUND', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW'].includes(order.status)
-    && ['NOT_REQUIRED', 'RETRY_REQUIRED', 'CLOSED', 'WAITING_FUNDS', 'CONFIG_OR_DATA_ERROR'].includes(order.refundStatus || 'NOT_REQUIRED');
-}
-
-function isRefunding(orderId: string): boolean {
-  return refundingOrders.value[orderId] === true;
 }
 
 const selectedScheduleTechnician = computed(() => schedule.value.technicians.find((item) => item.id === selectedTechnicianId.value) || schedule.value.technicians[0]);
@@ -167,7 +152,6 @@ async function logout() {
     currentUser.value = null;
     loading.value = false;
     page.value = 'dashboard';
-    orders.value = [];
     catalog.value = { categories: [], services: [], works: [], technicians: [] };
   }
 }
@@ -182,7 +166,6 @@ async function loadAll() {
     const tasks = [
       async()=>{catalog.value=await adminApi.catalog();},
       async()=>{Object.assign(settings,await adminApi.settings());},
-      async()=>{orders.value=(await adminApi.orders()).orders;},
       async()=>{if(sessionInfo.value.role==='OWNER')paymentStatus.value=await adminApi.paymentStatus();},
       async()=>{const result=await adminApi.schedule(scheduleDate.value);schedule.value=result;weeklyDraft.value=clone(result.weekly);syncDayDraft();}
     ];
@@ -214,10 +197,6 @@ async function loadSchedule() {
   } finally {
     scheduleLoading.value = false;
   }
-}
-
-async function loadOrders() {
-  try { orders.value = (await adminApi.orders(orderFilter.value)).orders; } catch (err) { error.value = err instanceof Error ? err.message : '订单加载失败'; }
 }
 
 function beginEdit(service: Service) {
@@ -339,18 +318,6 @@ async function saveWeekly() {
   }
 }
 
-async function refund(order: AdminOrder) {
-  if (isRefunding(order.id)) return;
-  if (!window.confirm(`确认对订单 ${order.id} 发起整单退款？`)) return;
-  refundingOrders.value = { ...refundingOrders.value, [order.id]: true };
-  try { await adminApi.refund(order.id, '管理员在后台发起退款'); notice.value = '退款请求已提交，到账状态请以微信回调/查单为准。'; await loadOrders(); } catch (err) { error.value = err instanceof Error ? err.message : '退款失败'; }
-  finally {
-    const next = { ...refundingOrders.value };
-    delete next[order.id];
-    refundingOrders.value = next;
-  }
-}
-
 watch(scheduleDate, () => {
   if (authenticated.value && page.value === 'technicians') loadSchedule();
 });
@@ -404,7 +371,7 @@ onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
         <DashboardPanel v-if="page === 'dashboard'"/>
         <HomeManager v-else-if="page === 'home'" :settings="settings" @saved="Object.assign(settings,$event)"/>
 
-        <section v-else-if="page === 'orders'" class="page-section"><div class="page-intro"><div><h1>预约订单</h1></div><div class="filter-row"><select v-model="orderFilter" @change="loadOrders"><option value="">全部状态</option><option value="PENDING_PAYMENT">待付款</option><option value="RESERVED">待到店</option><option value="ARRIVED">已到店</option><option value="IN_SERVICE">服务中</option><option value="COMPLETED">已完成</option><option value="NO_SHOW_REVIEW">未到店待复核</option><option value="CANCEL_PENDING_REFUND">退款待处理</option><option value="REFUNDED">已退款</option><option value="CANCELLED_BY_USER">已取消</option></select></div></div><section class="panel table-panel"><table><thead><tr><th>预约时间</th><th>项目 / 技师</th><th>顾客</th><th>状态</th><th>实付</th><th>操作</th></tr></thead><tbody><tr v-for="order in orders" :key="order.id"><td><strong>{{ order.startAtLabel }}</strong><small>{{ order.id }}</small></td><td><strong>{{ order.serviceName }}</strong><small v-if="order.work">{{ order.work.title }}</small><small>{{ order.technicianName }}</small></td><td><strong>{{ order.customerName || '—' }}</strong><small>{{ order.phoneMasked || '按权限展示' }}</small></td><td><span :class="['pill', order.status === 'COMPLETED' ? 'green' : order.status === 'RESERVED' ? 'rose' : 'sand']">{{ order.statusLabel }}</span><small v-if="refundStatusLabel(order.refundStatus)">{{ refundStatusLabel(order.refundStatus) }}</small></td><td class="money-cell">{{ money(order.paidFen) }}</td><td><button v-if="['RESERVED', 'ARRIVED', 'IN_SERVICE'].includes(order.status) && order.refundStatus === 'NOT_REQUIRED'" class="link-action" @click="page = 'orders'">工作台处理</button><button v-if="canRequestRefund(order)" class="link-action danger-link" :disabled="isRefunding(order.id)" @click="refund(order)">{{ isRefunding(order.id) ? '提交中…' : ['RETRY_REQUIRED', 'CLOSED', 'WAITING_FUNDS', 'CONFIG_OR_DATA_ERROR'].includes(order.refundStatus || '') ? '重新退款' : order.status === 'NO_SHOW_REVIEW' ? '确认未到店并退款' : '整单退款' }}</button><span v-if="!canRequestRefund(order) && !['RESERVED', 'ARRIVED', 'IN_SERVICE'].includes(order.status)" class="muted-cell">—</span></td></tr></tbody></table><div v-if="!orders.length" class="empty-inline">没有符合条件的订单。</div></section></section>
+        <AdminOrdersPanel v-else-if="page === 'orders'" :catalog="catalog"/>
 
         <CatalogManager v-else-if="page === 'services'" :catalog="catalog" @changed="refreshCatalog"/>
         <TeamManager v-else-if="page === 'team'" :catalog="catalog" @changed="refreshCatalog" @schedule="openTechnicianSchedule" @workspace="openTechnicianWorkspace"/>
@@ -423,8 +390,8 @@ onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
                 <div v-for="day in weeklyDraft" :key="day.weekday" class="weekly-day">
                   <div class="weekly-day-heading"><strong>{{ weekdayLabel(day.weekday) }}</strong><label class="inline-check"><input v-model="day.enabled" type="checkbox" /> 营业</label></div>
                   <div v-for="(shift, shiftIndex) in day.shifts" :key="`${day.weekday}-${shiftIndex}`" class="shift-editor">
-                    <div class="schedule-field-row"><label>开始<input v-model="shift.start" type="time" :disabled="!day.enabled" /></label><label>结束<input v-model="shift.end" type="time" :disabled="!day.enabled" /></label><button class="icon-button" type="button" :disabled="!day.enabled" @click="removeShift(day, shiftIndex)">×</button></div>
-                    <div v-for="(breakWindow, breakIndex) in shift.breaks" :key="`${day.weekday}-${shiftIndex}-break-${breakIndex}`" class="break-row"><span>休息</span><input v-model="breakWindow.start" type="time" :disabled="!day.enabled" /><span>至</span><input v-model="breakWindow.end" type="time" :disabled="!day.enabled" /><button class="text-button" type="button" :disabled="!day.enabled" @click="removeBreak(shift, breakIndex)">移除</button></div>
+                    <div class="schedule-field-row"><label>开始<input v-model="shift.start" type="time" step="900" :disabled="!day.enabled" /></label><label>结束<input v-model="shift.end" type="time" step="900" :disabled="!day.enabled" /></label><button class="icon-button" type="button" :disabled="!day.enabled" @click="removeShift(day, shiftIndex)">×</button></div>
+                    <div v-for="(breakWindow, breakIndex) in shift.breaks" :key="`${day.weekday}-${shiftIndex}-break-${breakIndex}`" class="break-row"><span>休息</span><input v-model="breakWindow.start" type="time" step="900" :disabled="!day.enabled" /><span>至</span><input v-model="breakWindow.end" type="time" step="900" :disabled="!day.enabled" /><button class="text-button" type="button" :disabled="!day.enabled" @click="removeBreak(shift, breakIndex)">移除</button></div>
                     <button class="text-button add-break-button" type="button" :disabled="!day.enabled" @click="addBreak(shift)">+ 添加休息时间</button>
                   </div>
                   <button class="soft-button add-shift-button" type="button" :disabled="!day.enabled" @click="addShift(day)">+ 添加班次</button>
@@ -450,8 +417,8 @@ onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
               <label class="leave-toggle"><input v-model="dayDraft.leave" type="checkbox" /> 当天休息 / 请假</label>
               <div v-if="!dayDraft.leave" class="day-shifts">
                 <div v-for="(shift, shiftIndex) in dayDraft.shifts" :key="`day-${shiftIndex}`" class="day-shift-card">
-                  <div class="schedule-field-row"><label>开始<input v-model="shift.start" type="time" /></label><label>结束<input v-model="shift.end" type="time" /></label><button class="icon-button" type="button" @click="removeShift(dayDraft, shiftIndex)">×</button></div>
-                  <div v-for="(breakWindow, breakIndex) in shift.breaks" :key="`day-${shiftIndex}-break-${breakIndex}`" class="break-row"><span>休息</span><input v-model="breakWindow.start" type="time" /><span>至</span><input v-model="breakWindow.end" type="time" /><button class="text-button" type="button" @click="removeBreak(shift, breakIndex)">移除</button></div>
+                  <div class="schedule-field-row"><label>开始<input v-model="shift.start" type="time" step="900" /></label><label>结束<input v-model="shift.end" type="time" step="900" /></label><button class="icon-button" type="button" @click="removeShift(dayDraft, shiftIndex)">×</button></div>
+                  <div v-for="(breakWindow, breakIndex) in shift.breaks" :key="`day-${shiftIndex}-break-${breakIndex}`" class="break-row"><span>休息</span><input v-model="breakWindow.start" type="time" step="900" /><span>至</span><input v-model="breakWindow.end" type="time" step="900" /><button class="text-button" type="button" @click="removeBreak(shift, breakIndex)">移除</button></div>
                   <button class="text-button add-break-button" type="button" @click="addBreak(shift)">+ 添加休息时间</button>
                 </div>
                 <button class="soft-button add-shift-button" type="button" @click="addShift(dayDraft)">+ 添加班次</button>
@@ -462,7 +429,17 @@ onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
           </template>
         </section>
 
-        <section v-else-if="page === 'settings'" class="page-section"><div class="page-intro"><div><h1>门店与预约设置</h1></div><span class="version-chip">当前版本 v{{ settings.version }}</span></div><section class="panel settings-panel"><div class="settings-block"><div class="settings-block-heading"><h2>门店资料</h2></div><div class="form-grid"><label>门店名称<input v-model="settings.store.storeName" /></label><label>联系电话<input v-model="settings.store.phone" placeholder="可选" /></label><label class="full">地址<input v-model="settings.store.address" /></label><label>地图经度<input v-model.number="settings.store.longitude" type="number" step="any" min="-180" max="180" placeholder="例如 126.63"/></label><label>地图纬度<input v-model.number="settings.store.latitude" type="number" step="any" min="-90" max="90" placeholder="例如 45.75"/></label><div class="full map-helper"><button class="soft-button" type="button" @click="openMapPicker">地图选点</button><button class="soft-button" type="button" @click="useBrowserLocation">使用当前位置</button><span>{{ mapPickerKey ? '点选后会自动回填地址和坐标。' : '可先用腾讯地图取点页复制坐标；配置地图 Key 后可在此直接点选。' }}</span></div><label class="full">预约须知<textarea v-model="settings.store.notice"></textarea></label></div></div><div class="settings-block"><div class="settings-block-heading"><h2>预约规则</h2></div><div class="form-grid four"><label>开放天数<input v-model.number="settings.booking.openDays" type="number" min="1" max="14" /></label><label>最少提前分钟<input v-model.number="settings.booking.minAdvanceMinutes" type="number" min="1" /></label><label>未支付占位分钟<input v-model.number="settings.booking.unpaidHoldMinutes" type="number" min="1" /></label><label>未核销复核分钟<input v-model.number="settings.booking.noShowGraceMinutes" type="number" min="1" /><small>超时后进入人工复核，不会自动退款。</small></label></div></div><div class="settings-block"><div class="settings-block-heading"><h2>积分规则</h2></div><div class="form-grid four"><label>每满多少分获 1 积分<input v-model.number="settings.points.pointRateFen" type="number" min="1" /></label><label>抵扣单位积分<input v-model.number="settings.points.unit" type="number" min="1" /></label><label>每单位抵扣分<input v-model.number="settings.points.discountFen" type="number" min="1" /></label><label>单笔最高抵扣 %<input v-model.number="settings.points.maxPercent" type="number" min="0" max="100" /></label></div></div><div class="settings-actions"><button class="primary-button" :disabled="saving" @click="saveSettings">{{ saving ? '发布中…' : '保存设置' }}</button></div></section></section>
+        <section v-else-if="page === 'settings'" class="page-section">
+          <div class="page-intro"><div><h1>门店与预约设置</h1><p>规则发布后只影响新订单，旧订单继续使用下单时快照。</p></div><span class="version-chip">当前版本 v{{ settings.version }}</span></div>
+          <section class="panel settings-panel">
+            <div class="settings-block"><div class="settings-block-heading"><h2>门店资料</h2></div><div class="form-grid"><label>门店名称<input v-model="settings.store.storeName" /></label><label>联系电话<input v-model="settings.store.phone" placeholder="可选" /></label><label class="full">地址<input v-model="settings.store.address" /></label><label>地图经度<input v-model.number="settings.store.longitude" type="number" step="any" min="-180" max="180"/></label><label>地图纬度<input v-model.number="settings.store.latitude" type="number" step="any" min="-90" max="90"/></label><div class="full map-helper"><button class="soft-button" type="button" @click="openMapPicker">地图选点</button><button class="soft-button" type="button" @click="useBrowserLocation">使用当前位置</button></div><label class="full">预约须知<textarea v-model="settings.store.notice"></textarea></label></div></div>
+            <div class="settings-block"><div class="settings-block-heading"><h2>取消与未到店规则</h2><span>小程序预约页会同步展示</span></div><div class="form-grid four"><label>可提前取消（分钟）<input v-model.number="settings.booking.refundCutoffMinutes" type="number" min="0" max="10080"/><small>默认 120 分钟</small></label><label>未核销宽限（分钟）<input v-model.number="settings.booking.noShowGraceMinutes" type="number" min="1" max="1440"/><small>默认开始后 15 分钟</small></label><label>未到店违约金（元）<input v-model.number="noShowPenaltyYuan" type="number" min="0" max="10000" step="0.01"/><small>积分优先承担</small></label><label>未到店处理方式<select v-model="settings.booking.noShowPolicy"><option value="AUTO_PARTIAL_REFUND">自动按规则退款</option></select><small>订单总额不足违约金时不退款</small></label></div></div>
+            <div class="settings-block"><div class="settings-block-heading"><h2>预约基础规则</h2></div><div class="form-grid four"><label>开放天数<input v-model.number="settings.booking.openDays" type="number" min="1" max="14" /></label><label>最少提前分钟<input v-model.number="settings.booking.minAdvanceMinutes" type="number" min="1" /></label><label>15 分钟时段<input v-model.number="settings.booking.slotStepMinutes" type="number" min="15" max="15" readonly/></label><label>未支付占位分钟<input v-model.number="settings.booking.unpaidHoldMinutes" type="number" min="1" /></label></div></div>
+            <div class="settings-block"><div class="settings-block-heading"><h2>积分与邀请</h2></div><div class="form-grid four"><label>每满多少分获 1 积分<input v-model.number="settings.points.pointRateFen" type="number" min="1" /></label><label>抵扣单位积分<input v-model.number="settings.points.unit" type="number" min="1" /></label><label>每单位抵扣分<input v-model.number="settings.points.discountFen" type="number" min="1" /></label><label>单笔最高抵扣 %<input v-model.number="settings.points.maxPercent" type="number" min="0" max="100" /></label><label>邀请双方各奖积分<input v-model.number="settings.points.inviteRewardPoints" type="number" min="0" max="100000"/><small>邀请码只允许绑定一次</small></label></div></div>
+            <div class="settings-block"><div class="settings-block-heading"><h2>微信订阅提醒</h2><span>模板字段名需与公众平台模板一致</span></div><label class="switch-row"><span>启用订阅消息发送</span><input v-model="settings.notifications.enabled" type="checkbox"/></label><div class="form-grid notification-settings"><label>到店提醒提前分钟<input v-model.number="settings.notifications.arrivalLeadMinutes" type="number" min="15" max="10080"/></label><div v-for="(item,key) in settings.notifications.templates" :key="key" class="notification-template-card"><strong>{{({appointmentSuccess:'预约成功',arrivalReminder:'提醒到店',checkInSuccess:'核销成功',noShowRefund:'未到店退款'} as Record<string,string>)[key]}}</strong><label>模板 ID<input v-model.trim="item.templateId" placeholder="公众平台模板 ID"/></label><div class="template-key-grid"><label>项目字段<input v-model.trim="item.serviceKey" placeholder="thing1"/></label><label v-if="item.timeKey">时间字段<input v-model.trim="item.timeKey" placeholder="time2"/></label><label v-if="item.technicianKey">技师字段<input v-model.trim="item.technicianKey" placeholder="thing3"/></label><label v-if="item.addressKey">地址字段<input v-model.trim="item.addressKey" placeholder="thing3"/></label><label v-if="item.amountKey">金额字段<input v-model.trim="item.amountKey" placeholder="amount2"/></label><label v-if="item.statusKey">状态字段<input v-model.trim="item.statusKey" placeholder="phrase3"/></label></div></div></div><p class="form-help">模板 ID 和字段名可在微信公众平台「订阅消息 / 我的模板」复制。由于浏览器安全策略，本次无法代你读取当前 Chrome 登录页中的值。</p></div>
+            <div class="settings-actions"><button class="primary-button" :disabled="saving" @click="saveSettings">{{ saving ? '发布中…' : '保存并发布规则' }}</button></div>
+          </section>
+        </section>
 
         <section v-else-if="page === 'payment'" class="page-section"><div class="page-intro"><div><h1>微信支付接入</h1></div><span :class="['connection-state', paymentStatus.configured ? 'ready' : 'pending']"><i></i>{{ paymentStatus.configured ? '已配置' : '待配置' }}</span></div><section class="payment-grid"><div class="panel payment-status-panel"><div class="status-illustration">¥</div><h2>{{ paymentStatus.configured ? '支付参数已齐备' : '等待个体工商户资质' }}</h2><p>{{ paymentStatus.configured ? '仍需在真机完成支付、回调、查单和真实退款闭环。' : '你拿到商户号和小程序支付权限后，只需在 CloudBase 服务端补齐参数，前端页面无需改动。' }}</p><div v-if="paymentStatus.missing.length" class="missing-list"><div v-for="item in paymentStatus.missing" :key="item"><span>○</span>{{ item }}</div></div><div class="cert-state"><span :class="paymentStatus.callbackCertificateConfigured ? 'ok' : ''">{{ paymentStatus.callbackCertificateConfigured ? '✓' : '○' }}</span>微信支付公钥或平台证书（回调验签）</div></div><div class="panel checklist-panel"><h2>接入前置项</h2><ol><li><span>01</span><div><strong>小程序主体认证</strong><small>使用营业执照完成主体认证，并申请小程序支付权限。</small></div></li><li><span>02</span><div><strong>普通商户直连</strong><small>申请商户号，完成商户号与 小程序绑定。</small></div></li><li><span>03</span><div><strong>服务端密钥</strong><small>配置商户私钥、证书序列号、支付密钥，不进入小程序和浏览器。</small></div></li><li><span>04</span><div><strong>支付回调</strong><small>配置 支付回调入口，保留原始请求体并完成验签解密。</small></div></li><li><span>05</span><div><strong>真机闭环</strong><small>预约、支付、查单、核销、完成、取消和真实退款全部通过后再上线。</small></div></li></ol></div></section><section class="panel env-panel"><div class="panel-heading"><div><h2>需要填写的环境变量</h2></div><span class="security-note">不会在此页面显示值</span></div><div class="env-grid"><code>WX_APPID</code><code>WX_MCH_ID</code><code>WX_MCH_SERIAL_NO</code><code>WX_API_V3_KEY</code><code>WX_PRIVATE_KEY</code><code>WX_NOTIFY_URL</code><code>WX_PLATFORM_PUBLIC_KEY_PEM</code><code>WX_PLATFORM_SERIAL_NO</code><code>WX_PLATFORM_CERT_PEM</code><code>CONTACT_ENCRYPTION_KEY</code></div></section></section>
       </template>

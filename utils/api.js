@@ -295,10 +295,12 @@ async function createOrder(payload) {
   return result;
 }
 
-function listOrders(status = '') {
-  return cachedCall('listOrders', { status }, () => {
+function listOrders(status = '', cursor = 0, limit = 20) {
+  const payload = Array.isArray(status) ? { statuses: status, cursor, limit } : { status, cursor, limit };
+  return cachedCall('listOrders', payload, () => {
     const orders = mock.orders.filter((item) => !item.deletedAt).map(expireDemoPayment);
-    return { orders: status ? orders.filter((item) => item.status === status) : orders };
+    const filtered = Array.isArray(status) ? orders.filter((item) => status.includes(item.status)) : status ? orders.filter((item) => item.status === status) : orders;
+    return { orders: filtered.slice(cursor,cursor+limit), nextCursor: cursor+limit<filtered.length?cursor+limit:null };
   });
 }
 
@@ -373,8 +375,41 @@ function listPoints() {
   }));
 }
 
-function staffListOrders(status = '') {
-  return cachedCall('staffListOrders', { status }, () => listOrders(status));
+function staffListOrders(status = '', cursor = 0, limit = 20) {
+  return cachedCall('staffListOrders', { status, cursor, limit }, () => listOrders(status,cursor,limit));
+}
+
+function getCheckInCode(orderId) {
+  return call('getCheckInCode', { orderId });
+}
+
+async function redeemCheckInCode(code) {
+  const result = await call('redeemCheckInCode', { code });
+  clearCache('staffListOrders');
+  clearCache('listOrders');
+  clearCache('getOrder');
+  return result;
+}
+
+async function bindInviteCode(inviteCode) {
+  const result = await call('bindInviteCode', { inviteCode });
+  clearCache('getProfile');
+  clearCache('listPoints');
+  return result;
+}
+
+function configuredTemplateIds(settings, events) {
+  const templates = settings && settings.notifications && settings.notifications.templates || {};
+  return (events || []).map((event) => templates[event] && templates[event].templateId).filter(Boolean).slice(0, 3);
+}
+
+async function requestSubscriptionEvents(settings, events) {
+  const tmplIds = configuredTemplateIds(settings, events);
+  if (!tmplIds.length || typeof wx.requestSubscribeMessage !== 'function') return { configured: tmplIds.length > 0, statuses: {} };
+  const statuses = await new Promise((resolve, reject) => wx.requestSubscribeMessage({ tmplIds, success: resolve, fail: reject }));
+  await call('saveSubscriptionPreferences', { statuses });
+  clearCache('getProfile');
+  return { configured: true, statuses };
 }
 
 async function staffTransition(orderId, action) {
@@ -417,5 +452,9 @@ module.exports = {
   preparePayment,
   listPoints,
   staffListOrders,
-  staffTransition
+  staffTransition,
+  getCheckInCode,
+  redeemCheckInCode,
+  bindInviteCode,
+  requestSubscriptionEvents
 };

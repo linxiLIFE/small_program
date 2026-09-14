@@ -16,6 +16,15 @@
     <view class="order-summary-grid"><view wx:for="{{orderSummary}}" wx:key="id" class="order-summary-item" data-status="{{item.id}}" bindtap="openOrdersStatus"><view class="order-summary-icon {{item.id === 'PENDING_PAYMENT' ? 'rose' : item.id === 'RESERVED' ? 'sand' : item.id === 'ACTIVE_SERVICE' ? 'plum' : 'green'}}">{{item.icon}}</view><text class="order-summary-count">{{item.count}}</text><text class="order-summary-label">{{item.label}}</text></view></view>
   </view>
 
+  <view class="invite-card card">
+    <view class="invite-card-head"><view><text class="invite-title">邀请好友</text><text class="invite-subtitle">双方各得 {{inviteRewardPoints}} 积分</text></view><view class="invite-code" bindtap="copyInviteCode"><text>{{profile.inviteCode || '生成中'}}</text><text>复制</text></view></view>
+    <view wx:if="{{!profile.invited}}" class="invite-bind"><input value="{{inviteDraft}}" maxlength="16" placeholder="输入他人邀请码" bindinput="inputInviteCode"/><button loading="{{bindingInvite}}" disabled="{{bindingInvite || !inviteDraft}}" bindtap="bindInvite">绑定</button></view>
+    <view wx:else class="invite-bound">已绑定邀请码</view>
+    <button class="invite-share" open-type="share">分享我的邀请码</button>
+  </view>
+
+  <view class="reminder-card card" bindtap="enableReminders"><view class="menu-icon rose">◌</view><view class="menu-copy"><text>微信预约提醒</text><text>预约成功、到店与未到店退款</text></view><text class="menu-arrow">›</text></view>
+
   <view class="menu-card card">
     <view class="menu-item" bindtap="contactService"><view class="menu-icon sand">⌁</view><view class="menu-copy"><text>联系客服</text></view><text class="menu-arrow">›</text></view>
     <view class="divider"></view>

@@ -81,10 +81,12 @@ function analyze(orders, refunds, days = 30, now = Date.now()) {
 
 function number(value) { return Number(value || 0); }
 
-async function databaseSummary(days = 30, now = Date.now()) {
-  const today = toDateString(now);
-  const start = dateToTimestamp(today) - (days - 1) * 86400000;
-  const end = dateToTimestamp(today) + 86400000;
+async function databaseSummary(range = 30, now = Date.now()) {
+  const custom = range && typeof range === 'object';
+  const days = custom ? Math.max(1, Math.round((Number(range.end) - Number(range.start)) / 86400000)) : Number(range || 30);
+  const today = custom ? String(range.dateTo) : toDateString(now);
+  const start = custom ? Number(range.start) : dateToTimestamp(today) - (days - 1) * 86400000;
+  const end = custom ? Number(range.end) : dateToTimestamp(today) + 86400000;
   const indexed = await hasAnalyticsColumns();
   const columns = analyticsExpressions(indexed);
   const activeStatuses = "'RESERVED', 'ARRIVED', 'IN_SERVICE', 'COMPLETED'";
@@ -101,7 +103,7 @@ async function databaseSummary(days = 30, now = Date.now()) {
     ORDER BY count DESC, id ASC
     LIMIT 8
   `, [start, end]);
-  const [orderResult, refundResult, customerResult, paidTrendResult, completedTrendResult, worksResult, servicesResult, techniciansResult] = await Promise.all([
+  const [orderResult, refundResult, customerResult, paidTrendResult, completedTrendResult, worksResult, servicesResult, techniciansResult, categoriesResult, statusResult, slotResult] = await Promise.all([
     db.query(`
       SELECT
         COALESCE(SUM(CASE WHEN payment_status = 'SUCCESS' AND ${columns.paidAt} >= ? AND ${columns.paidAt} < ? THEN ${columns.paidFen} ELSE 0 END), 0) AS paid_fen,
@@ -110,6 +112,8 @@ async function databaseSummary(days = 30, now = Date.now()) {
         SUM(CASE WHEN ${columns.completedAt} >= ? AND ${columns.completedAt} < ? THEN 1 ELSE 0 END) AS completed_count,
         COUNT(DISTINCT CASE WHEN ${columns.completedAt} >= ? AND ${columns.completedAt} < ? THEN user_id END) AS customer_count,
         SUM(CASE WHEN status = 'CANCELLED_NO_SHOW' AND updated_at >= ? AND updated_at < ? THEN 1 ELSE 0 END) AS no_show_count,
+        SUM(CASE WHEN status IN ('CANCELLED', 'CANCELLED_BY_USER', 'CANCELLED_NO_SHOW', 'CANCEL_PENDING_REFUND', 'REFUNDED') AND updated_at >= ? AND updated_at < ? THEN 1 ELSE 0 END) AS cancelled_count,
+        SUM(CASE WHEN CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.arrivedAt')), '0') AS SIGNED) >= ? AND CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.arrivedAt')), '0') AS SIGNED) < ? THEN 1 ELSE 0 END) AS arrived_count,
         SUM(CASE WHEN payment_status = 'SUCCESS' AND ${columns.paidAt} >= ? AND ${columns.paidAt} < ? THEN 1 ELSE 0 END) AS paid_count
       FROM orders
       WHERE ${clean}
@@ -117,8 +121,8 @@ async function databaseSummary(days = 30, now = Date.now()) {
           OR (${columns.paidAt} >= ? AND ${columns.paidAt} < ?)
           OR (${columns.completedAt} >= ? AND ${columns.completedAt} < ?)
           OR (updated_at >= ? AND updated_at < ?))
-    `, [start,end,start,end,start,end,start,end,start,end,start,end,start,end,start,end,start,end,start,end,start,end]),
-    db.query(`SELECT COALESCE(SUM(${columns.refundAmountFen}), 0) AS refund_fen FROM refunds WHERE status = 'SUCCESS' AND ${columns.refundSuccessAt} >= ? AND ${columns.refundSuccessAt} < ? AND ${clean}`, [start,end]),
+    `, [start,end,start,end,start,end,start,end,start,end,start,end,start,end,start,end,start,end,start,end,start,end,start,end,start,end]),
+    db.query(`SELECT COALESCE(SUM(${columns.refundAmountFen}), 0) AS refund_fen, COUNT(*) AS refund_count FROM refunds WHERE status = 'SUCCESS' AND ${columns.refundSuccessAt} >= ? AND ${columns.refundSuccessAt} < ? AND ${clean}`, [start,end]),
     db.query(`
       SELECT COUNT(*) AS customer_count, COALESCE(SUM(first_visit >= ?), 0) AS new_customer_count
       FROM (
@@ -134,7 +138,10 @@ async function databaseSummary(days = 30, now = Date.now()) {
     db.query(`SELECT DATE_FORMAT(FROM_UNIXTIME(${columns.completedAt} / 1000), '%Y-%m-%d') AS date, COUNT(*) AS completed_count, COUNT(DISTINCT user_id) AS customer_count FROM orders WHERE ${clean} AND ${columns.completedAt} >= ? AND ${columns.completedAt} < ? GROUP BY date`, [start,end]),
     dimensionQuery(columns.workId, "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.workSnapshot.title')), '款式')"),
     dimensionQuery("NULLIF(JSON_UNQUOTE(JSON_EXTRACT(data, '$.serviceId')), '')", "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.serviceSnapshot.name')), JSON_UNQUOTE(JSON_EXTRACT(data, '$.serviceName')), '项目')"),
-    dimensionQuery('technician_id', "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.technicianSnapshot.name')), JSON_UNQUOTE(JSON_EXTRACT(data, '$.technicianName')), '技师')")
+    dimensionQuery('technician_id', "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.technicianSnapshot.name')), JSON_UNQUOTE(JSON_EXTRACT(data, '$.technicianName')), '技师')"),
+    dimensionQuery("NULLIF(JSON_UNQUOTE(JSON_EXTRACT(data, '$.serviceSnapshot.categoryId')), '')", "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.serviceSnapshot.categoryName')), '大项')"),
+    db.query(`SELECT status AS id, COUNT(*) AS count, COALESCE(SUM(${columns.paidFen}), 0) AS paid_fen FROM orders WHERE ${clean} AND created_at >= ? AND created_at < ? GROUP BY status ORDER BY count DESC`, [start,end]),
+    db.query(`SELECT WEEKDAY(FROM_UNIXTIME(start_at / 1000)) + 1 AS weekday, HOUR(FROM_UNIXTIME(start_at / 1000)) AS hour, COUNT(*) AS count FROM orders WHERE ${clean} AND start_at >= ? AND start_at < ? AND status IN (${activeStatuses}) GROUP BY weekday, hour ORDER BY weekday, hour`, [start,end])
   ]);
   const orderMetrics = orderResult[0][0] || {};
   const refundMetrics = refundResult[0][0] || {};
@@ -151,6 +158,9 @@ async function databaseSummary(days = 30, now = Date.now()) {
   const paidFen = number(orderMetrics.paid_fen);
   const refundFen = number(refundMetrics.refund_fen);
   const paidCount = number(orderMetrics.paid_count);
+  const completedCount = number(orderMetrics.completed_count);
+  const cancelledCount = number(orderMetrics.cancelled_count);
+  const arrivedCount = number(orderMetrics.arrived_count);
   const rank = (result) => (result[0] || []).map((row) => ({ id: String(row.id), name: String(row.name || ''), count: number(row.count), paidFen: number(row.paid_fen) }));
   return {
     date: today,
@@ -162,9 +172,14 @@ async function databaseSummary(days = 30, now = Date.now()) {
       netFen: paidFen - refundFen,
       completedFen: number(orderMetrics.completed_fen),
       orderCount: number(orderMetrics.order_count),
-      completedCount: number(orderMetrics.completed_count),
+      completedCount,
       customerCount,
       noShowCount: number(orderMetrics.no_show_count),
+      cancelledCount,
+      arrivedCount,
+      refundCount: number(refundMetrics.refund_count),
+      completionRate: paidCount ? Math.round(completedCount / paidCount * 100) : 0,
+      noShowRate: paidCount ? Math.round(number(orderMetrics.no_show_count) / paidCount * 100) : 0,
       newCustomerCount,
       returningCustomerCount: Math.max(0, customerCount - newCustomerCount),
       repeatRate: customerCount ? Math.round((customerCount - newCustomerCount) / customerCount * 100) : 0,
@@ -173,7 +188,10 @@ async function databaseSummary(days = 30, now = Date.now()) {
     trend,
     works: rank(worksResult),
     services: rank(servicesResult),
-    technicians: rank(techniciansResult)
+    technicians: rank(techniciansResult),
+    categories: rank(categoriesResult),
+    statuses: (statusResult[0] || []).map((row) => ({ id: String(row.id || ''), count: number(row.count), paidFen: number(row.paid_fen) })),
+    timeSlots: (slotResult[0] || []).map((row) => ({ weekday: number(row.weekday), hour: number(row.hour), count: number(row.count) }))
   };
 }
 

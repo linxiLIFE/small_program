@@ -1,5 +1,5 @@
 <view class="page-shell staff-page">
-  <view class="staff-heading"><view><text class="page-title">今日工作台</text><text class="staff-role">{{profile.roleLabel || '工作人员'}}</text></view><view class="staff-mark">✦</view></view>
+  <view class="staff-heading"><view><text class="page-title">今日工作台</text><text class="staff-role">{{profile.roleLabel || '工作人员'}}</text></view><button class="scan-button" bindtap="scanCheckIn"><text class="scan-corners">⌗</text><text>扫码核销</text></button></view>
   <scroll-view class="staff-tabs" scroll-x="true" show-scrollbar="false"><view class="staff-tabs-inner"><view wx:for="{{tabs}}" wx:key="id" class="staff-tab {{activeStatus === item.id ? 'active' : ''}}" data-status="{{item.id}}" bindtap="selectTab">{{item.label}}</view></view></scroll-view>
   <view wx:if="{{loading}}" class="staff-loading"><view wx:for="{{skeletons}}" wx:key="*this" class="skeleton staff-skeleton"></view></view>
   <view wx:elif="{{orders.length}}" class="staff-order-list">
@@ -11,5 +11,6 @@
       <view wx:elif="{{item.status === 'IN_SERVICE'}}" class="staff-actions"><button class="staff-button complete" data-id="{{item.id}}" data-action="complete" bindtap="transition">完成服务</button></view>
     </view>
   </view>
-  <empty-state wx:else title="当前没有待处理订单"></empty-state>
+  <button wx:if="{{orders.length && nextCursor !== null}}" class="staff-load-more" loading="{{loadingMore}}" disabled="{{loadingMore}}" bindtap="loadMore">加载更多</button>
+  <empty-state wx:if="{{!loading && !orders.length}}" title="当前没有待处理订单"></empty-state>
 </view>
