@@ -79,6 +79,7 @@ async function route(action, payload) {
     case 'adminUploadImage': return require('./lib/media').uploadImage(payload || {});
     case 'adminSaveCategory': return require('./lib/catalog-admin').saveCategory(payload || {});
     case 'adminSaveTechnician': return require('./lib/catalog-admin').saveTechnician(payload || {});
+    case 'adminDeleteTechnician': return require('./lib/catalog-admin').deleteTechnician(payload && payload.technicianId);
     case 'staffSession': return require('./lib/team').session();
     case 'adminCreateTechnicianLogin': return require('./lib/team').createTechnicianLogin(payload || {});
     case 'adminPreviewTechnicianSchedule': return admin.previewTechnicianSchedule(payload || {});

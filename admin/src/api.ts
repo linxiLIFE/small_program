@@ -19,8 +19,8 @@ const demoServices: Service[] = [
 ];
 
 let demoOrders: AdminOrder[] = [
-  { id: 'demo-order-001', status: 'RESERVED', statusLabel: '待到店', serviceName: '奶油法式美甲', technicianName: '林老师', customerName: '演示顾客', phone: '13800138000', phoneMasked: '138****8000', startAtLabel: '9月9日 11:00', startAt:Date.now()+86400000,endAt:Date.now()+91800000,createdAt:Date.now()-86400000,paidAt:Date.now()-85000000,paidFen: 29900, remainingRefundableFen:29900, refundStatus: '' },
-  { id: 'demo-order-002', status: 'COMPLETED', statusLabel: '已完成', serviceName: '自然野生眉设计', technicianName: '周老师', customerName: '另一位顾客', phone: '13900000000', phoneMasked: '139****0000', startAtLabel: '9月7日 15:00', startAt:Date.now()-86400000,endAt:Date.now()-82800000,createdAt:Date.now()-172800000,paidAt:Date.now()-172000000,paidFen: 19900, remainingRefundableFen:19900, refundStatus: '' }
+  { id: 'demo-order-001', status: 'RESERVED', statusLabel: '待到店', serviceName: '奶油法式美甲', technicianName: '林老师', technicianId:'tech-lin', customerName: '演示顾客', phone: '13800138000', phoneMasked: '138****8000', startAtLabel: '9月9日 11:00', startAt:Date.now()+86400000,endAt:Date.now()+91800000,createdAt:Date.now()-86400000,paidAt:Date.now()-85000000,paidFen: 29900, remainingRefundableFen:29900, refundStatus: '' },
+  { id: 'demo-order-002', status: 'COMPLETED', statusLabel: '已完成', serviceName: '自然野生眉设计', technicianName: '周老师', technicianId:'tech-zhou', customerName: '另一位顾客', phone: '13900000000', phoneMasked: '139****0000', startAtLabel: '9月7日 15:00', startAt:Date.now()-86400000,endAt:Date.now()-82800000,createdAt:Date.now()-172800000,paidAt:Date.now()-172000000,paidFen: 19900, remainingRefundableFen:19900, refundStatus: '' }
 ];
 
 const demoSettings: Settings = {
@@ -93,6 +93,14 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
     return { orders:rows, canRefund:true, page:1, limit:30, total:rows.length, pages:1 } as T;
   }
   if (action === 'redeemCheckInCode') return { order:{...demoOrders[0],status:'ARRIVED',statusLabel:'已到店'},duplicate:false } as T;
+  if (action === 'adminDeleteTechnician') {
+    const id = String(payload.technicianId || '');
+    if (demoOrders.some((item) => item.technicianId === id)) throw new Error('该技师已有预约订单，不能删除，请保留该技师或先处理订单');
+    const index = demoTechnicians.findIndex((item) => item.id === id);
+    if (index < 0) throw new Error('技师不存在');
+    demoTechnicians.splice(index, 1);
+    return { id, deleted: true } as T;
+  }
   if (action === 'staffSession') return {role:'OWNER',name:'店主'} as T;
   if (action === 'adminCatalog') return { categories: [{id:'nail',name:'美甲',enabled:true,icon:'✦',color:'#f1ded8',sort:0},{id:'brow',name:'美眉',enabled:true,icon:'⌁',color:'#eee6d9',sort:1}], services: demoServices, works: demoWorks, technicians: demoTechnicians } as T;
   if (action === 'adminSchedule') return demoSchedule(String(payload.date || today())) as T;
@@ -153,14 +161,23 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
   throw new Error(`演示模式不支持 ${action}`);
 }
 
+type RedeemCheckInResponse = AdminOrder | { order: AdminOrder; duplicate?: boolean };
+
+function normalizeCheckInResult(result: RedeemCheckInResponse): { order: AdminOrder; duplicate: boolean } {
+  if (!result || typeof result !== 'object') throw new Error('核销完成但未返回订单信息');
+  if ('order' in result && result.order) return { order: result.order, duplicate: result.duplicate === true };
+  return { order: result as AdminOrder, duplicate: false };
+}
+
 export const adminApi = {
   summary: (range: number | {dateFrom:string;dateTo:string} = 30) => request<AnalyticsResponse>('adminSummary',typeof range==='number'?{days:range}:range),
   orders: (query: AdminOrderQuery | string = {}) => request<AdminOrderPage>('adminListOrders', typeof query==='string'?{status:query}:query as Record<string,unknown>),
-  redeemCheckInCode: (code:string) => request<{order:AdminOrder;duplicate:boolean}>('redeemCheckInCode',{code}),
+  redeemCheckInCode: async (code:string) => normalizeCheckInResult(await request<RedeemCheckInResponse>('redeemCheckInCode',{code})),
   session: () => request<SessionInfo>('staffSession'),
   uploadImage: (base64:string) => request<{fileID:string;url:string}>('adminUploadImage',{base64}),
   saveCategory: (category:Category) => request<Category>('adminSaveCategory',category as unknown as Record<string,unknown>),
   saveTechnician: (technician:Technician) => request<Technician>('adminSaveTechnician',technician as unknown as Record<string,unknown>),
+  deleteTechnician: (technicianId:string) => request<{id:string;deleted:boolean}>('adminDeleteTechnician',{technicianId}),
   createTechnicianLogin: (technicianId:string,username:string,password:string) => request<{username:string}>('adminCreateTechnicianLogin',{technicianId,username,password}),
   previewTechnicianSchedule: (technicianId:string,date:string) => request<MySchedule>('adminPreviewTechnicianSchedule',{technicianId,date}),
   mySchedule: (date:string) => request<MySchedule>('mySchedule',{date}),

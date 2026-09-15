@@ -31,8 +31,12 @@ assert.match(read('cloudfunctions/api/lib/catalog.js'), /function loadCatalog/);
 assert.match(read('cloudfunctions/api/index.js'), /listServiceStyles/);
 assert.match(read('cloudfunctions/api/index.js'), /getBookingContext/);
 
-assert.match(read('pages/index/index.wxml'), /mode="aspectFill"/);
-assert.match(read('pages/index/index.wxml'), /lazy-load/);
+const homePage = read('pages/index/index.wxml');
+assert.match(homePage, /mode="aspectFill"/);
+assert.match(homePage, /lazy-load/);
+assert.doesNotMatch(homePage, /notification-prompt|开启微信预约提醒|enableNotifications/);
+assert.doesNotMatch(read('pages/index/index.js'), /requestSubscriptionEvents|loadNotificationPrompt/);
+assert.match(read('pages/booking/index.js'), /requestSubscriptionEvents\(this\.bookingSettings/);
 assert.match(read('components/work-card/work-card.wxml'), /webp/);
 assert.match(read('admin/src/components/HomeManager.vue'), /crop-ratio="2"/);
 assert.match(read('admin/src/components/ImageUploader.vue'), /crop-banner/);

@@ -452,6 +452,10 @@ async function createOrder(payload) {
       assert(existingIdem.requestHash === requestHash, 'IDEMPOTENCY_CONFLICT', '预约内容已变化，请重新提交', 409);
       return { orderId: existingIdem.orderId, replay: true };
     }
+    // Serialize technician deletion with order creation. The initial quote
+    // validation can precede an administrator's archive operation.
+    const currentTechnician = await getOptional(COLLECTIONS.technicians, validation.technician.id, transaction);
+    assert(currentTechnician && currentTechnician.enabled !== false && !currentTechnician.archived, 'TECHNICIAN_NOT_FOUND', '技师不存在或已停用', 404);
     await getOptional(COLLECTIONS.users, context.openid, transaction);
     const scheduleRevision = Number(validation.settings.scheduleRevision || 1);
     await transaction.insertIfAbsent(COLLECTIONS.scheduleTemplates, 'active', {

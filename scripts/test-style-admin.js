@@ -40,6 +40,10 @@ function load(name){if(cache[name])return cache[name];const scope={module:{expor
  await assert.rejects(catalog.saveTechnician({name:'无项目',skills:[],enabled:true}),/INVALID_SKILLS/);
  const tech=await catalog.saveTechnician({name:'新技师',skills:[service.id],enabled:true});assert(tech.id);
  const multiTech=await catalog.saveTechnician({name:'多能技师',categoryIds:['nail','brow'],enabled:true});assert.deepEqual(multiTech.categoryIds,['nail','brow']);
+ const removable=await catalog.saveTechnician({name:'待删除技师',categoryIds:['nail'],enabled:true});
+ assert.deepEqual(await catalog.deleteTechnician(removable.id),{id:removable.id,deleted:true});assert.equal(tables.technicians[removable.id].archived,true);assert.equal(tables.technicians[removable.id].enabled,false);
+ const booked=await catalog.saveTechnician({name:'已有预约技师',categoryIds:['nail'],enabled:true});tables.orders.booked={id:'booked',technicianId:booked.id,status:'CANCELLED_BY_USER'};
+ await assert.rejects(catalog.deleteTechnician(booked.id),/TECHNICIAN_HAS_ORDERS/);assert.equal(tables.technicians[booked.id].archived,undefined);
  await catalog.saveFeaturedWorks({orderedIds:[]});
  await catalog.saveWork({...work,published:false});assert.equal((await load('catalog').getHome(constants.DEFAULT_SETTINGS)).works.length,0);
  actor={role:'TECHNICIAN',uid:'tech-user',technicianId:'tech'};

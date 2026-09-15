@@ -1,14 +1,5 @@
 <view class="page-shell home-page">
   <view class="home-header"><text class="store-name">{{store.storeName || '四个小姐姐的店'}}</text><button class="contact-button" bindtap="makePhoneCall">联系门店</button></view>
-  <view wx:if="{{notificationPrompt.visible}}" class="notification-prompt card">
-    <view class="notification-prompt-orb orb-one"></view><view class="notification-prompt-orb orb-two"></view>
-    <view class="notification-prompt-head">
-      <view class="notification-bell"><view class="notification-bell-body"></view><view class="notification-bell-clapper"></view></view>
-      <view class="notification-prompt-copy"><text class="notification-prompt-title">开启微信预约提醒</text><text class="notification-prompt-subtitle">预约成功、到店时间和退款结果，及时告诉你</text></view>
-      <button class="notification-prompt-close" catchtap="hideNotificationPrompt">×</button>
-    </view>
-    <view class="notification-prompt-foot"><view class="notification-prompt-note"><view class="notification-prompt-dot"></view><text>只在订单相关时刻通知</text></view><button class="notification-prompt-button" loading="{{notificationPrompt.loading}}" disabled="{{notificationPrompt.loading}}" bindtap="enableNotifications">开启提醒</button></view>
-  </view>
   <empty-state wx:if="{{error}}" title="{{error}}" button-text="重试" bindaction="loadHome"/>
   <swiper wx:if="{{banners.length}}" class="home-banner" indicator-dots="{{banners.length > 1}}" autoplay="{{banners.length > 1}}" circular interval="4500" indicator-color="rgba(255,255,255,.5)" indicator-active-color="#fff"><swiper-item wx:for="{{banners}}" wx:key="id"><image src="{{item.imageUrl}}" mode="aspectFill" lazy-load="{{item.lazy}}" webp="{{true}}" data-index="{{index}}" bindtap="previewBanner"/></swiper-item></swiper>
   <view class="location-card card" bindtap="openLocation"><text class="location-symbol">⌖</text><view><text class="location-title">门店位置</text><text class="location-address">{{store.address || '地址待设置'}}</text></view><text class="location-arrow">›</text></view>

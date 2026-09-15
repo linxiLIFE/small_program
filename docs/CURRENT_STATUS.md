@@ -6,11 +6,13 @@
 
 - 根据公众平台模板详情配置并发布 settings v19：预约成功 `thing1 / date2 / thing19`，到店提醒 `thing2 / time1 / thing7`，核销成功 `thing1 / time5`，退款成功 `thing1 / amount6 / thing3`。核销模板不再发送旧技师字段，退款模板不再发送旧状态字段；退款成功通知覆盖用户取消、后台退款和未到店退款成功回调。
 - `api`、`jobs`、`admin-api`、`payment-callback` 已重新部署；线上 `api/getSettings` 无交易冒烟返回 `version: 19`，四组模板 ID 和字段与公众平台详情一致。管理后台已用 `--safe --verify` 发布。
-- 小程序首页增加首屏订阅提醒卡片，但微信授权弹窗仍必须由用户点击触发；本轮未上传小程序体验版，真机授权、预约/退款/核销实际送达仍待测试订单验收。
+- 小程序首页不再展示首屏订阅提醒卡片，订阅授权保留在预约提交/付款流程；本轮未上传小程序体验版，真机授权、预约/退款/核销实际送达仍待测试订单验收。
 
 ### 本轮验证
 
 - `npm test` 全通过（订阅模板数据、日期/时间类型和退款对账回归均通过）；管理端 `vue-tsc` / Vite 构建、共享云函数同步、JavaScript 语法和 `git diff --check` 通过。
+- 本次按改动范围重新部署 `api`、`admin-api`，未部署 `seed`；线上函数列表反查两者均为 `Deployment completed`，两个函数的 `getSettings` 无数据写入冒烟均返回 `InvokeResult: 0`。
+- 管理后台已用 `tcb hosting deploy admin/dist cloud-admin --safe --verify --json` 发布，7 个文件上传成功并通过远端校验，备份位于 `.cloudbase-backup/1789467597088/`；线上入口引用的 JS/CSS 与本地产物哈希一致。
 
 ## 2026-09-15 自动取消订单隐藏与历史全退款订单对账（线上已修复）
 

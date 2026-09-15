@@ -112,6 +112,48 @@ async function saveTechnician(payload = {}) {
   const record = await persist(COLLECTIONS.technicians, technicianId, { name: nameOf(payload.name, '技师姓名'), title: String(payload.title || '').slice(0,80), bio: String(payload.bio || '').slice(0,500), avatarUrl: imageOf(payload,'avatarUrl',true), categoryIds, skills: [], enabled: payload.enabled !== false, ...sortable(payload) }, account);
   return publicTechnician(record);
 }
+
+async function deleteTechnician(technicianId) {
+  const { account } = await requireRole(['OWNER']);
+  const id = String(technicianId || '').trim();
+  assert(/^[a-zA-Z0-9_-]{1,100}$/.test(id), 'INVALID_ID', '技师编号不正确');
+  await db.runTransaction(async (transaction) => {
+    const existing = await getOptional(COLLECTIONS.technicians, id, transaction);
+    assert(existing && !existing.archived, 'TECHNICIAN_NOT_FOUND', '技师不存在', 404);
+    const appointments = await find(COLLECTIONS.orders, { technicianId: id }, { limit: 1 }, transaction);
+    assert(!appointments.length, 'TECHNICIAN_HAS_ORDERS', '该技师已有预约订单，不能删除，请保留该技师或先处理订单', 409);
+    const now = Date.now();
+    const next = {
+      ...existing,
+      _id: existing._id || id,
+      id: existing.id || id,
+      enabled: false,
+      archived: true,
+      archivedAt: now,
+      updatedAt: now,
+      version: Number(existing.version || 0) + 1
+    };
+    await transaction.collection(COLLECTIONS.technicians).doc(id).set({ data: next });
+    const staffAccounts = await find(COLLECTIONS.staff, { technicianId: id, active: true }, { limit: 200 }, transaction);
+    for (const staff of staffAccounts) {
+      const staffId = staff.id || staff._id;
+      await transaction.collection(COLLECTIONS.staff).doc(staffId).set({ data: { ...staff, active: false, disabledAt: now, updatedAt: now } });
+    }
+    const auditId = `audit-${crypto.randomUUID()}`;
+    await transaction.collection(COLLECTIONS.auditLogs).doc(auditId).set({ data: {
+      id: auditId,
+      operatorId: account.uid || account.openid,
+      operatorRole: account.role,
+      action: 'ARCHIVE_TECHNICIAN',
+      objectType: COLLECTIONS.technicians,
+      objectId: id,
+      summary: { disabledLoginCount: staffAccounts.length },
+      createdAt: now
+    } });
+  });
+  return { id, deleted: true };
+}
+
 async function listCatalog() {
   await requireRole(['OWNER','STAFF']);
   const options = { orderBy: { field: 'sort', direction: 'asc' } };
@@ -157,4 +199,4 @@ async function listCatalog() {
     })
   };
 }
-module.exports = { saveCategory, saveService, saveWork, saveFeaturedWorks, saveTechnician, listCatalog };
+module.exports = { saveCategory, saveService, saveWork, saveFeaturedWorks, saveTechnician, deleteTechnician, listCatalog };

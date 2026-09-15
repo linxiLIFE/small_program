@@ -57,7 +57,9 @@ async function redeemCheckInCode(value) {
   const order = await getOptional(COLLECTIONS.orders, claims.orderId);
   assert(order && order.checkInNonce === claims.nonce, 'CHECKIN_CODE_INVALID', '核销码与订单不匹配', 409);
   if (account.role === 'TECHNICIAN') assert(order.technicianId === account.technicianId, 'FORBIDDEN', '技师只能核销分配给自己的预约', 403);
-  return require('./booking').transitionStaff(order.id, 'checkIn');
+  const duplicate = order.status === ORDER_STATUS.ARRIVED;
+  const updated = await require('./booking').transitionStaff(order.id, 'checkIn');
+  return { order: updated, duplicate };
 }
 
 module.exports = { getCheckInCode, redeemCheckInCode, encodeToken, decodeToken };

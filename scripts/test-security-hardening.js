@@ -23,6 +23,13 @@ assert(adminServer.includes("SELECT order_id, COALESCE(SUM(amount_fen), 0) AS re
 const scanner = read('admin/src/components/CheckInScanner.vue');
 assert(scanner.includes("import jsQR from 'jsqr'"));
 assert(scanner.includes('capture="environment"'));
+const checkin = read('cloudfunctions/api/lib/checkin.js');
+assert(checkin.includes('return { order: updated, duplicate }'));
+assert(adminClient.includes('normalizeCheckInResult'));
+assert(adminClient.includes("'adminDeleteTechnician'"));
+const catalogAdmin = read('cloudfunctions/api/lib/catalog-admin.js');
+assert(catalogAdmin.includes('TECHNICIAN_HAS_ORDERS'));
+assert(catalogAdmin.includes('ARCHIVE_TECHNICIAN'));
 
 const invitation = read('cloudfunctions/api/lib/invitation.js');
 assert(invitation.includes('INVITE_NEW_USER_ONLY'));
