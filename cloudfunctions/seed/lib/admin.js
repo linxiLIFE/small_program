@@ -9,6 +9,7 @@ const { requestRefund } = require('./payment-service');
 const wechat = require('./wechat-pay');
 const { dateToTimestamp, formatParts, toDateString, weekday } = require('./time');
 const { integer } = require('./money');
+const { decryptPhone } = require('./contact-crypto');
 
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
@@ -151,9 +152,41 @@ async function summary(payload = {}) {
   return require('./analytics').databaseSummary(days);
 }
 
+function rowData(row) {
+  if (!row) return {};
+  if (row.data && typeof row.data === 'object') return row.data;
+  try { return JSON.parse(row.data || '{}'); } catch (error) { return {}; }
+}
+
+function readablePhone(user) {
+  if (!user || !user.phoneCipher) return '';
+  try { return decryptPhone(user.phoneCipher); } catch (error) { return ''; }
+}
+
+async function phoneUserIds(query) {
+  const digits = String(query || '').replace(/\D/g, '');
+  if (digits.length < 5) return [];
+  const [rows] = await db.query("SELECT id, data FROM users WHERE JSON_UNQUOTE(JSON_EXTRACT(data, '$.phoneCipher')) IS NOT NULL");
+  return (rows || []).filter((row) => readablePhone(rowData(row)).includes(digits)).map((row) => String(row.id));
+}
+
+async function ordersWithContact(records) {
+  const ids = [...new Set(records.map((record) => String(record.userId || '')).filter(Boolean))];
+  if (!ids.length) return records.map(publicOrder);
+  const [rows] = await db.query(`SELECT id, data FROM users WHERE id IN (${ids.map(() => '?').join(', ')})`, ids);
+  const users = new Map((rows || []).map((row) => [String(row.id), rowData(row)]));
+  return records.map((record) => {
+    const order = publicOrder(record);
+    const phone = readablePhone(users.get(String(record.userId || '')));
+    return { ...order, phone };
+  });
+}
+
 async function listOrdersForAdmin(payload = {}) {
   const { account } = await requireRole(['OWNER', 'STAFF']);
-  const clauses = ["COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.deletedAt')), '') = ''"];
+  const clauses = [
+    "NOT (status IN ('CANCELLED', 'CANCELLED_BY_USER') AND COALESCE(payment_status, 'NOT_STARTED') <> 'SUCCESS')"
+  ];
   const params = [];
   const equal = (sql, value) => { if (value) { clauses.push(`${sql} = ?`); params.push(String(value)); } };
   equal('status', payload.status);
@@ -167,8 +200,11 @@ async function listOrdersForAdmin(payload = {}) {
   if (dateTo) { clauses.push('start_at < ?'); params.push(dateToTimestamp(dateTo) + 86400000); }
   const query = String(payload.query || '').trim().slice(0, 50);
   if (query) {
-    clauses.push("(id LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(data, '$.customerSnapshot.nickname')) LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(data, '$.customerSnapshot.phoneMasked')) LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(data, '$.workSnapshot.title')) LIKE ?)");
+    const matchedUserIds = await phoneUserIds(query);
+    const userClause = matchedUserIds.length ? ` OR user_id IN (${matchedUserIds.map(() => '?').join(', ')})` : '';
+    clauses.push(`(id LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(data, '$.customerSnapshot.nickname')) LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(data, '$.customerSnapshot.phoneMasked')) LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(data, '$.workSnapshot.title')) LIKE ?${userClause})`);
     params.push(...Array(4).fill(`%${query}%`));
+    params.push(...matchedUserIds);
   }
   const requestedPage = Number(payload.page || 1);
   const requestedLimit = Number(payload.limit || 30);
@@ -184,7 +220,7 @@ async function listOrdersForAdmin(payload = {}) {
   ]);
   const records = (rowsResult[0] || []).map((row) => typeof row.data === 'string' ? JSON.parse(row.data) : row.data);
   const total = Number(countResult[0] && countResult[0][0] && countResult[0][0].total || 0);
-  return { orders: records.map(publicOrder), canRefund: account.role === 'OWNER', page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) };
+  return { orders: await ordersWithContact(records), canRefund: account.role === 'OWNER', page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) };
 }
 
 async function listAllTechnicians() {
@@ -242,7 +278,7 @@ async function saveScheduleDay(payload = {}) {
   const shifts = normalizeShifts(payload.shifts || []);
   assert(leave || shifts.length > 0, 'INVALID_SCHEDULE', '工作日至少需要一个班次，休息日请勾选休息');
   const expectedVersion = payload.version === undefined || payload.version === null || payload.version === '' ? null : Number(payload.version);
-  assert(expectedVersion === null || Number.isInteger(expectedVersion), 'INVALID_SCHEDULE', '排班版本号不正确');
+  assert(expectedVersion === null || Number.isInteger(expectedVersion), 'INVALID_SCHEDULE', '排班数据已过期，请刷新后重试');
   const id = `${technicianId}_${date}`;
   let saved;
   await db.runTransaction(async (transaction) => {
@@ -300,7 +336,7 @@ async function saveWeeklySchedule(payload = {}) {
   const versions = await find(COLLECTIONS.settings, { published: true }, { orderBy: { field: 'version', direction: 'desc' }, limit: 1 });
   const snapshot = mergeSettings(DEFAULT_SETTINGS, versions[0]);
   const expectedVersion = payload.version === undefined ? Number(snapshot.version || 1) : Number(payload.version);
-  assert(Number.isSafeInteger(expectedVersion) && expectedVersion > 0, 'INVALID_SCHEDULE', '排班版本号不正确');
+  assert(Number.isSafeInteger(expectedVersion) && expectedVersion > 0, 'INVALID_SCHEDULE', '排班数据已过期，请刷新后重试');
   assert(expectedVersion === Number(snapshot.version || 1), 'SETTINGS_CONFLICT', '门店设置已更新，请刷新后重新保存排班', 409);
   // Do the potentially longer validation before opening the write transaction.
   await assertWeeklyScheduleDoesNotBreakOrders(db, weekly);
@@ -356,11 +392,12 @@ async function refundOrder(payload) {
   const { account } = await requireRole(['OWNER']);
   assert(payload && payload.orderId, 'INVALID_REFUND', '缺少订单 ID');
   const reason = payload.reason || '管理员发起退款';
-  const prepared = await beginAdminRefund(payload.orderId, reason);
+  const amountFen = integer(payload.amountFen, '退款金额');
+  const prepared = await beginAdminRefund(payload.orderId, reason, amountFen);
   const result = prepared.refundRequired
     ? await requestRefund(payload.orderId, reason, { allowClosedRetry: true, manualRetry: true })
     : { id: prepared.order.refundId || '', status: prepared.order.refundStatus };
-  await audit({ ...account, openid: account.openid }, 'REQUEST_REFUND', 'orders', payload.orderId, { refundId: result.id || result._id, status: result.status }, payload.reason);
+  await audit({ ...account, openid: account.openid }, 'REQUEST_REFUND', 'orders', payload.orderId, { refundId: result.id || result._id, status: result.status, amountFen }, payload.reason);
   return result;
 }
 
@@ -382,7 +419,7 @@ async function personalScheduleData(technicianId, payload = {}) {
   const categoryIds = Array.isArray(technician.categoryIds) && technician.categoryIds.length
     ? technician.categoryIds
     : [...new Set((technician.skills || []).map((skill) => services.find((service) => (service.id || service._id) === skill)?.categoryId).filter(Boolean))];
-  return { technician: { ...publicTechnician(technician), categoryIds }, days, plan: publicDayPlan(record,source,orders), orders: orders.filter(activeOccupancy).map(publicOrder) };
+  return { technician: { ...publicTechnician(technician), categoryIds }, days, plan: publicDayPlan(record,source,orders), orders: await ordersWithContact(orders.filter(activeOccupancy)) };
 }
 
 async function mySchedule(payload = {}) {
@@ -394,5 +431,5 @@ async function previewTechnicianSchedule(payload = {}) {
   return personalScheduleData(payload.technicianId,payload);
 }
 
-const { saveService, saveWork, listCatalog } = require('./catalog-admin');
-module.exports = { previewTechnicianSchedule, mySchedule, normalizeShifts, planCoversInterval, summary, listOrdersForAdmin, schedule, saveScheduleDay, saveWeeklySchedule, saveService, saveWork, saveSettings, getPaymentConfigStatus, refundOrder, listCatalog };
+const { saveService, saveWork, saveFeaturedWorks, listCatalog } = require('./catalog-admin');
+module.exports = { previewTechnicianSchedule, mySchedule, normalizeShifts, planCoversInterval, summary, listOrdersForAdmin, schedule, saveScheduleDay, saveWeeklySchedule, saveService, saveWork, saveFeaturedWorks, saveSettings, getPaymentConfigStatus, refundOrder, listCatalog };

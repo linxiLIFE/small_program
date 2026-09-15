@@ -44,6 +44,8 @@ async function bindInviteCode(payload = {}) {
     const inviter = locked[inviterId];
     assert(invitee && inviter && inviter.inviteCode === code, 'INVITE_CODE_NOT_FOUND', '邀请码不存在');
     assert(!invitee.invitedBy, 'INVITE_ALREADY_BOUND', '你已经绑定过邀请码', 409);
+    const previousOrders = await find(COLLECTIONS.orders, { userId: context.openid }, { limit: 1 }, transaction);
+    assert(!previousOrders.length, 'INVITE_NEW_USER_ONLY', '邀请码仅限还没有下过单的新用户绑定', 409);
     const now = Date.now();
     for (const id of ids) await transaction.insertIfAbsent(COLLECTIONS.pointsAccounts, id, emptyAccount(id, now));
     const accounts = {};

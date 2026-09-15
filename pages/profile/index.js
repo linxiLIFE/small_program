@@ -18,10 +18,13 @@ function buildOrderSummary(orders) {
 }
 
 Page({
-  data: { loading: true, profile: {}, storePhone: '', settings: {}, inviteRewardPoints:10, isDemo: false, editingName: false, draftNickname: '', inviteDraft: '', bindingInvite: false, orderSummary: buildOrderSummary([]) },
+  data: { loading: true, profile: {}, storePhone: '', settings: {}, isDemo: false, editingName: false, draftNickname: '', orderSummary: buildOrderSummary([]) },
 
   onLoad(options) {
-    if (options && options.invite) this.setData({ inviteDraft: String(options.invite).toUpperCase() });
+    if (options && options.invite) {
+      const invite = encodeURIComponent(String(options.invite).toUpperCase());
+      setTimeout(() => wx.navigateTo({ url: `/pages/points/index?invite=${invite}` }), 0);
+    }
     this.loadProfile();
   },
 
@@ -42,7 +45,6 @@ Page({
         loading: false,
         profile: { ...profile, phoneLabel: profile.phoneMasked || maskPhone(profile.phone) },
         settings,
-        inviteRewardPoints:Number(settings && settings.points && settings.points.inviteRewardPoints || 10),
         storePhone: settings && settings.store ? settings.store.phone || '' : '',
         isDemo: !!getApp().globalData.isDemo,
         orderSummary: buildOrderSummary(orderResult && orderResult.orders)
@@ -67,29 +69,6 @@ Page({
     wx.navigateTo({ url: '/pages/points/index' });
   },
 
-  inputInviteCode(event) {
-    this.setData({ inviteDraft: String(event.detail.value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16) });
-  },
-
-  async bindInvite() {
-    if (this.data.bindingInvite || !this.data.inviteDraft) return;
-    this.setData({ bindingInvite: true });
-    try {
-      const result = await api.bindInviteCode(this.data.inviteDraft);
-      this.setData({ profile: { ...result.profile, phoneLabel: result.profile.phoneMasked || '' }, inviteDraft: '' });
-      wx.showModal({ title: '邀请绑定成功', content: `你和邀请人各获得 ${result.rewardPoints || 0} 积分`, showCancel: false });
-    } catch (error) {
-      wx.showToast({ title: error.message || '邀请码绑定失败', icon: 'none' });
-    } finally {
-      this.setData({ bindingInvite: false });
-    }
-  },
-
-  copyInviteCode() {
-    if (!this.data.profile.inviteCode) return;
-    wx.setClipboardData({ data: this.data.profile.inviteCode });
-  },
-
   async enableReminders() {
     try {
       const result = await api.requestSubscriptionEvents(this.data.settings, ['appointmentSuccess', 'arrivalReminder', 'noShowRefund']);
@@ -98,11 +77,6 @@ Page({
     } catch (error) {
       wx.showToast({ title: '提醒授权未完成', icon: 'none' });
     }
-  },
-
-  onShareAppMessage() {
-    const code = this.data.profile.inviteCode || '';
-    return { title: '一起预约四个小姐姐的店', path: `/pages/profile/index?invite=${encodeURIComponent(code)}` };
   },
 
   contactService() {

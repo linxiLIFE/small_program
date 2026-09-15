@@ -1,6 +1,6 @@
 const api = require('../../utils/api');
 const { ORDER_STATUS_LABELS } = require('../../utils/constants');
-const { formatMoney, formatDateTimeRange, formatCountdown, formatDuration } = require('../../utils/format');
+const { formatMoney, formatDateTime, formatDateTimeRange, formatCountdown, formatDuration } = require('../../utils/format');
 
 function getPaymentDeadline(order) {
   if (!order || order.status !== 'PENDING_PAYMENT') return 0;
@@ -27,7 +27,7 @@ function paymentProgress(order, confirming = false) {
   const paid = order.paymentStatus === 'SUCCESS' || Number(order.paidAt || 0) > 0;
   const pointsOnly = isPointsOnlyPayment(order);
   if (pointsOnly && order.refundStatus === 'SUCCESS') return { active: true, label: '积分已退回' };
-  if (order.refundStatus === 'SUCCESS') return { active: true, label: '已支付，退款已到账' };
+  if (order.refundStatus === 'SUCCESS') return { active: true, label: order.partiallyRefunded ? '已支付，部分退款已到账' : '已支付，退款已到账' };
   if (pointsOnly) return { active: true, label: '积分支付完成，无需微信支付' };
   if (paid) return { active: true, label: '支付成功' };
   if (confirming) return { active: false, label: '支付结果确认中，请勿重复支付' };
@@ -37,7 +37,7 @@ function paymentProgress(order, confirming = false) {
 }
 
 Page({
-  data: { loading: true, loadError: '', order: {}, actions: [], canCancel: false, paying: false, paymentConfirming: false, paymentChecking: false, qrVisible: false, qrLoading: false, qrDataUrl: '' },
+  data: { loading: true, loadError: '', order: {}, actions: [], canCancel: false, paying: false, paymentConfirming: false, paymentChecking: false, qrLoading: false, qrDataUrl: '' },
 
   onLoad(options) {
     this.orderId = options.orderId || '';
@@ -95,8 +95,12 @@ Page({
           timeLabel: order.startAt ? formatDateTimeRange(order.startAt, order.endAt, order.durationMinutes) : order.startAtLabel || '待确定',
           totalText: formatMoney(order.totalFen),
           discountText: formatMoney(order.discountFen || 0),
-          paidText: pointsOnly ? (order.refundStatus === 'SUCCESS' ? '已退回积分' : '积分支付') : formatMoney(order.refundStatus === 'SUCCESS' ? order.refundAmountFen : order.paidFen),
-          paidLabel: pointsOnly ? '支付方式' : order.status === 'PENDING_PAYMENT' ? '待支付金额' : order.refundStatus === 'SUCCESS' ? '退款金额' : '实付金额',
+          paidText: pointsOnly ? (order.refundStatus === 'SUCCESS' ? '已退回积分' : '积分支付') : formatMoney(order.paidFen),
+          paidLabel: pointsOnly ? '支付方式' : order.status === 'PENDING_PAYMENT' ? '待支付金额' : '实付金额',
+          refundedText: formatMoney(order.refundedFen || order.refundAmountFen || 0),
+          remainingRefundText: formatMoney(order.remainingRefundableFen || 0),
+          createdAtText: formatDateTime(order.createdAt),
+          paidAtText: order.paidAt ? formatDateTime(order.paidAt) : '',
           paymentProgressActive: progress.active,
           paymentProgressLabel: progress.label,
           serviceCompleted: Number(order.completedAt || 0) > 0,
@@ -122,6 +126,7 @@ Page({
         canCancel,
         actions: confirming ? [] : this.getActions(order)
       });
+      if (order.canShowCheckInCode && !this.data.qrDataUrl) this.loadCheckInCode(order.id);
       this.startCountdown();
     } catch (error) {
       this.stopCountdown();
@@ -152,20 +157,16 @@ Page({
     return [];
   },
 
-  async openCheckInCode() {
+  async loadCheckInCode(orderId = this.data.order.id) {
     if (this.data.qrLoading) return;
-    this.setData({ qrVisible: true, qrLoading: true });
+    this.setData({ qrLoading: true });
     try {
-      const result = await api.getCheckInCode(this.data.order.id);
+      const result = await api.getCheckInCode(orderId);
       this.setData({ qrDataUrl: result.dataUrl || '', qrLoading: false });
     } catch (error) {
-      this.setData({ qrVisible: false, qrLoading: false });
+      this.setData({ qrLoading: false });
       wx.showToast({ title: error.message || '核销码生成失败', icon: 'none' });
     }
-  },
-
-  closeCheckInCode() {
-    this.setData({ qrVisible: false });
   },
 
   async enableCheckInReminder() {

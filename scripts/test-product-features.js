@@ -7,6 +7,7 @@ process.env.CHECKIN_SIGNING_SECRET = 'checkin-test-secret-at-least-32-bytes-long
 const { decryptNotification } = require('../cloudfunctions/api/lib/wechat-pay');
 const { encodeToken, decodeToken } = require('../cloudfunctions/api/lib/checkin');
 const { noShowSettlement } = require('../cloudfunctions/api/lib/booking');
+const { cumulativeRefundedFen, remainingRefundableFen, refundInProgress } = require('../cloudfunctions/api/lib/finance-state');
 
 let passed = 0;
 function test(name, callback) { callback(); passed += 1; }
@@ -33,6 +34,14 @@ test('no-show penalty consumes points before cash', () => {
 
 test('orders below the penalty are not refunded', () => {
   assert.deepStrictEqual(noShowSettlement({ totalFen:2500, paidFen:1500, pointsConsumed:200, bookingRuleSnapshot:{noShowPenaltyFen:3000}, pointRuleSnapshot:{unit:20,discountFen:100} }), { penaltyFen:2500, penaltyPoints:200, refundPoints:0, refundCashFen:0, noRefund:true });
+});
+
+test('partial refunds keep only the unpaid remainder refundable', () => {
+  const order = { paidFen: 10000, refundedFen: 3500, refundStatus: 'SUCCESS' };
+  assert.strictEqual(cumulativeRefundedFen(order), 3500);
+  assert.strictEqual(remainingRefundableFen(order), 6500);
+  assert.strictEqual(refundInProgress(order), false);
+  assert.strictEqual(refundInProgress({ ...order, refundStatus: 'PROCESSING' }), true);
 });
 
 console.log(`product feature tests passed: ${passed} QR, refund and notification crypto invariants`);

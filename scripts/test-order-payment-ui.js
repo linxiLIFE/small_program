@@ -16,6 +16,7 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../pages/order-detail/i
     if (name === '../../utils/constants') return { ORDER_STATUS_LABELS: {} };
     if (name === '../../utils/format') return {
       formatMoney: value => `¥${(Number(value || 0) / 100).toFixed(2)}`,
+      formatDateTime: () => '下单时间',
       formatDateTimeRange: () => '预约时间',
       formatCountdown: () => '05:00',
       formatDuration: value => `${value}分钟`

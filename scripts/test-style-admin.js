@@ -31,11 +31,15 @@ function load(name){if(cache[name])return cache[name];const scope={module:{expor
  await assert.rejects(catalog.saveService({name:'超限项目',categoryId:'nail',priceFen:10000001,durationMinutes:30}),/INVALID_SERVICE/);
  const service=await catalog.saveService({name:'新项目',categoryId:'nail',categoryName:'伪造',priceFen:100,durationMinutes:30,enabled:true});assert.equal(service.categoryName,'美甲');assert.equal(service.enabled,true);
  const work=await catalog.saveWork({title:'新款',imageUrl:'https://example.com/a.jpg',serviceId:service.id,featured:true,featuredSort:2,published:true});assert(work.id);assert.equal(work.featured,true);
+ const secondWork=await catalog.saveWork({title:'另一款',imageUrl:'https://example.com/b.jpg',serviceId:service.id,featured:false,published:true});
+ await catalog.saveFeaturedWorks({orderedIds:[secondWork.id,work.id]});
+ assert.equal(tables.works[secondWork.id].featured,true);assert.equal(tables.works[secondWork.id].featuredSort,1);assert.equal(tables.works[work.id].featuredSort,2);
  const listing=await catalog.listCatalog();assert(listing.categories.some(c=>!c.enabled));assert(listing.services.every(s=>typeof s.enabled==='boolean'));assert(listing.works.some(w=>w.featured));
  await assert.rejects(catalog.saveWork({...work,imageUrl:'javascript:alert(1)'}),/INVALID_IMAGE/);
  await assert.rejects(catalog.saveTechnician({name:'无项目',skills:[],enabled:true}),/INVALID_SKILLS/);
  const tech=await catalog.saveTechnician({name:'新技师',skills:[service.id],enabled:true});assert(tech.id);
  const multiTech=await catalog.saveTechnician({name:'多能技师',categoryIds:['nail','brow'],enabled:true});assert.deepEqual(multiTech.categoryIds,['nail','brow']);
+ await catalog.saveFeaturedWorks({orderedIds:[]});
  await catalog.saveWork({...work,published:false});assert.equal((await load('catalog').getHome(constants.DEFAULT_SETTINGS)).works.length,0);
  actor={role:'TECHNICIAN',uid:'tech-user',technicianId:'tech'};
  await assert.rejects(catalog.saveCategory({name:'越权'}),/FORBIDDEN/);

@@ -91,6 +91,7 @@ async function route(action, payload) {
     case 'adminSaveScheduleDay': return admin.saveScheduleDay(payload || {});
     case 'adminSaveWeeklySchedule': return admin.saveWeeklySchedule(payload || {});
     case 'adminSaveWork': return admin.saveWork(payload || {});
+    case 'adminSaveFeaturedWorks': return admin.saveFeaturedWorks(payload || {});
     case 'adminSaveService': return admin.saveService(payload || {});
     case 'adminSaveSettings': return admin.saveSettings(payload || {});
     case 'adminPaymentStatus': return admin.getPaymentConfigStatus();

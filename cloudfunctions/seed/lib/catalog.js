@@ -46,7 +46,8 @@ function publicWork(item, { includeBookingCount = true } = {}) {
     serviceName: item.serviceName || '',
     durationMinutes: Number(item.durationMinutes || 0),
     technicianId: item.technicianId || '',
-    featured: item.featured === true
+    featured: item.featured === true,
+    featuredSort: Number(item.featuredSort || 0)
   };
   if (includeBookingCount) work.bookingCount = Number(item.bookingCount || 0);
   return work;
@@ -201,7 +202,7 @@ async function getHome(settings) {
     store: settings.store,
     banners: settings.home?.banners || [],
     categories: categorySummaries,
-    works: works.filter(item => item.featured).sort(byPopularity)
+    works: works.filter(item => item.featured).sort((left, right) => Number(left.featuredSort || 0) - Number(right.featuredSort || 0) || byPopularity(left, right))
   };
 }
 

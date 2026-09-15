@@ -1,4 +1,4 @@
-export type PageKey = 'home' | 'team' | 'my-schedule' | 'dashboard' | 'orders' | 'services' | 'technicians' | 'settings' | 'payment';
+export type PageKey = 'home' | 'team' | 'my-schedule' | 'dashboard' | 'orders' | 'services' | 'featured' | 'technicians' | 'settings';
 
 export interface MetricSummary {
   paidFen: number;
@@ -22,6 +22,7 @@ export interface AdminOrder {
   technicianName: string;
   customerName?: string;
   phoneMasked?: string;
+  phone?: string;
   startAtLabel: string;
   paidFen: number;
   refundStatus?: string;
@@ -29,9 +30,17 @@ export interface AdminOrder {
   categoryName?: string;
   date?: string;
   startAt?: number;
+  endAt?: number;
   createdAt?: number;
+  paidAt?: number;
   totalFen?: number;
   refundAmountFen?: number;
+  refundedFen?: number;
+  pendingRefundFen?: number;
+  lastRefundRequestedFen?: number;
+  remainingRefundableFen?: number;
+  refundInProgress?: boolean;
+  partiallyRefunded?: boolean;
 }
 
 export interface Service {
@@ -132,7 +141,7 @@ export interface Work { id: string; title: string; imageUrl: string; serviceId: 
 export interface MySchedule { technician:Technician; days:TechnicianDayPlan[]; plan:TechnicianDayPlan; orders:AdminOrder[]; }
 export interface SessionInfo { role:'OWNER'|'STAFF'|'TECHNICIAN'|'UNASSIGNED'; name:string; technicianId?:string; }
 
-export interface AnalyticsResponse {date:string;days:number;rangeStart:string;metrics:MetricSummary;trend:Array<{date:string;paidFen:number;completedCount:number;customerCount:number}>;works:RankingItem[];services:RankingItem[];technicians:RankingItem[];categories:RankingItem[];statuses:RankingItem[];timeSlots:Array<{weekday:number;hour:number;count:number}>;}
+export interface AnalyticsResponse {date:string;days:number;rangeStart:string;metrics:MetricSummary;trend:Array<{date:string;paidFen:number;refundFen:number;netFen:number;completedCount:number;customerCount:number}>;works:RankingItem[];services:RankingItem[];technicians:RankingItem[];categories:RankingItem[];timeSlots:Array<{weekday:number;hour:number;count:number}>;}
 export interface RankingItem {id:string;name:string;count:number;paidFen:number;}
 
 export interface AdminOrderQuery { status?:string; technicianId?:string; serviceId?:string; workId?:string; dateFrom?:string; dateTo?:string; query?:string; page?:number; limit?:number; sortBy?:'startAt'|'createdAt'|'paidFen'; sortDirection?:'asc'|'desc'; }

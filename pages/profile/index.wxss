@@ -247,20 +247,6 @@
   padding: 4rpx 24rpx;
 }
 
-.invite-card { margin-top:24rpx; padding:30rpx; background:linear-gradient(145deg,#fffaf4,#f6e7e5); }
-.invite-card-head { display:flex; align-items:center; justify-content:space-between; gap:20rpx; }
-.invite-card-head > view:first-child { display:flex; flex-direction:column; gap:8rpx; }
-.invite-title { font-size:30rpx; font-weight:650; color:#5d4643; }
-.invite-subtitle { font-size:22rpx; color:#a2817a; }
-.invite-code { padding:16rpx 22rpx; border-radius:18rpx; background:#fff; display:flex; flex-direction:column; align-items:flex-end; }
-.invite-code text:first-child { color:#a86470; font-size:28rpx; font-weight:700; letter-spacing:3rpx; }
-.invite-code text:last-child { color:#b39a92; font-size:19rpx; }
-.invite-bind { display:flex; gap:14rpx; margin-top:26rpx; }
-.invite-bind input { flex:1; height:76rpx; box-sizing:border-box; padding:0 24rpx; border-radius:20rpx; background:#fff; color:#614946; font-size:25rpx; letter-spacing:2rpx; }
-.invite-bind button,.invite-share { margin:0; height:76rpx; line-height:76rpx; border-radius:20rpx; background:#a96d76; color:#fff; font-size:24rpx; }
-.invite-bind button::after,.invite-share::after { border:0; }
-.invite-share { width:100%; margin-top:18rpx; background:#fff; color:#9c626b; border:1rpx solid rgba(169,109,118,.16); }
-.invite-bound { margin-top:24rpx; color:#8f756e; font-size:23rpx; }
 .reminder-card { display:flex; align-items:center; gap:20rpx; margin-top:24rpx; padding:26rpx 30rpx; }
 .reminder-card .menu-copy { flex:1; display:flex; flex-direction:column; gap:7rpx; }
 .reminder-card .menu-copy text:first-child { color:#5d4844; font-size:27rpx; }

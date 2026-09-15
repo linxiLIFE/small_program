@@ -53,6 +53,13 @@
 }
 
 .checkin-card { display:flex; align-items:center; gap:20rpx; padding:28rpx; margin-top:24rpx; background:linear-gradient(135deg,#fffaf4,#f6e8e6); }
+.checkin-code-card { margin-top:24rpx; padding:28rpx; background:linear-gradient(145deg,#fffaf5,#f7e9e5); }
+.checkin-code-head { display:flex; align-items:center; justify-content:space-between; color:#5e4745; font-size:28rpx; font-weight:650; }
+.checkin-code-head button { height:58rpx; margin:0; padding:0 20rpx; border:1rpx solid rgba(173,113,120,.18); border-radius:29rpx; background:#fff; color:#9c626a; font-size:21rpx; line-height:58rpx; }
+.checkin-code-head button::after { border:0; }
+.inline-qr-frame { width:380rpx; height:380rpx; margin:28rpx auto 18rpx; padding:16rpx; border-radius:28rpx; background:#fff; box-shadow:0 14rpx 42rpx rgba(98,61,61,.1); }
+.inline-qr-frame image { width:100%; height:100%; }
+.inline-qr-time { display:block; color:#765c58; font-size:24rpx; font-weight:600; text-align:center; }
 .checkin-icon { width:78rpx; height:78rpx; border-radius:24rpx; display:flex; align-items:center; justify-content:center; background:#ad7178; color:#fff; font-size:38rpx; }
 .checkin-copy { min-width:0; flex:1; display:flex; flex-direction:column; gap:8rpx; }
 .checkin-copy text { color:#9a7d76; font-size:22rpx; }
@@ -188,9 +195,12 @@
 
 .detail-card,
 .price-card,
-.timeline-card {
+.timeline-card,
+.order-info-card {
   margin-top: 20rpx;
 }
+.order-info-card { padding:28rpx 24rpx; }
+.order-number { max-width:76%; overflow-wrap:anywhere; font-family:"SFMono-Regular",Menlo,monospace; font-size:21rpx; }
 
 .detail-card-heading .section-title {
   font-size: 32rpx;

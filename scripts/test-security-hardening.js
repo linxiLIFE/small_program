@@ -7,9 +7,24 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
 const apiIndex = read('cloudfunctions/api/index.js');
 const adminClient = read('admin/src/api.ts');
+const adminApp = read('admin/src/App.vue');
 assert(!apiIndex.includes('adminBootstrapOwner'));
 assert(!apiIndex.includes('adminBootstrapStatus'));
 assert(!adminClient.includes('adminBootstrapOwner'));
+assert(adminApp.includes("id: 'featured', label: '精选管理'"));
+assert(!adminApp.includes("id: 'payment', label: '微信支付接入'"));
+
+const adminServer = read('cloudfunctions/api/lib/admin.js');
+assert(adminServer.includes("const { decryptPhone } = require('./contact-crypto')"));
+assert(adminServer.includes('user_id IN'));
+assert(adminServer.includes("status IN ('CANCELLED', 'CANCELLED_BY_USER')"));
+
+const scanner = read('admin/src/components/CheckInScanner.vue');
+assert(scanner.includes("import jsQR from 'jsqr'"));
+assert(scanner.includes('capture="environment"'));
+
+const invitation = read('cloudfunctions/api/lib/invitation.js');
+assert(invitation.includes('INVITE_NEW_USER_ONLY'));
 
 const bootstrap = read('scripts/bootstrap-owner.js');
 assert(bootstrap.includes('BOOTSTRAP_OWNER_UID'));
@@ -56,6 +71,9 @@ assert(orderDetail.includes('[0, 1000, 2000, 4000, 8000]'));
 assert(orderDetail.includes('resumePaymentConfirmation'));
 assert(orderDetail.includes('retryPaymentConfirmation'));
 assert(read('pages/order-detail/index.wxml').includes('重新确认支付结果'));
+assert(read('pages/order-detail/index.wxml').includes('订单号'));
+assert(read('pages/order-detail/index.wxml').includes('支付时间'));
+assert(read('pages/order-detail/index.wxml').includes('inline-qr-frame'));
 assert(orderDetail.includes('积分支付完成，无需微信支付'));
 assert(!read('pages/booking/index.wxml').includes("quote.totalText || '¥0.00'"));
 

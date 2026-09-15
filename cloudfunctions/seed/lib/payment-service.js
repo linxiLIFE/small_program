@@ -304,13 +304,13 @@ async function ensureDurableRefundIntent(orderId, reason, options = {}) {
       if (!options.allowClosedRetry) return { order, payment, refund: { ...existing, status: REFUND_STATUS.RETRY_REQUIRED } };
       const identity = nextRefundIdentity(orderId, existing);
       refundId = identity.id;
-      existing = { _id: refundId, id: refundId, orderId, userId: order.userId, refundNo: identity.refundNo, attempt: identity.attempt, previousRefundId: order.refundId || '', amountFen: Math.max(0, Number(order.refundAmountFen === undefined ? payment.amountFen : order.refundAmountFen)), status: REFUND_STATUS.INIT, reason, retryCount: 0, createdAt: Date.now(), updatedAt: Date.now() };
+      existing = { _id: refundId, id: refundId, orderId, userId: order.userId, refundNo: identity.refundNo, attempt: identity.attempt, previousRefundId: order.refundId || '', amountFen: Math.max(0, Number(order.requestedRefundFen === undefined ? order.refundAmountFen === undefined ? payment.amountFen : order.refundAmountFen : order.requestedRefundFen)), status: REFUND_STATUS.INIT, reason, retryCount: 0, createdAt: Date.now(), updatedAt: Date.now() };
     }
     if (existing && options.manualRetry && [REFUND_STATUS.WAITING_FUNDS, REFUND_STATUS.CONFIG_OR_DATA_ERROR].includes(existing.status)) {
       existing = { ...existing, status: REFUND_STATUS.INIT, lastManualRetryAt: Date.now(), errorCode: '', errorMessage: '', updatedAt: Date.now() };
     }
     const now = Date.now();
-    const refund = existing || { _id: refundId, id: refundId, orderId, userId: order.userId, refundNo: refundId, attempt: 1, amountFen: Math.max(0, Number(order.refundAmountFen === undefined ? payment.amountFen : order.refundAmountFen)), status: REFUND_STATUS.INIT, reason, retryCount: 0, createdAt: now, updatedAt: now };
+    const refund = existing || { _id: refundId, id: refundId, orderId, userId: order.userId, refundNo: refundId, attempt: 1, amountFen: Math.max(0, Number(order.requestedRefundFen === undefined ? order.refundAmountFen === undefined ? payment.amountFen : order.refundAmountFen : order.requestedRefundFen)), status: REFUND_STATUS.INIT, reason, retryCount: 0, createdAt: now, updatedAt: now };
     await transaction.collection(COLLECTIONS.refunds).doc(refundId).set({ data: refund });
     await transaction.collection(COLLECTIONS.orders).doc(orderId).set({ data: { ...order, refundId, refundStatus: refund.status, updatedAt: now } });
     return { order: { ...order, refundId, refundStatus: refund.status }, payment, refund };

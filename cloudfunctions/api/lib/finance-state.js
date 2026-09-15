@@ -14,6 +14,13 @@ const REFUND_TERMINAL_STATUSES = Object.freeze([
   REFUND_STATUS.MANUAL_ACTION
 ]);
 
+const REFUND_IN_PROGRESS_STATUSES = Object.freeze([
+  REFUND_STATUS.INIT,
+  REFUND_STATUS.PENDING_CONFIG,
+  REFUND_STATUS.SUBMITTING,
+  REFUND_STATUS.PROCESSING
+]);
+
 function isCancelledOrderStatus(status) {
   return CANCELLED_ORDER_STATUSES.includes(status);
 }
@@ -28,6 +35,23 @@ function canAdvanceService(order) {
   return !!order
     && order.paymentStatus === PAYMENT_STATUS.SUCCESS
     && [REFUND_STATUS.NOT_REQUIRED, '', undefined, null].includes(order.refundStatus);
+}
+
+function cumulativeRefundedFen(order) {
+  if (!order) return 0;
+  const paidFen = Math.max(0, Number(order.paidFen || 0));
+  const recorded = order.refundedFen === undefined
+    ? order.refundStatus === REFUND_STATUS.SUCCESS ? Number(order.refundAmountFen || paidFen) : 0
+    : Number(order.refundedFen || 0);
+  return Math.min(paidFen, Math.max(0, Number.isFinite(recorded) ? recorded : 0));
+}
+
+function remainingRefundableFen(order) {
+  return Math.max(0, Number(order && order.paidFen || 0) - cumulativeRefundedFen(order));
+}
+
+function refundInProgress(order) {
+  return !!order && REFUND_IN_PROGRESS_STATUSES.includes(order.refundStatus);
 }
 
 function refundStatusFromProvider(status) {
@@ -135,9 +159,13 @@ function notificationRecordId(notificationId) {
 module.exports = {
   CANCELLED_ORDER_STATUSES,
   REFUND_TERMINAL_STATUSES,
+  REFUND_IN_PROGRESS_STATUSES,
   isCancelledOrderStatus,
   needsCashRefund,
   canAdvanceService,
+  cumulativeRefundedFen,
+  remainingRefundableFen,
+  refundInProgress,
   refundStatusFromProvider,
   resolveRefundAbnormalStatus,
   refundFailureDisposition,

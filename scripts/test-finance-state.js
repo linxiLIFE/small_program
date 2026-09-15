@@ -72,11 +72,17 @@ test('settings version sorts by numeric generated column', () => assert(compileW
 const root = path.resolve(__dirname, '..');
 const wechat = fs.readFileSync(path.join(root, 'cloudfunctions/api/lib/wechat-pay.js'), 'utf8');
 const paymentService = fs.readFileSync(path.join(root, 'cloudfunctions/api/lib/payment-service.js'), 'utf8');
+const booking = fs.readFileSync(path.join(root, 'cloudfunctions/api/lib/booking.js'), 'utf8');
 const schema = fs.readFileSync(path.join(root, 'docs/mysql-schema.sql'), 'utf8');
 test('JSAPI request carries provider expiry', () => assert(wechat.includes('time_expire: new Date(Number(timeExpire)).toISOString()')));
 test('payment callback queues late refund instead of calling provider synchronously', () => {
   const callbackTail = paymentService.slice(paymentService.indexOf('async function handleNotify'));
   assert(!callbackTail.includes("await requestRefund(payment.orderId, '迟到支付自动退款')"));
+});
+test('a late callback from an earlier successful partial refund cannot be applied twice', () => {
+  assert(booking.includes('const refundAlreadyApplied = refund.status === REFUND_STATUS.SUCCESS'));
+  assert(booking.includes('order.refundId !== refundId'));
+  assert(booking.includes('appliedAt: now'));
 });
 test('merchant order number is database-unique', () => assert(schema.includes('UNIQUE KEY `uq_payments_merchant_order_no`')));
 test('refund number is database-unique', () => assert(schema.includes('UNIQUE KEY `uq_refunds_refund_no`')));

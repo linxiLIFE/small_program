@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import DashboardPanel from './components/DashboardPanel.vue';
 import HomeManager from './components/HomeManager.vue';
 import CatalogManager from './components/CatalogManager.vue';
+import FeaturedManager from './components/FeaturedManager.vue';
 import TeamManager from './components/TeamManager.vue';
 import MySchedulePanel from './components/MySchedulePanel.vue';
 import AdminOrdersPanel from './components/AdminOrdersPanel.vue';
@@ -28,7 +29,6 @@ const notice = ref('');
 const demo = isDemoMode();
 const catalog = ref<CatalogResponse>({ categories: [], services: [], works: [], technicians: [] });
 const settings = reactive<Settings>({ version: 1, store: { storeName: '四个小姐姐的店', address: '', phone: '', notice: '', latitude: null, longitude: null }, booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, refundCutoffMinutes: 120, noShowGraceMinutes: 15, noShowPenaltyFen: 3000, noShowPolicy: 'AUTO_PARTIAL_REFUND' }, points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10, inviteRewardPoints: 10 }, notifications: { enabled:false, arrivalLeadMinutes:120, templates:{ appointmentSuccess:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',technicianKey:'thing3'}, arrivalReminder:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',addressKey:'thing3'}, checkInSuccess:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',technicianKey:'thing3'}, noShowRefund:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',amountKey:'amount2',statusKey:'phrase3'} } } });
-const paymentStatus = ref<{ configured: boolean; missing: string[]; callbackCertificateConfigured: boolean; note: string }>({ configured: false, missing: [], callbackCertificateConfigured: false, note: '' });
 const editingService = ref<Service | null>(null);
 const serviceDraft = reactive<Partial<Service>>({});
 const scheduleDate = ref(todayDate());
@@ -89,10 +89,10 @@ const navItems: Array<{ id: PageKey; label: string; icon: string }> = [
   { id: 'orders', label: '预约订单', icon: '◷' },
   { id: 'home', label: '首页宣传', icon: '▧' },
   { id: 'services', label: '项目与款式', icon: '✦' },
+  { id: 'featured', label: '精选管理', icon: '★' },
   { id: 'team', label: '技师管理', icon: '♧' },
   { id: 'technicians', label: '技师排班', icon: '♧' },
-  { id: 'settings', label: '门店与预约设置', icon: '⚙' },
-  { id: 'payment', label: '微信支付接入', icon: '¥' }
+  { id: 'settings', label: '门店与预约设置', icon: '⚙' }
 ];
 
 const visibleNav=computed(()=>sessionInfo.value.role==='TECHNICIAN'?[{id:'my-schedule' as PageKey,label:'我的排班',icon:'◷'}]:navItems);
@@ -166,7 +166,6 @@ async function loadAll() {
     const tasks = [
       async()=>{catalog.value=await adminApi.catalog();},
       async()=>{Object.assign(settings,await adminApi.settings());},
-      async()=>{if(sessionInfo.value.role==='OWNER')paymentStatus.value=await adminApi.paymentStatus();},
       async()=>{const result=await adminApi.schedule(scheduleDate.value);schedule.value=result;weeklyDraft.value=clone(result.weekly);syncDayDraft();}
     ];
     const failures:string[]=[];
@@ -224,7 +223,7 @@ async function saveSettings() {
   try {
     const saved = await adminApi.saveSettings({ ...settings, reason: '管理后台发布门店与预约设置' });
     Object.assign(settings, saved);
-    notice.value = `规则已发布，当前版本 v${saved.version}`;
+    notice.value = '设置已保存';
   } catch (err) { error.value = err instanceof Error ? err.message : '规则保存失败'; } finally { saving.value = false; }
 }
 
@@ -309,7 +308,7 @@ async function saveWeekly() {
   error.value = '';
   try {
     const result = await adminApi.saveWeeklySchedule(clone(weeklyDraft.value), schedule.value.scheduleVersion, '管理后台发布每周营业排班模板');
-    notice.value = `每周模板已发布，当前版本 v${result.version}`;
+    notice.value = '每周排班已保存';
     await loadSchedule();
   } catch (err) {
     error.value = err instanceof Error ? err.message : '每周模板保存失败';
@@ -323,7 +322,7 @@ watch(scheduleDate, () => {
 });
 
 watch(page, (nextPage) => {
-  if (authenticated.value && ['services','team'].includes(nextPage)) refreshCatalog();
+  if (authenticated.value && ['services','featured','team'].includes(nextPage)) refreshCatalog();
   if (authenticated.value && nextPage === 'technicians' && !schedule.value.technicians.length) loadSchedule();
 });
 
@@ -374,6 +373,7 @@ onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
         <AdminOrdersPanel v-else-if="page === 'orders'" :catalog="catalog"/>
 
         <CatalogManager v-else-if="page === 'services'" :catalog="catalog" @changed="refreshCatalog"/>
+        <FeaturedManager v-else-if="page === 'featured'" :catalog="catalog" @changed="refreshCatalog"/>
         <TeamManager v-else-if="page === 'team'" :catalog="catalog" @changed="refreshCatalog" @schedule="openTechnicianSchedule" @workspace="openTechnicianWorkspace"/>
         <MySchedulePanel v-else-if="page === 'my-schedule'" :key="previewTechnicianId" :technician-id="previewTechnicianId"/>
 
@@ -385,7 +385,7 @@ onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
           <div v-if="scheduleLoading" class="schedule-loading"><div class="loader"></div><span>正在读取排班…</span></div>
           <template v-else>
             <section class="panel schedule-template-panel">
-              <div class="panel-heading"><div><h2>每周营业排班模板</h2><span class="panel-subtitle">未设置指定日期覆盖时，预约会按这里生成可用时段。</span></div><button class="primary-button" :disabled="scheduleSaving" @click="saveWeekly">{{ scheduleSaving ? '发布中…' : '发布每周模板' }}</button></div>
+              <div class="panel-heading"><div><h2>每周营业排班模板</h2><span class="panel-subtitle">未设置指定日期覆盖时，预约会按这里生成可用时段。</span></div><button class="primary-button" :disabled="scheduleSaving" @click="saveWeekly">{{ scheduleSaving ? '保存中…' : '保存每周排班' }}</button></div>
               <div class="weekly-grid">
                 <div v-for="day in weeklyDraft" :key="day.weekday" class="weekly-day">
                   <div class="weekly-day-heading"><strong>{{ weekdayLabel(day.weekday) }}</strong><label class="inline-check"><input v-model="day.enabled" type="checkbox" /> 营业</label></div>
@@ -430,18 +430,17 @@ onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
         </section>
 
         <section v-else-if="page === 'settings'" class="page-section">
-          <div class="page-intro"><div><h1>门店与预约设置</h1><p>规则发布后只影响新订单，旧订单继续使用下单时快照。</p></div><span class="version-chip">当前版本 v{{ settings.version }}</span></div>
+          <div class="page-intro"><div><h1>门店与预约设置</h1><p>保存后的规则只影响新订单，旧订单继续使用下单时的规则。</p></div></div>
           <section class="panel settings-panel">
             <div class="settings-block"><div class="settings-block-heading"><h2>门店资料</h2></div><div class="form-grid"><label>门店名称<input v-model="settings.store.storeName" /></label><label>联系电话<input v-model="settings.store.phone" placeholder="可选" /></label><label class="full">地址<input v-model="settings.store.address" /></label><label>地图经度<input v-model.number="settings.store.longitude" type="number" step="any" min="-180" max="180"/></label><label>地图纬度<input v-model.number="settings.store.latitude" type="number" step="any" min="-90" max="90"/></label><div class="full map-helper"><button class="soft-button" type="button" @click="openMapPicker">地图选点</button><button class="soft-button" type="button" @click="useBrowserLocation">使用当前位置</button></div><label class="full">预约须知<textarea v-model="settings.store.notice"></textarea></label></div></div>
             <div class="settings-block"><div class="settings-block-heading"><h2>取消与未到店规则</h2><span>小程序预约页会同步展示</span></div><div class="form-grid four"><label>可提前取消（分钟）<input v-model.number="settings.booking.refundCutoffMinutes" type="number" min="0" max="10080"/><small>默认 120 分钟</small></label><label>未核销宽限（分钟）<input v-model.number="settings.booking.noShowGraceMinutes" type="number" min="1" max="1440"/><small>默认开始后 15 分钟</small></label><label>未到店违约金（元）<input v-model.number="noShowPenaltyYuan" type="number" min="0" max="10000" step="0.01"/><small>积分优先承担</small></label><label>未到店处理方式<select v-model="settings.booking.noShowPolicy"><option value="AUTO_PARTIAL_REFUND">自动按规则退款</option></select><small>订单总额不足违约金时不退款</small></label></div></div>
             <div class="settings-block"><div class="settings-block-heading"><h2>预约基础规则</h2></div><div class="form-grid four"><label>开放天数<input v-model.number="settings.booking.openDays" type="number" min="1" max="14" /></label><label>最少提前分钟<input v-model.number="settings.booking.minAdvanceMinutes" type="number" min="1" /></label><label>15 分钟时段<input v-model.number="settings.booking.slotStepMinutes" type="number" min="15" max="15" readonly/></label><label>未支付占位分钟<input v-model.number="settings.booking.unpaidHoldMinutes" type="number" min="1" /></label></div></div>
-            <div class="settings-block"><div class="settings-block-heading"><h2>积分与邀请</h2></div><div class="form-grid four"><label>每满多少分获 1 积分<input v-model.number="settings.points.pointRateFen" type="number" min="1" /></label><label>抵扣单位积分<input v-model.number="settings.points.unit" type="number" min="1" /></label><label>每单位抵扣分<input v-model.number="settings.points.discountFen" type="number" min="1" /></label><label>单笔最高抵扣 %<input v-model.number="settings.points.maxPercent" type="number" min="0" max="100" /></label><label>邀请双方各奖积分<input v-model.number="settings.points.inviteRewardPoints" type="number" min="0" max="100000"/><small>邀请码只允许绑定一次</small></label></div></div>
+            <div class="settings-block"><div class="settings-block-heading"><h2>积分与邀请</h2></div><div class="form-grid four"><label>每满多少分获 1 积分<input v-model.number="settings.points.pointRateFen" type="number" min="1" /></label><label>抵扣单位积分<input v-model.number="settings.points.unit" type="number" min="1" /></label><label>每单位抵扣分<input v-model.number="settings.points.discountFen" type="number" min="1" /></label><label>单笔最高抵扣 %<input v-model.number="settings.points.maxPercent" type="number" min="0" max="100" /></label><label>邀请双方各奖积分<input v-model.number="settings.points.inviteRewardPoints" type="number" min="0" max="100000"/><small>每位新用户只能绑定一次</small></label></div></div>
             <div class="settings-block"><div class="settings-block-heading"><h2>微信订阅提醒</h2><span>模板字段名需与公众平台模板一致</span></div><label class="switch-row"><span>启用订阅消息发送</span><input v-model="settings.notifications.enabled" type="checkbox"/></label><div class="form-grid notification-settings"><label>到店提醒提前分钟<input v-model.number="settings.notifications.arrivalLeadMinutes" type="number" min="15" max="10080"/></label><div v-for="(item,key) in settings.notifications.templates" :key="key" class="notification-template-card"><strong>{{({appointmentSuccess:'预约成功',arrivalReminder:'提醒到店',checkInSuccess:'核销成功',noShowRefund:'未到店退款'} as Record<string,string>)[key]}}</strong><label>模板 ID<input v-model.trim="item.templateId" placeholder="公众平台模板 ID"/></label><div class="template-key-grid"><label>项目字段<input v-model.trim="item.serviceKey" placeholder="thing1"/></label><label v-if="item.timeKey">时间字段<input v-model.trim="item.timeKey" placeholder="time2"/></label><label v-if="item.technicianKey">技师字段<input v-model.trim="item.technicianKey" placeholder="thing3"/></label><label v-if="item.addressKey">地址字段<input v-model.trim="item.addressKey" placeholder="thing3"/></label><label v-if="item.amountKey">金额字段<input v-model.trim="item.amountKey" placeholder="amount2"/></label><label v-if="item.statusKey">状态字段<input v-model.trim="item.statusKey" placeholder="phrase3"/></label></div></div></div><p class="form-help">模板 ID 和字段名可在微信公众平台「订阅消息 / 我的模板」复制。由于浏览器安全策略，本次无法代你读取当前 Chrome 登录页中的值。</p></div>
-            <div class="settings-actions"><button class="primary-button" :disabled="saving" @click="saveSettings">{{ saving ? '发布中…' : '保存并发布规则' }}</button></div>
+            <div class="settings-actions"><button class="primary-button" :disabled="saving" @click="saveSettings">{{ saving ? '保存中…' : '保存设置' }}</button></div>
           </section>
         </section>
 
-        <section v-else-if="page === 'payment'" class="page-section"><div class="page-intro"><div><h1>微信支付接入</h1></div><span :class="['connection-state', paymentStatus.configured ? 'ready' : 'pending']"><i></i>{{ paymentStatus.configured ? '已配置' : '待配置' }}</span></div><section class="payment-grid"><div class="panel payment-status-panel"><div class="status-illustration">¥</div><h2>{{ paymentStatus.configured ? '支付参数已齐备' : '等待个体工商户资质' }}</h2><p>{{ paymentStatus.configured ? '仍需在真机完成支付、回调、查单和真实退款闭环。' : '你拿到商户号和小程序支付权限后，只需在 CloudBase 服务端补齐参数，前端页面无需改动。' }}</p><div v-if="paymentStatus.missing.length" class="missing-list"><div v-for="item in paymentStatus.missing" :key="item"><span>○</span>{{ item }}</div></div><div class="cert-state"><span :class="paymentStatus.callbackCertificateConfigured ? 'ok' : ''">{{ paymentStatus.callbackCertificateConfigured ? '✓' : '○' }}</span>微信支付公钥或平台证书（回调验签）</div></div><div class="panel checklist-panel"><h2>接入前置项</h2><ol><li><span>01</span><div><strong>小程序主体认证</strong><small>使用营业执照完成主体认证，并申请小程序支付权限。</small></div></li><li><span>02</span><div><strong>普通商户直连</strong><small>申请商户号，完成商户号与 小程序绑定。</small></div></li><li><span>03</span><div><strong>服务端密钥</strong><small>配置商户私钥、证书序列号、支付密钥，不进入小程序和浏览器。</small></div></li><li><span>04</span><div><strong>支付回调</strong><small>配置 支付回调入口，保留原始请求体并完成验签解密。</small></div></li><li><span>05</span><div><strong>真机闭环</strong><small>预约、支付、查单、核销、完成、取消和真实退款全部通过后再上线。</small></div></li></ol></div></section><section class="panel env-panel"><div class="panel-heading"><div><h2>需要填写的环境变量</h2></div><span class="security-note">不会在此页面显示值</span></div><div class="env-grid"><code>WX_APPID</code><code>WX_MCH_ID</code><code>WX_MCH_SERIAL_NO</code><code>WX_API_V3_KEY</code><code>WX_PRIVATE_KEY</code><code>WX_NOTIFY_URL</code><code>WX_PLATFORM_PUBLIC_KEY_PEM</code><code>WX_PLATFORM_SERIAL_NO</code><code>WX_PLATFORM_CERT_PEM</code><code>CONTACT_ENCRYPTION_KEY</code></div></section></section>
       </template>
     </main>
     <div v-if="mapPickerOpen" class="map-picker-backdrop" @click.self="mapPickerOpen = false"><section class="map-picker-modal" role="dialog" aria-modal="true" aria-label="地图选点"><header><h2>选择门店位置</h2><button class="icon-button" type="button" @click="mapPickerOpen = false">×</button></header><iframe :src="mapPickerUrl" title="腾讯地图选点" allow="geolocation"></iframe><p>点击地图中的位置后，地址和经纬度会自动回填。</p></section></div>

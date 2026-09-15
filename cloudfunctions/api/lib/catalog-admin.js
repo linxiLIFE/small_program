@@ -54,8 +54,40 @@ async function saveWork(payload = {}) {
   assert(service && (payload.published === false || service.enabled !== false), 'INVALID_SERVICE', '请选择已上架的小项目');
   const category = await getOptional(COLLECTIONS.categories, service.categoryId);
   assert(category && (payload.published === false || category.enabled !== false), 'INVALID_CATEGORY', '所属大类已停用');
-  const record = await persist(COLLECTIONS.works, idOf(payload, 'work'), { title: nameOf(payload.title, '款式名称'), imageUrl: imageOf(payload, 'imageUrl'), serviceId: service.id || service._id, categoryId: category.id || category._id, categoryName: category.name, published: payload.published !== false, featured: payload.featured === true, ...sortable(payload) }, account);
+  const featuredSort = payload.featuredSort === undefined ? payload.featured === true ? 1000000 : 0 : integer(payload.featuredSort, '精选排序');
+  assert(featuredSort >= 0 && featuredSort <= 1000000, 'INVALID_SORT', '精选排序值不正确');
+  const record = await persist(COLLECTIONS.works, idOf(payload, 'work'), { title: nameOf(payload.title, '款式名称'), imageUrl: imageOf(payload, 'imageUrl'), serviceId: service.id || service._id, categoryId: category.id || category._id, categoryName: category.name, published: payload.published !== false, featured: payload.featured === true, featuredSort, ...sortable(payload) }, account);
   return { ...publicWork(record), published: record.published, sort: record.sort };
+}
+
+async function saveFeaturedWorks(payload = {}) {
+  const { account } = await requireRole(['OWNER']);
+  const orderedIds = Array.isArray(payload.orderedIds) ? payload.orderedIds.map(String) : [];
+  assert(orderedIds.length <= 100 && new Set(orderedIds).size === orderedIds.length, 'INVALID_FEATURED_WORKS', '精选款式列表不正确');
+  const selected = new Map(orderedIds.map((id, index) => [id, index + 1]));
+  const records = await db.runTransaction(async (transaction) => {
+    const works = await loadAll(COLLECTIONS.works, {}, { maxRecords: 10000 }, transaction);
+    const byId = new Map(works.map((work) => [String(work.id || work._id), work]));
+    for (const id of orderedIds) {
+      const work = byId.get(id);
+      assert(work && !work.archived && work.published !== false, 'INVALID_FEATURED_WORKS', '只能精选已上架的款式', 409);
+    }
+    const now = Date.now();
+    const changed = [];
+    for (const work of works) {
+      const id = String(work.id || work._id);
+      const featured = selected.has(id);
+      const featuredSort = selected.get(id) || 0;
+      if (work.featured === featured && Number(work.featuredSort || 0) === featuredSort) continue;
+      const next = { ...work, featured, featuredSort, version: Number(work.version || 0) + 1, updatedAt: now };
+      await transaction.collection(COLLECTIONS.works).doc(id).set({ data: next });
+      changed.push(next);
+    }
+    const auditId = `audit-${crypto.randomUUID()}`;
+    await transaction.collection(COLLECTIONS.auditLogs).doc(auditId).set({ data: { id: auditId, operatorId: account.uid || account.openid, operatorRole: account.role, action: 'SAVE_FEATURED_WORKS', objectType: COLLECTIONS.works, objectId: 'featured', summary: { orderedIds }, createdAt: now } });
+    return changed;
+  });
+  return { orderedIds, updated: records.length };
 }
 async function saveTechnician(payload = {}) {
   const { account } = await requireRole(['OWNER']);
@@ -125,4 +157,4 @@ async function listCatalog() {
     })
   };
 }
-module.exports = { saveCategory, saveService, saveWork, saveTechnician, listCatalog };
+module.exports = { saveCategory, saveService, saveWork, saveFeaturedWorks, saveTechnician, listCatalog };

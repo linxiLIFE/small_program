@@ -1,7 +1,7 @@
 import type { AnalyticsResponse, AdminOrderPage, AdminOrderQuery, Category, Technician, MySchedule, SessionInfo, Work, AdminOrder, CatalogResponse, ScheduleResponse, Service, Settings, TechnicianDayPlan, WeeklySchedule } from './types';
 import { callBusiness } from './cloudbase';
 
-const demoWorks: Work[] = [];
+let demoWorks: Work[] = [];
 const demo = import.meta.env.VITE_ADMIN_DEMO === 'true';
 
 export function isDemoMode(): boolean {
@@ -19,8 +19,8 @@ const demoServices: Service[] = [
 ];
 
 let demoOrders: AdminOrder[] = [
-  { id: 'demo-order-001', status: 'RESERVED', statusLabel: '待到店', serviceName: '奶油法式美甲', technicianName: '林老师', customerName: '演示顾客', phoneMasked: '138****8000', startAtLabel: '9月9日 11:00', paidFen: 29900, refundStatus: '' },
-  { id: 'demo-order-002', status: 'COMPLETED', statusLabel: '已完成', serviceName: '自然野生眉设计', technicianName: '周老师', customerName: '另一位顾客', phoneMasked: '139****0000', startAtLabel: '9月7日 15:00', paidFen: 19900, refundStatus: '' }
+  { id: 'demo-order-001', status: 'RESERVED', statusLabel: '待到店', serviceName: '奶油法式美甲', technicianName: '林老师', customerName: '演示顾客', phone: '13800138000', phoneMasked: '138****8000', startAtLabel: '9月9日 11:00', startAt:Date.now()+86400000,endAt:Date.now()+91800000,createdAt:Date.now()-86400000,paidAt:Date.now()-85000000,paidFen: 29900, remainingRefundableFen:29900, refundStatus: '' },
+  { id: 'demo-order-002', status: 'COMPLETED', statusLabel: '已完成', serviceName: '自然野生眉设计', technicianName: '周老师', customerName: '另一位顾客', phone: '13900000000', phoneMasked: '139****0000', startAtLabel: '9月7日 15:00', startAt:Date.now()-86400000,endAt:Date.now()-82800000,createdAt:Date.now()-172800000,paidAt:Date.now()-172000000,paidFen: 19900, remainingRefundableFen:19900, refundStatus: '' }
 ];
 
 const demoSettings: Settings = {
@@ -82,11 +82,16 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
     const trend = Array.from({ length: days }, (_, index) => {
       const date = new Date(end);
       date.setDate(end.getDate() - (days - index - 1));
-      return { date: date.toISOString().slice(0, 10), paidFen: 0, completedCount: 0, customerCount: 0 };
+      return { date: date.toISOString().slice(0, 10), paidFen: 0, refundFen:0, netFen:0, completedCount: 0, customerCount: 0 };
     });
-    return { date: trend[trend.length - 1].date, days, rangeStart: trend[0].date, metrics: { paidFen: 49800, refundFen: 0, netFen: 49800, completedFen: 19900, orderCount: 2, completedCount: 1, customerCount: 2, noShowCount: 0, newCustomerCount: 2, returningCustomerCount: 0, repeatRate: 0, averageOrderFen: 24900, cancelledCount:0, arrivedCount:1, refundCount:0, completionRate:50, noShowRate:0 }, trend, works: [], services: [], technicians: [], categories:[], statuses:[], timeSlots:[] } as T;
+    return { date: trend[trend.length - 1].date, days, rangeStart: trend[0].date, metrics: { paidFen: 49800, refundFen: 0, netFen: 49800, completedFen: 19900, orderCount: 2, completedCount: 1, customerCount: 2, noShowCount: 0, newCustomerCount: 2, returningCustomerCount: 0, repeatRate: 0, averageOrderFen: 24900, cancelledCount:0, arrivedCount:1, refundCount:0, completionRate:50, noShowRate:0 }, trend, works: [], services: [], technicians: [], categories:[], timeSlots:[] } as T;
   }
-  if (action === 'adminListOrders') { const rows=payload.status ? demoOrders.filter((item) => item.status === payload.status) : demoOrders; return { orders:rows, canRefund:true, page:1, limit:30, total:rows.length, pages:1 } as T; }
+  if (action === 'adminListOrders') {
+    const keyword = String(payload.query || '').trim().toLowerCase();
+    const rows = demoOrders.filter((item) => (!payload.status || item.status === payload.status)
+      && (!keyword || [item.id, item.customerName, item.phone, item.phoneMasked, item.serviceName].some((value) => String(value || '').toLowerCase().includes(keyword))));
+    return { orders:rows, canRefund:true, page:1, limit:30, total:rows.length, pages:1 } as T;
+  }
   if (action === 'redeemCheckInCode') return { order:{...demoOrders[0],status:'ARRIVED',statusLabel:'已到店'},duplicate:false } as T;
   if (action === 'staffSession') return {role:'OWNER',name:'店主'} as T;
   if (action === 'adminCatalog') return { categories: [{id:'nail',name:'美甲',enabled:true,icon:'✦',color:'#f1ded8',sort:0},{id:'brow',name:'美眉',enabled:true,icon:'⌁',color:'#eee6d9',sort:1}], services: demoServices, works: demoWorks, technicians: demoTechnicians } as T;
@@ -118,6 +123,11 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
     if (index >= 0) demoWorks[index] = { ...work }; else demoWorks.push({ ...work });
     return work as T;
   }
+  if (action === 'adminSaveFeaturedWorks') {
+    const orderedIds = Array.isArray(payload.orderedIds) ? payload.orderedIds.map(String) : [];
+    demoWorks = demoWorks.map((work) => ({ ...work, featured: orderedIds.includes(work.id), featuredSort: orderedIds.indexOf(work.id) + 1 }));
+    return { orderedIds, updated: demoWorks.length } as T;
+  }
   if (action === 'adminSaveService') {
     const next = payload as unknown as Service;
     const index = demoServices.findIndex((item) => item.id === next.id);
@@ -131,7 +141,13 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
   }
   if (action === 'adminRefund') {
     const order = demoOrders.find((item) => item.id === payload.orderId);
-    if (order) order.refundStatus = '退款处理中';
+    if (order) {
+      order.status = 'CANCEL_PENDING_REFUND';
+      order.statusLabel = '退款待处理';
+      order.refundStatus = 'PROCESSING';
+      order.pendingRefundFen = Number(payload.amountFen || 0);
+      order.refundInProgress = true;
+    }
     return { status: 'PROCESSING' } as T;
   }
   throw new Error(`演示模式不支持 ${action}`);
@@ -158,7 +174,8 @@ export const adminApi = {
   saveWork: (work: Work) => request<Work>('adminSaveWork', work as unknown as Record<string, unknown>),
   saveService: (service: Service) => request<Service>('adminSaveService', service as unknown as Record<string, unknown>),
   saveSettings: (settings: Partial<Settings> & { reason?: string }) => request<Settings>('adminSaveSettings', settings as unknown as Record<string, unknown>),
-  refund: (orderId: string, reason: string) => request<{ status: string }>('adminRefund', { orderId, reason })
+  saveFeaturedWorks: (orderedIds:string[]) => request<{orderedIds:string[];updated:number}>('adminSaveFeaturedWorks',{orderedIds}),
+  refund: (orderId: string, amountFen:number, reason: string) => request<{ status: string }>('adminRefund', { orderId, amountFen, reason })
 };
 
 export { money };
