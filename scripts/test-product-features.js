@@ -6,8 +6,9 @@ process.env.CHECKIN_SIGNING_SECRET = 'checkin-test-secret-at-least-32-bytes-long
 
 const { decryptNotification } = require('../cloudfunctions/api/lib/wechat-pay');
 const { encodeToken, decodeToken } = require('../cloudfunctions/api/lib/checkin');
-const { noShowSettlement } = require('../cloudfunctions/api/lib/booking');
+const { noShowSettlement, successfulRefundedFen } = require('../cloudfunctions/api/lib/booking');
 const { cumulativeRefundedFen, remainingRefundableFen, refundInProgress } = require('../cloudfunctions/api/lib/finance-state');
+const { templateData } = require('../cloudfunctions/api/lib/notification-service');
 
 let passed = 0;
 function test(name, callback) { callback(); passed += 1; }
@@ -44,4 +45,21 @@ test('partial refunds keep only the unpaid remainder refundable', () => {
   assert.strictEqual(refundInProgress({ ...order, refundStatus: 'PROCESSING' }), true);
 });
 
-console.log(`product feature tests passed: ${passed} QR, refund and notification crypto invariants`);
+test('subscription template data uses the configured keyword types', () => {
+  const order = { startAt: Date.parse('2026-09-15T10:30:00+08:00'), workSnapshot: { title: '奶油法式美甲' }, technicianSnapshot: { name: '林老师' }, refundAmountFen: 29900 };
+  const settings = { store: { address: '哈尔滨市南岗区' } };
+  assert.deepStrictEqual(templateData('appointmentSuccess', { serviceKey: 'thing1', timeKey: 'date2', technicianKey: 'thing19' }, order, settings), { thing1: { value: '奶油法式美甲' }, date2: { value: '2026-09-15' }, thing19: { value: '林老师' } });
+  assert.deepStrictEqual(templateData('arrivalReminder', { serviceKey: 'thing2', timeKey: 'time1', addressKey: 'thing7' }, order, settings), { thing2: { value: '奶油法式美甲' }, time1: { value: '10:30' }, thing7: { value: '哈尔滨市南岗区' } });
+  const checkInData = templateData('checkInSuccess', { serviceKey: 'thing1', timeKey: 'time5' }, order, settings);
+  assert.deepStrictEqual(Object.keys(checkInData), ['thing1', 'time5']);
+  assert(/^\d{2}:\d{2}$/.test(checkInData.time5.value));
+  assert.deepStrictEqual(templateData('noShowRefund', { serviceKey: 'thing1', amountKey: 'amount6', storeKey: 'thing3' }, order, settings), { thing1: { value: '奶油法式美甲' }, amount6: { value: '299.00元' }, thing3: { value: '哈尔滨市南岗区' } });
+});
+
+(async () => {
+  const reader = { query: async () => [[{ total_fen: 4000 }]] };
+  assert.strictEqual(await successfulRefundedFen({ id: 'order1', paidFen: 4000, refundedFen: 3000 }, reader), 4000);
+  await assert.rejects(successfulRefundedFen({ id: 'order1', paidFen: 4000, refundedFen: 3000 }, { query: async () => [[{ total_fen: 5000 }]] }), /退款记录与实付金额不一致/);
+  passed += 1;
+  console.log(`product feature tests passed: ${passed} QR, refund and notification crypto invariants`);
+})().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -99,10 +99,10 @@ const DEFAULT_SETTINGS = {
     enabled: true,
     arrivalLeadMinutes: 120,
     templates: {
-      appointmentSuccess: { templateId: '', page: 'pages/order-detail/index', serviceKey: 'thing1', timeKey: 'time2', technicianKey: 'thing3' },
-      arrivalReminder: { templateId: '', page: 'pages/order-detail/index', serviceKey: 'thing1', timeKey: 'time2', addressKey: 'thing3' },
-      checkInSuccess: { templateId: '', page: 'pages/order-detail/index', serviceKey: 'thing1', timeKey: 'time2', technicianKey: 'thing3' },
-      noShowRefund: { templateId: '', page: 'pages/order-detail/index', serviceKey: 'thing1', amountKey: 'amount2', statusKey: 'phrase3' }
+      appointmentSuccess: { templateId: 'mSytTDc_RPzemCXFTmlP6_YfL2AXQmeRqmvfDIQnSiM', page: 'pages/order-detail/index', serviceKey: 'thing1', timeKey: 'date2', technicianKey: 'thing19' },
+      arrivalReminder: { templateId: 'tUQNUcVIWkHmsNVtxD9ktPuKCCY7XtUoRFfbForuUoA', page: 'pages/order-detail/index', serviceKey: 'thing2', timeKey: 'time1', addressKey: 'thing7' },
+      checkInSuccess: { templateId: 'YIZfXuyNr6qJeIts_ehZo8ivql7wOmx8Y5PDORMuzc4', page: 'pages/order-detail/index', serviceKey: 'thing1', timeKey: 'time5' },
+      noShowRefund: { templateId: 'rZ_ATdWSGPxs2X96QFO7889txX1acN-xQeIkjgZWdgE', page: 'pages/order-detail/index', serviceKey: 'thing1', amountKey: 'amount6', storeKey: 'thing3' }
     }
   },
   schedule: {

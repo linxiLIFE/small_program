@@ -123,7 +123,7 @@ export interface Settings {
   notifications: {
     enabled: boolean;
     arrivalLeadMinutes: number;
-    templates: Record<'appointmentSuccess'|'arrivalReminder'|'checkInSuccess'|'noShowRefund', { templateId:string; page:string; serviceKey:string; timeKey?:string; technicianKey?:string; addressKey?:string; amountKey?:string; statusKey?:string }>;
+    templates: Record<'appointmentSuccess'|'arrivalReminder'|'checkInSuccess'|'noShowRefund', { templateId:string; page:string; serviceKey:string; timeKey?:string; technicianKey?:string; addressKey?:string; storeKey?:string; amountKey?:string; statusKey?:string }>;
   };
 }
 

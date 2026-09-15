@@ -300,6 +300,17 @@ function publicOrder(order) {
   };
 }
 
+async function successfulRefundedFen(order, reader = db, excludedRefundId = '') {
+  const paidFen = Math.max(0, Number(order.paidFen || 0));
+  const [rows] = await reader.query(
+    `SELECT COALESCE(SUM(amount_fen), 0) AS total_fen FROM refunds WHERE order_id = ? AND status = 'SUCCESS'${excludedRefundId ? ' AND id <> ?' : ''}`,
+    excludedRefundId ? [order.id || order._id, excludedRefundId] : [order.id || order._id]
+  );
+  const successfulFen = Number(rows[0] && rows[0].total_fen || 0);
+  assert(Number.isSafeInteger(successfulFen) && successfulFen >= 0 && successfulFen <= paidFen, 'REFUND_RECONCILIATION_REQUIRED', '退款记录与实付金额不一致，请先核对退款流水', 409);
+  return Math.max(cumulativeRefundedFen(order), successfulFen);
+}
+
 async function getOwnedOrder(orderIdValue, openid, reader = db) {
   const order = await getOptional(COLLECTIONS.orders, orderIdValue, reader);
   assert(order, 'ORDER_NOT_FOUND', '订单不存在', 404);
@@ -786,7 +797,6 @@ async function markNoShow(orderIdValue) {
     }
   }
   const latest = result.order ? await getOptional(COLLECTIONS.orders, orderIdValue) : null;
-  if (result.changed && latest && !result.cashPaid) await require('./notification-service').notifyOrderEvent('noShowRefund', latest);
   return latest ? publicOrder(latest) : null;
 }
 
@@ -805,7 +815,8 @@ async function markRefundSuccess(refundId, payload = {}) {
     if (payload.submissionId && refund.submissionId !== payload.submissionId) return { order, duplicate: true, staleSubmission: true };
     const now = Date.now();
     const nextRefund = { ...refund, status: REFUND_STATUS.SUCCESS, providerStatus: REFUND_STATUS.SUCCESS, providerRefundId: payload.refundId || refund.providerRefundId || '', successAt: payload.successAt || now, appliedAt: now, submissionId: '', submissionLeaseUntil: 0, updatedAt: now };
-    const refundedFen = Math.min(Number(order.paidFen || 0), cumulativeRefundedFen(order) + Number(refund.amountFen || 0));
+    const alreadyRefundedFen = await successfulRefundedFen(order, transaction, refundId);
+    const refundedFen = Math.min(Number(order.paidFen || 0), alreadyRefundedFen + Number(refund.amountFen || 0));
     const fullyRefunded = refundedFen >= Number(order.paidFen || 0);
     const baseStatus = order.refundBaseStatus || order.status;
     const partialStatus = [ORDER_STATUS.COMPLETED, ORDER_STATUS.CANCELLED, ORDER_STATUS.CANCELLED_BY_USER, ORDER_STATUS.CANCELLED_NO_SHOW].includes(baseStatus)
@@ -844,7 +855,7 @@ async function markRefundSuccess(refundId, payload = {}) {
     await updateDayOccupancy(transaction, order, nextOrder.status);
     return { order: nextOrder, duplicate: false };
   });
-  if (!result.duplicate && result.order && result.order.noShowAt) {
+  if (!result.duplicate && result.order) {
     await require('./notification-service').notifyOrderEvent('noShowRefund', result.order);
   }
   return { order: publicOrder(result.order), duplicate: result.duplicate };
@@ -922,7 +933,8 @@ async function beginAdminRefund(orderIdValue, reason, requestedAmountFen) {
     assert(allowed.includes(order.status), 'ORDER_NOT_REFUNDABLE', '订单当前状态不能发起退款');
     const payment = await getOptional(COLLECTIONS.payments, `pay_${order.id}`, transaction);
     assert(payment && payment.status === PAYMENT_STATUS.SUCCESS, 'PAYMENT_NOT_SUCCESS', '支付尚未确认，不能发起退款');
-    const remainingFen = remainingRefundableFen(order);
+    const alreadyRefundedFen = await successfulRefundedFen(order, transaction);
+    const remainingFen = Math.max(0, Number(order.paidFen || 0) - alreadyRefundedFen);
     assert(remainingFen > 0, 'ORDER_ALREADY_REFUNDED', '订单可退金额已全部退回', 409);
     const amountFen = Number(requestedAmountFen);
     assert(Number.isSafeInteger(amountFen) && amountFen > 0, 'INVALID_REFUND_AMOUNT', '请输入正确的退款金额');
@@ -938,7 +950,6 @@ async function beginAdminRefund(orderIdValue, reason, requestedAmountFen) {
       refund = { _id: identity.id, id: identity.id, orderId: order.id, userId: order.userId, refundNo: identity.refundNo, attempt: identity.attempt, previousRefundId: currentRefund && (currentRefund.id || currentRefund._id) || '', amountFen, status: REFUND_STATUS.INIT, reason, retryCount: 0, createdAt: Date.now(), updatedAt: Date.now() };
     }
     await transaction.collection(COLLECTIONS.refunds).doc(refund.id || refund._id).set({ data: refund });
-    const alreadyRefundedFen = cumulativeRefundedFen(order);
     const fullAfterSuccess = alreadyRefundedFen + amountFen >= Number(order.paidFen || 0);
     const refundBaseStatus = order.refundBaseStatus || (order.status === ORDER_STATUS.CANCEL_PENDING_REFUND ? ORDER_STATUS.CANCELLED : order.status);
     let nextOrder = {
@@ -1042,6 +1053,7 @@ module.exports = {
   staffListOrders,
   preparePaymentRecord,
   publicOrder,
+  successfulRefundedFen,
   getCurrentSettings,
   listServices,
   listWorks,

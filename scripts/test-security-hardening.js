@@ -18,6 +18,7 @@ const adminServer = read('cloudfunctions/api/lib/admin.js');
 assert(adminServer.includes("const { decryptPhone } = require('./contact-crypto')"));
 assert(adminServer.includes('user_id IN'));
 assert(adminServer.includes("status IN ('CANCELLED', 'CANCELLED_BY_USER')"));
+assert(adminServer.includes("SELECT order_id, COALESCE(SUM(amount_fen), 0) AS refunded_fen FROM refunds"));
 
 const scanner = read('admin/src/components/CheckInScanner.vue');
 assert(scanner.includes("import jsQR from 'jsqr'"));
@@ -36,6 +37,7 @@ assert(!db.includes("process.env.DB_USER || 'root'"));
 assert(db.includes('INSERT IGNORE INTO'));
 
 const booking = read('cloudfunctions/api/lib/booking.js');
+assert(booking.includes('async function successfulRefundedFen'));
 const dayInsert = booking.indexOf('transaction.insertIfAbsent(COLLECTIONS.technicianDays');
 const dayLock = booking.indexOf('const day = await getDayPlan', dayInsert);
 assert(dayInsert >= 0 && dayLock > dayInsert);

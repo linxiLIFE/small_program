@@ -72,7 +72,7 @@ Page({
   async enableReminders() {
     try {
       const result = await api.requestSubscriptionEvents(this.data.settings, ['appointmentSuccess', 'arrivalReminder', 'noShowRefund']);
-      const accepted = Object.values(result.statuses || {}).filter((status) => status === 'accept').length;
+      const accepted = Object.values(result.statuses || {}).filter((status) => status === 'accept' || status === 'acceptWithAudio').length;
       wx.showToast({ title: accepted ? `已开启 ${accepted} 项提醒` : '未开启提醒', icon: 'none' });
     } catch (error) {
       wx.showToast({ title: '提醒授权未完成', icon: 'none' });

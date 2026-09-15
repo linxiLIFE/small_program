@@ -28,7 +28,7 @@ const demoSettings: Settings = {
   store: { storeName: '四个小姐姐的店', address: '预约成功后展示详细地址', phone: '', notice: '每次预约只安排一位顾客和一位技师，请提前 5 分钟到店。' },
   booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, refundCutoffMinutes: 120, noShowGraceMinutes: 15, noShowPenaltyFen: 3000, noShowPolicy: 'AUTO_PARTIAL_REFUND' },
   points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10, inviteRewardPoints: 10 },
-  notifications: { enabled:false, arrivalLeadMinutes:120, templates: { appointmentSuccess:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',technicianKey:'thing3'}, arrivalReminder:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',addressKey:'thing3'}, checkInSuccess:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time2',technicianKey:'thing3'}, noShowRefund:{templateId:'',page:'pages/order-detail/index',serviceKey:'thing1',amountKey:'amount2',statusKey:'phrase3'} } }
+  notifications: { enabled:false, arrivalLeadMinutes:120, templates: { appointmentSuccess:{templateId:'mSytTDc_RPzemCXFTmlP6_YfL2AXQmeRqmvfDIQnSiM',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'date2',technicianKey:'thing19'}, arrivalReminder:{templateId:'tUQNUcVIWkHmsNVtxD9ktPuKCCY7XtUoRFfbForuUoA',page:'pages/order-detail/index',serviceKey:'thing2',timeKey:'time1',addressKey:'thing7'}, checkInSuccess:{templateId:'YIZfXuyNr6qJeIts_ehZo8ivql7wOmx8Y5PDORMuzc4',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time5'}, noShowRefund:{templateId:'rZ_ATdWSGPxs2X96QFO7889txX1acN-xQeIkjgZWdgE',page:'pages/order-detail/index',serviceKey:'thing1',amountKey:'amount6',storeKey:'thing3'} } }
 };
 
 const demoTechnicians = [

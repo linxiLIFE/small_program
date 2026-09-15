@@ -25,6 +25,7 @@ function validateSettings(next) {
       record[key]=String(record[key]||'').trim();
       assert(/^(thing|time|date|amount|phrase|number|character_string)\d+$/.test(record[key]),'INVALID_SETTINGS','订阅消息字段名不正确');
     }
+    for(const key of Object.keys(record).filter(item=>item.endsWith('Key') && !Object.prototype.hasOwnProperty.call(defaults,item))) delete record[key];
     record.page=String(record.page||defaults.page).trim().slice(0,128);
     templates[event]=record;
   }

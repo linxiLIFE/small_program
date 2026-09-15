@@ -4,6 +4,11 @@ const { getCurrentSettings } = require('./settings');
 const { formatParts } = require('./time');
 
 const EVENT_NAMES = Object.freeze(['appointmentSuccess', 'arrivalReminder', 'checkInSuccess', 'noShowRefund']);
+const ACCEPTED_SUBSCRIPTION_STATUSES = new Set(['accept', 'acceptWithAudio']);
+
+function subscriptionAccepted(status) {
+  return ACCEPTED_SUBSCRIPTION_STATUSES.has(String(status || ''));
+}
 
 function clipped(value, max = 20) {
   return String(value || '').trim().slice(0, max) || '—';
@@ -14,36 +19,55 @@ function timeText(timestamp) {
   return `${parts.month}月${parts.day}日 ${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
 }
 
+function templateTimeText(timestamp, key) {
+  const parts = formatParts(timestamp);
+  if (/^date\d+$/.test(String(key || ''))) {
+    return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+  }
+  if (/^time\d+$/.test(String(key || ''))) {
+    return `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
+  }
+  return timeText(timestamp);
+}
+
 function moneyText(fen) {
   return `${(Math.max(0, Number(fen || 0)) / 100).toFixed(2)}元`;
+}
+
+function putTemplateValue(data, key, value) {
+  if (key) data[key] = { value };
 }
 
 function templateData(eventName, template, order, settings) {
   const common = {
     service: clipped(order.workSnapshot && order.workSnapshot.title || order.serviceSnapshot && order.serviceSnapshot.name, 20),
-    time: clipped(timeText(eventName === 'checkInSuccess' ? Date.now() : order.startAt), 20),
+    time: clipped(templateTimeText(eventName === 'checkInSuccess' ? Date.now() : order.startAt, template.timeKey), 20),
     technician: clipped(order.technicianSnapshot && order.technicianSnapshot.name, 20),
     address: clipped(settings.store && settings.store.address, 20)
   };
   if (eventName === 'appointmentSuccess' || eventName === 'checkInSuccess') {
-    return {
-      [template.serviceKey]: { value: common.service },
-      [template.timeKey]: { value: common.time },
-      [template.technicianKey]: { value: common.technician }
-    };
+    const data = {};
+    putTemplateValue(data, template.serviceKey, common.service);
+    putTemplateValue(data, template.timeKey, common.time);
+    putTemplateValue(data, template.technicianKey, common.technician);
+    return data;
   }
   if (eventName === 'arrivalReminder') {
-    return {
-      [template.serviceKey]: { value: common.service },
-      [template.timeKey]: { value: common.time },
-      [template.addressKey]: { value: common.address }
-    };
+    const data = {};
+    putTemplateValue(data, template.serviceKey, common.service);
+    putTemplateValue(data, template.timeKey, common.time);
+    putTemplateValue(data, template.addressKey, common.address);
+    return data;
   }
-  return {
-    [template.serviceKey]: { value: common.service },
-    [template.amountKey]: { value: moneyText(order.refundAmountFen || 0) },
-    [template.statusKey]: { value: clipped(order.noShowNoRefund ? '未到店，不予退款' : '未到店，退款已处理', 5) }
-  };
+  const data = {};
+  putTemplateValue(data, template.serviceKey, common.service);
+  putTemplateValue(data, template.amountKey, moneyText(order.refundAmountFen || 0));
+  putTemplateValue(data, template.storeKey || template.addressKey, common.address);
+  // 兼容旧的带状态字段配置；当前退款模板使用“门店”字段，不再发送多余字段。
+  if (!template.storeKey && !template.addressKey) {
+    putTemplateValue(data, template.statusKey, clipped(order.noShowNoRefund ? '未到店，不予退款' : '未到店，退款已处理', 5));
+  }
+  return data;
 }
 
 async function saveSubscriptionPreferences(statuses = {}) {
@@ -58,7 +82,7 @@ async function saveSubscriptionPreferences(statuses = {}) {
     const subscriptions = { ...(user.subscriptions || {}) };
     for (const [templateId, status] of Object.entries(statuses || {})) {
       if (!allowed.has(templateId)) continue;
-      subscriptions[templateId] = { status: String(status), acceptedAt: status === 'accept' ? now : Number(subscriptions[templateId] && subscriptions[templateId].acceptedAt || 0), updatedAt: now };
+      subscriptions[templateId] = { status: String(status), acceptedAt: subscriptionAccepted(status) ? now : Number(subscriptions[templateId] && subscriptions[templateId].acceptedAt || 0), updatedAt: now };
     }
     const next = { ...user, subscriptions, updatedAt: now };
     await transaction.collection(COLLECTIONS.users).doc(context.openid).set({ data: next });
@@ -75,7 +99,7 @@ async function notifyOrderEvent(eventName, order) {
   if (!template || !template.templateId) return { sent: false, reason: 'NOT_CONFIGURED' };
   const user = await getOptional(COLLECTIONS.users, order.userId);
   const subscription = user && user.subscriptions && user.subscriptions[template.templateId];
-  if (!subscription || subscription.status !== 'accept' || Number(subscription.usedAt || 0) > Number(subscription.acceptedAt || 0)) return { sent: false, reason: 'NOT_SUBSCRIBED' };
+  if (!subscription || !subscriptionAccepted(subscription.status) || Number(subscription.usedAt || 0) > Number(subscription.acceptedAt || 0)) return { sent: false, reason: 'NOT_SUBSCRIBED' };
   const recordId = `submsg_${eventName}_${order.id}`;
   const existing = await getOptional(COLLECTIONS.notifications, recordId);
   if (existing && existing.status === 'DONE') return { sent: true, duplicate: true };

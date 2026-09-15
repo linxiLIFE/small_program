@@ -8,6 +8,7 @@ let actor = {role:'OWNER',uid:'owner'};
 const tables = {categories:{nail:{id:'nail',name:'美甲',enabled:true},brow:{id:'brow',name:'眉毛',enabled:true}},services:{service:{id:'service',name:'法式',categoryId:'nail',categoryName:'美甲',enabled:true,priceFen:9900,durationMinutes:60}},works:{},technicians:{tech:{id:'tech',name:'技师',enabled:true,skills:['service']},other:{id:'other',name:'其他',enabled:true,skills:['service']}},orders:{},technician_days:{},staff_accounts:{},audit_logs:{}};
 const clone = value=>JSON.parse(JSON.stringify(value));
 const db={ collection: table => ({ doc: id => ({ set: async ({data}) => { (tables[table] ||= {})[id]=clone(data); } }) }) };
+db.query=async()=>[[]];
 db.insertIfAbsent=async(table,id,data)=>{if(tables[table]?.[id])return{inserted:false};(tables[table]||={})[id]=clone(data);return{inserted:true};};
 db.command={in:value=>value,gte:value=>value};
 db.runTransaction=async fn=>{const before=clone(tables);try{return await fn(db);}catch(error){Object.keys(tables).forEach(k=>delete tables[k]);Object.assign(tables,before);throw error;}};

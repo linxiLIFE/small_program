@@ -171,12 +171,21 @@ async function phoneUserIds(query) {
 }
 
 async function ordersWithContact(records) {
+  if (!records.length) return [];
   const ids = [...new Set(records.map((record) => String(record.userId || '')).filter(Boolean))];
-  if (!ids.length) return records.map(publicOrder);
-  const [rows] = await db.query(`SELECT id, data FROM users WHERE id IN (${ids.map(() => '?').join(', ')})`, ids);
-  const users = new Map((rows || []).map((row) => [String(row.id), rowData(row)]));
+  const orderIds = records.map((record) => String(record.id || record._id));
+  const [userResult, refundResult] = await Promise.all([
+    ids.length ? db.query(`SELECT id, data FROM users WHERE id IN (${ids.map(() => '?').join(', ')})`, ids) : Promise.resolve([[]]),
+    db.query(`SELECT order_id, COALESCE(SUM(amount_fen), 0) AS refunded_fen FROM refunds WHERE status = 'SUCCESS' AND order_id IN (${orderIds.map(() => '?').join(', ')}) GROUP BY order_id`, orderIds)
+  ]);
+  const users = new Map((userResult[0] || []).map((row) => [String(row.id), rowData(row)]));
+  const refundTotals = new Map((refundResult[0] || []).map((row) => [String(row.order_id), Number(row.refunded_fen || 0)]));
   return records.map((record) => {
-    const order = publicOrder(record);
+    const successfulFen = refundTotals.get(String(record.id || record._id)) || 0;
+    const recordedFen = record.refundedFen === undefined
+      ? record.refundStatus === REFUND_STATUS.SUCCESS ? Number(record.refundAmountFen || record.paidFen || 0) : 0
+      : Number(record.refundedFen || 0);
+    const order = publicOrder({ ...record, refundedFen: Math.min(Number(record.paidFen || 0), Math.max(recordedFen, successfulFen)) });
     const phone = readablePhone(users.get(String(record.userId || '')));
     return { ...order, phone };
   });

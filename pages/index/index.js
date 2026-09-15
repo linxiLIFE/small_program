@@ -1,6 +1,16 @@
 const api = require('../../utils/api');
 const { formatMoney, formatDuration } = require('../../utils/format');
 
+const NOTIFICATION_PROMPT_HIDE_KEY = 'notification-prompt-hide-until';
+const NOTIFICATION_EVENTS = ['appointmentSuccess', 'arrivalReminder', 'noShowRefund'];
+const ACCEPTED_SUBSCRIPTION_STATUSES = new Set(['accept', 'acceptWithAudio']);
+
+function configuredNotificationEvents(settings) {
+  const notifications = settings && settings.notifications;
+  const templates = notifications && notifications.templates || {};
+  return Object.keys(templates).filter((event) => templates[event] && templates[event].templateId);
+}
+
 Page({
   data: {
     loading: true, error: '',
@@ -9,11 +19,72 @@ Page({
     categories: [],
     services: [],
     works: [],
-    technicians: [], banners: []
+    technicians: [], banners: [],
+    notificationPrompt: {
+      visible: false,
+      loading: false,
+      configuredCount: 0
+    }
   },
 
   onShow() {
     this.loadHome();
+    this.loadNotificationPrompt();
+  },
+
+  async loadNotificationPrompt() {
+    const hiddenUntil = Number(wx.getStorageSync(NOTIFICATION_PROMPT_HIDE_KEY) || 0);
+    if (hiddenUntil > Date.now()) return;
+    try {
+      const settings = await api.getSettings();
+      const notifications = settings && settings.notifications || {};
+      const configuredCount = configuredNotificationEvents(settings).length;
+      if (getApp().globalData.isDemo || notifications.enabled === false || !configuredCount) {
+        this.setData({ 'notificationPrompt.visible': false });
+        return;
+      }
+      this.notificationSettings = settings;
+      this.setData({
+        'notificationPrompt.visible': true,
+        'notificationPrompt.loading': false,
+        'notificationPrompt.configuredCount': configuredCount
+      });
+    } catch (error) {
+      // 授权入口不是首页主流程；配置接口暂不可用时不打扰顾客。
+      this.setData({ 'notificationPrompt.visible': false });
+    }
+  },
+
+  async enableNotifications() {
+    if (this.data.notificationPrompt.loading) return;
+    const settings = this.notificationSettings;
+    if (!settings) {
+      await this.loadNotificationPrompt();
+      return;
+    }
+    this.setData({ 'notificationPrompt.loading': true });
+    try {
+      const result = await api.requestSubscriptionEvents(settings, NOTIFICATION_EVENTS);
+      const statuses = Object.values(result.statuses || {});
+      const accepted = statuses.filter((status) => ACCEPTED_SUBSCRIPTION_STATUSES.has(status)).length;
+      if (accepted) {
+        wx.removeStorageSync(NOTIFICATION_PROMPT_HIDE_KEY);
+        this.setData({ 'notificationPrompt.visible': false, 'notificationPrompt.loading': false });
+        wx.showToast({ title: `已开启 ${accepted} 项提醒`, icon: 'success' });
+      } else {
+        wx.setStorageSync(NOTIFICATION_PROMPT_HIDE_KEY, Date.now() + 24 * 60 * 60 * 1000);
+        this.setData({ 'notificationPrompt.visible': false, 'notificationPrompt.loading': false });
+        wx.showToast({ title: '你可以稍后在“我的”里开启', icon: 'none' });
+      }
+    } catch (error) {
+      this.setData({ 'notificationPrompt.loading': false });
+      wx.showToast({ title: '授权未完成，请稍后再试', icon: 'none' });
+    }
+  },
+
+  hideNotificationPrompt() {
+    wx.setStorageSync(NOTIFICATION_PROMPT_HIDE_KEY, Date.now() + 7 * 24 * 60 * 60 * 1000);
+    this.setData({ 'notificationPrompt.visible': false });
   },
 
   async loadHome() {
