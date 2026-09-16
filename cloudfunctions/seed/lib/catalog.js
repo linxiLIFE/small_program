@@ -29,6 +29,10 @@ function publicService(item) {
     durationMinutes: Number(item.durationMinutes || 0),
     coverUrl: item.coverUrl || '',
     tags: item.tags || [],
+    isAddon: item.isAddon === true || item.isAddon === 1 || ['REMOVAL', 'BUILDER'].includes(String(item.addonType || '').toUpperCase()),
+    addonType: String(item.addonType || ''),
+    freeAsAddon: item.freeAsAddon === true || item.freeAsAddon === 1,
+    bookableStandalone: item.bookableStandalone !== false && item.bookableStandalone !== 0,
     styleCount: Number(item.styleCount || 0),
     version: item.version || 1
   };
@@ -92,12 +96,53 @@ async function loadCatalog(categoryId = '') {
   const categoryById = new Map(categories.map((item) => [item.id, item]));
   const styleCounts = countStyles(styles);
   const services = serviceRecords
-    .filter((item) => !item.archived && categoryById.has(item.categoryId))
+    .filter((item) => !item.archived && item.bookableStandalone !== false && item.bookableStandalone !== 0 && categoryById.has(item.categoryId))
     .map((item) => {
       const category = categoryById.get(item.categoryId);
       return { ...publicService(item), styleCount: styleCounts[item.id || item._id] || 0, categoryName: category.name };
     });
   return { categories, services, styles };
+}
+
+function inferredAddonType(item) {
+  const explicit = String(item && item.addonType || '').toUpperCase();
+  if (['REMOVAL', 'BUILDER'].includes(explicit)) return explicit;
+  const text = [item && item.name, ...(Array.isArray(item && item.tags) ? item.tags : [])].join('');
+  if (/卸(?:甲|除)|卸本甲|卸甲片/.test(text)) return 'REMOVAL';
+  if ((item && (item.isAddon === true || item.bookableStandalone === false)) && /建构/.test(text)) return 'BUILDER';
+  return '';
+}
+
+const FREE_REMOVAL_ADDON_IDS = new Set([
+  'svc-nail-removal-natural',
+  'svc-foot-nail-removal-natural'
+]);
+
+function isFreeRemovalAddon(item) {
+  if (!item) return false;
+  const id = item.id || item._id || '';
+  const name = String(item.name || '').trim();
+  return FREE_REMOVAL_ADDON_IDS.has(id) || name === '卸本甲' || name === '卸脚部本甲'
+    || item.freeAsAddon === true || item.freeAsAddon === 1 || item.freeAsAddon === '1';
+}
+
+function addonPriceFen(item, addonType = inferredAddonType(item)) {
+  return addonType === 'REMOVAL' && isFreeRemovalAddon(item) ? 0 : Number(item && item.priceFen || 0);
+}
+
+async function listBookingAddons(categoryId = '') {
+  if (!['nail', 'foot-nail'].includes(String(categoryId || ''))) return { removals: [], builders: [] };
+  // 迁移脚本写入 MySQL JSON 时，布尔值可能被保存为 1/0。这里不在 SQL
+  // 条件中用严格布尔值过滤，避免有效叠加项在查询后被内存层二次过滤掉。
+  const records = await loadAll(COLLECTIONS.services, { categoryId }, { orderBy: { field: 'sort', direction: 'asc' } });
+  const options = records
+    .filter((item) => !item.archived && item.enabled !== false && item.enabled !== 0)
+    .map((item) => ({ ...publicService(item), addonType: inferredAddonType(item) }))
+    .filter((item) => item.addonType);
+  return {
+    removals: options.filter((item) => item.addonType === 'REMOVAL').map((item) => ({ ...item, priceFen: addonPriceFen(item, 'REMOVAL') })),
+    builders: options.filter((item) => item.addonType === 'BUILDER')
+  };
 }
 
 async function listServiceCatalog(categoryId = '') {
@@ -206,4 +251,4 @@ async function getHome(settings) {
   };
 }
 
-module.exports = { publicCategory, publicService, publicWork, publicTechnician, listCategories, listServiceCatalog, listServices, listServiceStyles, listWorks, listTechnicians, getService, getWork, getHome };
+module.exports = { publicCategory, publicService, publicWork, publicTechnician, isFreeRemovalAddon, addonPriceFen, listCategories, listServiceCatalog, listServices, listBookingAddons, listServiceStyles, listWorks, listTechnicians, getService, getWork, getHome };

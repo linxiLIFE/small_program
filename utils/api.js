@@ -8,6 +8,7 @@ const CACHE_TTL = {
   getHome: 45 * 1000,
   listServices: 45 * 1000,
   listServiceStyles: 45 * 1000,
+  listBookingAddons: 30 * 1000,
   getBookingContext: 30 * 1000,
   getService: 60 * 1000,
   getWork: 60 * 1000,
@@ -158,6 +159,18 @@ function listServiceStyles(serviceId) {
   });
 }
 
+function fallbackBookingAddons(categoryId) {
+  const addons = mock.bookingAddons && mock.bookingAddons[categoryId];
+  return addons || { removals: [], builders: [] };
+}
+
+function listBookingAddons(categoryId) {
+  return cachedCall('listBookingAddons', { categoryId }, () => fallbackBookingAddons(categoryId)).catch((error) => {
+    if (error && error.code === 'UNKNOWN_ACTION') return fallbackBookingAddons(categoryId);
+    throw error;
+  });
+}
+
 function getLegacyBookingContext(serviceId, workId) {
   return Promise.all([
     getSettings(),
@@ -170,7 +183,8 @@ function getLegacyBookingContext(serviceId, workId) {
     service,
     technicians: technicianResult.technicians || [],
     profile,
-    work
+    work,
+    addons: fallbackBookingAddons(service && service.categoryId)
   }));
 }
 
@@ -185,7 +199,8 @@ function getBookingContext(serviceId, workId) {
       service,
       technicians: service ? mock.technicians.filter((item) => (item.categoryIds || []).includes(service.categoryId)) : [],
       profile: mock.profile,
-      work
+      work,
+      addons: fallbackBookingAddons(service && service.categoryId)
     };
   }).catch((error) => {
     if (error && error.code === 'UNKNOWN_ACTION') {
@@ -435,6 +450,7 @@ module.exports = {
   getSettings: () => cachedCall('getSettings', {}, () => ({ store: { ...mock.settings }, booking: { openDays: mock.settings.openDays, minAdvanceMinutes: mock.settings.minAdvanceMinutes }, points: { maxPercent: mock.settings.pointMaxPercent } })),
   listServices,
   listServiceStyles,
+  listBookingAddons,
   getService,
   getWork,
   listTechnicians,

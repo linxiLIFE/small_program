@@ -4,16 +4,34 @@
   </view>
   <view wx:elif="{{!service.id}}" class="booking-empty"><view class="booking-empty-art"><image wx:if="{{emptyImage}}" src="{{emptyImage}}" mode="aspectFill" webp="{{true}}"/><view wx:else class="booking-empty-art-fallback"><view class="booking-art-orbit orbit-one"></view><view class="booking-art-orbit orbit-two"></view><view class="booking-art-core"><text>拾</text></view><text class="booking-art-spark spark-one">✦</text><text class="booking-art-spark spark-two">·</text></view><view class="booking-empty-art-shade"></view></view><button class="primary-button" bindtap="chooseStyle">选款</button></view>
   <block wx:else>
-    <view class="booking-heading"><text class="page-title">预约</text></view>
-
-    <view wx:if="{{work}}" class="selected-style card"><image src="{{work.imageUrl}}" mode="aspectFill" webp="{{true}}"/><view class="selected-style-copy"><text class="selected-style-label">已选款式</text><text class="selected-style-title">{{work.title}}</text><text class="selected-style-meta">{{service.categoryName}} · {{service.name}}</text></view><button bindtap="chooseStyle">更换</button></view>
+    <view wx:if="{{work}}" class="selected-style card"><image wx:if="{{work.imageUrl && !workImageError}}" src="{{work.imageUrl}}" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" binderror="handleWorkImageError"/><view wx:else class="selected-style-image-fallback">款式</view><view class="selected-style-copy"><text class="selected-style-title">{{work.title}}</text><text class="selected-style-meta">{{service.categoryName}} · {{service.name}}</text></view><button bindtap="chooseStyle">更换</button></view>
     <view class="booking-service card">
-      <view class="booking-service-copy"><text class="booking-service-label">小项目</text><text class="booking-service-name">{{service.name}}</text><text class="booking-service-meta">{{service.durationText}} 服务时长 · {{service.categoryName}}</text></view>
+      <view class="booking-service-copy"><text class="booking-service-name">{{service.name}}</text><text class="booking-service-meta">{{service.durationText}} · {{service.categoryName}}</text></view>
       <text class="booking-service-price">¥{{service.priceText}}</text>
     </view>
 
+    <view wx:if="{{showsAddonStep}}" class="booking-step addon-step">
+      <view class="step-heading"><text class="step-number">01</text><text class="step-title">{{requiresBuilderChoice ? '卸甲 / 建构' : '卸甲'}}</text></view>
+      <view class="addon-panel card">
+        <view class="addon-group">
+        <view class="addon-group-heading"><text class="addon-question-title">卸甲</text><text class="addon-badge">卸本甲免费</text></view>
+        <view class="addon-options">
+          <button class="addon-option {{selectedRemovalId === 'none' ? 'selected' : ''}}" data-type="removal" data-id="none" bindtap="selectAddon"><view class="addon-option-main"><text>不需要</text><text wx:if="{{selectedRemovalId === 'none'}}" class="addon-option-check">✓</text></view></button>
+          <button wx:for="{{removalOptions}}" wx:key="id" class="addon-option {{selectedRemovalId === item.id ? 'selected' : ''}}" data-type="removal" data-id="{{item.id}}" bindtap="selectAddon"><view class="addon-option-main"><text>{{item.name}}</text><text wx:if="{{selectedRemovalId === item.id}}" class="addon-option-check">✓</text></view><text class="addon-option-meta">{{item.priceText}} · {{item.durationText}}</text></button>
+        </view>
+        </view>
+        <view wx:if="{{requiresBuilderChoice}}" class="addon-group builder-group">
+        <view class="addon-group-heading"><text class="addon-question-title">建构</text></view>
+        <view class="addon-options">
+          <button class="addon-option {{selectedBuilderId === 'none' ? 'selected' : ''}}" data-type="builder" data-id="none" bindtap="selectAddon"><view class="addon-option-main"><text>不需要</text><text wx:if="{{selectedBuilderId === 'none'}}" class="addon-option-check">✓</text></view></button>
+          <button wx:for="{{builderOptions}}" wx:key="id" class="addon-option {{selectedBuilderId === item.id ? 'selected' : ''}}" data-type="builder" data-id="{{item.id}}" bindtap="selectAddon"><view class="addon-option-main"><text>{{item.name}}</text><text wx:if="{{selectedBuilderId === item.id}}" class="addon-option-check">✓</text></view><text class="addon-option-meta">{{item.priceText}} · {{item.durationText}}</text></button>
+        </view>
+        </view>
+      </view>
+    </view>
+
     <view class="booking-step">
-      <view class="step-heading"><text class="step-number">01</text><view><text class="step-title">选择技师</text></view></view>
+      <view class="step-heading"><text class="step-number">{{showsAddonStep ? '02' : '01'}}</text><text class="step-title">技师</text></view>
       <scroll-view class="technician-scroll" scroll-x="true" show-scrollbar="false">
         <view class="technician-scroll-inner">
           <view wx:for="{{technicians}}" wx:key="id" class="booking-tech {{selectedTechnicianId === item.id ? 'selected' : ''}}" data-id="{{item.id}}" bindtap="selectTechnician">
@@ -27,7 +45,7 @@
     </view>
 
     <view class="booking-step">
-      <view class="step-heading"><text class="step-number">02</text><view><text class="step-title">选择日期</text></view></view>
+      <view class="step-heading"><text class="step-number">{{showsAddonStep ? '03' : '02'}}</text><text class="step-title">日期</text></view>
       <scroll-view class="date-scroll" scroll-x="true" show-scrollbar="false">
         <view class="date-scroll-inner">
           <view wx:for="{{dates}}" wx:key="value" class="date-item {{selectedDate === item.value ? 'selected' : ''}}" data-date="{{item.value}}" bindtap="selectDate"><text>{{item.label}}</text></view>
@@ -36,8 +54,9 @@
     </view>
 
     <view class="booking-step slot-step">
-      <view class="step-heading"><text class="step-number">03</text><view><text class="step-title">选择服务时段</text></view></view>
-      <view wx:if="{{timeline.segments.length && timelineHasOptions}}" class="timeline-card card" data-time-periods="{{timePeriods.length}}">
+      <view class="step-heading"><text class="step-number">{{showsAddonStep ? '04' : '03'}}</text><text class="step-title">时间</text></view>
+      <view wx:if="{{showsAddonStep && !addonsReady}}" class="timeline-no-options card">{{requiresBuilderChoice ? '先选卸甲和建构' : '先选卸甲'}}</view>
+      <view wx:elif="{{timeline.segments.length && timelineHasOptions}}" class="timeline-card card" data-time-periods="{{timePeriods.length}}">
         <view class="timeline-heading"><text class="timeline-date">{{selectedDate}}</text><text class="timeline-duration">{{service.durationText}}</text></view>
         <view class="timeline-stage">
           <view class="timeline-ticks"><text wx:for="{{timeline.ticks}}" wx:key="label" style="{{item.leftStyle}}">{{item.label}}</text></view>
@@ -57,7 +76,7 @@
     </view>
 
     <view class="booking-step">
-      <view class="step-heading"><text class="step-number">04</text><view><text class="step-title">确认优惠</text></view></view>
+      <view class="step-heading"><text class="step-number">{{showsAddonStep ? '05' : '04'}}</text><text class="step-title">积分</text></view>
       <view class="points-option card">
         <view><text class="points-title">使用积分抵扣</text><text class="points-balance">可用 {{profile.points || 0}} 积分</text></view>
         <switch color="#bb6f79" checked="{{usePoints}}" bindchange="togglePoints"></switch>
@@ -65,7 +84,7 @@
     </view>
 
     <view class="contact-card card">
-      <view><text class="contact-label">预约联系方式</text><text class="contact-phone">{{profile.phoneLabel || '未绑定'}}</text></view>
+      <view><text class="contact-label">手机号</text><text class="contact-phone">{{profile.phoneLabel || '未绑定'}}</text></view>
       <button wx:if="{{!profile.phone && !profile.phoneMasked}}" class="bind-phone-button" open-type="getPhoneNumber|agreePrivacyAuthorization" phone-number-no-quota-toast="false" bindgetphonenumber="handleGetPhoneNumber" bindagreeprivacyauthorization="handleAgreePrivacyAuthorization">授权手机号</button>
       <text wx:else class="bound-mark">已绑定 ✓</text>
     </view>
@@ -76,6 +95,7 @@
     </view>
 
     <view class="booking-summary card">
+      <view wx:for="{{selectedAddons}}" wx:key="id" class="summary-row addon-summary-row"><text>{{item.type === 'REMOVAL' ? '卸甲' : '建构'}} · {{item.name}}（+{{item.durationMinutes}}分钟）</text><text>{{item.priceFen ? '¥' + item.priceText : '免费'}}</text></view>
       <view class="summary-row"><text>项目金额</text><text>{{quote.quoteId ? quote.totalText : '--'}}</text></view>
       <view class="summary-row discount-row"><text>积分抵扣（{{quote.quoteId ? quote.pointsToUse : 0}} 分）</text><text>{{quote.quoteId ? '- ' + quote.discountText : '--'}}</text></view>
       <view class="divider"></view>

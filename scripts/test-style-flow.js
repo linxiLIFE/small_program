@@ -63,7 +63,15 @@ function page(file, api, state = {}) {
       service: mock.services[0],
       technicians: [mock.technicians[0]],
       profile: mock.profile,
-      work: mock.works[0]
+      work: mock.works[0],
+      addons: { removals: [], builders: [] }
+    }),
+    listBookingAddons: async () => ({
+      removals: [
+        { id: 'removal-1', name: '卸本甲', type: 'REMOVAL', priceFen: 0, durationMinutes: 30 },
+        { id: 'removal-2', name: '卸甲片', type: 'REMOVAL', priceFen: 2000, durationMinutes: 40 }
+      ],
+      builders: [{ id: 'builder-1', name: 'V建构', type: 'BUILDER', priceFen: 1500, durationMinutes: 30 }]
     }),
     getAvailableSlots: async () => ({
       stepMinutes: 15,
@@ -79,6 +87,9 @@ function page(file, api, state = {}) {
   groupedBooking.onLoad({ serviceId: mock.services[0].id, workId: mock.works[0].id });
   groupedBooking.data.selectedDate = bookingDate;
   await groupedBooking.loadBooking();
+  assert.deepStrictEqual(groupedBooking.data.removalOptions.map((item) => item.priceText), ['免费', '¥20.00']);
+  await groupedBooking.selectAddon({ currentTarget: { dataset: { type: 'removal', id: 'none' } } });
+  await groupedBooking.selectAddon({ currentTarget: { dataset: { type: 'builder', id: 'none' } } });
   assert.deepStrictEqual(groupedBooking.data.timePeriods.map((period) => period.label), ['上午', '下午']);
   assert.equal(groupedBooking.data.selectedSlotId, '');
   assert.equal(groupedBooking.data.expandedPeriodId, '');
@@ -106,6 +117,7 @@ function page(file, api, state = {}) {
   const bookingWxml = fs.readFileSync(path.join(__dirname, '..', 'pages/booking/index.wxml'), 'utf8');
   assert.match(bookingWxml, /timeline\.segments\.length && timelineHasOptions/);
   assert.match(bookingWxml, /当天没有可预约时段/);
+  assert.match(bookingWxml, /\{\{item\.priceText\}\} · \{\{item\.durationText\}\}/);
   assert(!bookingWxml.includes('step-subtitle'));
   assert(!bookingWxml.includes('timeline-instruction'));
   const detailWxml = fs.readFileSync(path.join(__dirname, '..', 'pages/work-detail/index.wxml'), 'utf8');

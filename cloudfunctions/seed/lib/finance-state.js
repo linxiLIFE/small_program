@@ -100,6 +100,9 @@ function bookingRequestHash(payload = {}) {
   const normalized = {
     serviceId: String(payload.serviceId || ''),
     workId: String(payload.workId || ''),
+    removalServiceId: String(payload.removalServiceId || ''),
+    builderServiceId: String(payload.builderServiceId || ''),
+    addonSelectionConfirmed: payload.addonSelectionConfirmed === true,
     technicianId: String(payload.technicianId || ''),
     date: String(payload.date || ''),
     startAt: Number(payload.startAt || 0),

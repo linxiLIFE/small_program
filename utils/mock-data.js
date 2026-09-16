@@ -38,6 +38,29 @@ const services = [
   }
 ];
 
+const bookingAddons = {
+  nail: {
+    removals: [
+      { id: 'demo-nail-removal-natural', categoryId: 'nail', name: '卸本甲', addonType: 'REMOVAL', priceFen: 0, durationMinutes: 15 },
+      { id: 'demo-nail-removal-tips', categoryId: 'nail', name: '卸甲片', addonType: 'REMOVAL', priceFen: 0, durationMinutes: 20 }
+    ],
+    builders: [
+      { id: 'demo-nail-builder-v', categoryId: 'nail', name: 'V建构', addonType: 'BUILDER', priceFen: 1500, durationMinutes: 15 },
+      { id: 'demo-nail-builder-shaping', categoryId: 'nail', name: '单独塑形建构', addonType: 'BUILDER', priceFen: 3000, durationMinutes: 30 }
+    ]
+  },
+  'foot-nail': {
+    removals: [
+      { id: 'demo-foot-removal-natural', categoryId: 'foot-nail', name: '卸脚部本甲', addonType: 'REMOVAL', priceFen: 0, durationMinutes: 30 },
+      { id: 'demo-foot-removal-tips', categoryId: 'foot-nail', name: '卸脚甲片', addonType: 'REMOVAL', priceFen: 0, durationMinutes: 40 }
+    ],
+    builders: [
+      { id: 'demo-foot-builder-v', categoryId: 'foot-nail', name: '脚部V建构', addonType: 'BUILDER', priceFen: 1500, durationMinutes: 30 },
+      { id: 'demo-foot-builder-shaping', categoryId: 'foot-nail', name: '脚部塑形建构', addonType: 'BUILDER', priceFen: 3000, durationMinutes: 45 }
+    ]
+  }
+};
+
 const technicians = [
   {
     id: 'tech-lin', name: '林老师', title: '主理人 · 美甲师',
@@ -146,4 +169,4 @@ const settings = {
   minAdvanceMinutes: 60, openDays: 14
 };
 
-module.exports = { categories, services, technicians, works, getDates, getSlots, profile, orders, settings };
+module.exports = { categories, services, bookingAddons, technicians, works, getDates, getSlots, profile, orders, settings };

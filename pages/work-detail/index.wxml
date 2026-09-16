@@ -3,7 +3,7 @@
   <empty-state wx:elif="{{error}}" title="{{error}}" button-text="重试" bindaction="loadDetail"/>
   <block wx:else>
     <view class="work-hero" bindtap="previewImage">
-      <image wx:if="{{work.imageUrl}}" class="work-hero-image" mode="aspectFill" webp="{{true}}" src="{{work.imageUrl}}" />
+      <image wx:if="{{work.imageUrl && !imageError}}" class="work-hero-image" mode="aspectFill" webp="{{true}}" src="{{work.imageUrl}}" binderror="handleImageError" />
       <view wx:else class="work-hero-fallback"><text>拾光</text></view>
       <view class="work-hero-overlay"></view>
       <view class="work-hero-caption"><text class="work-hero-title">{{work.title}}</text></view>

@@ -1,0 +1,25 @@
+{
+  "name": "四个小姐姐的店 · 管理后台",
+  "short_name": "小姐姐的店",
+  "description": "预约、核销与门店管理",
+  "lang": "zh-CN",
+  "start_url": "/cloud-admin/index.html",
+  "scope": "/cloud-admin/",
+  "display": "standalone",
+  "background_color": "#fbf0e6",
+  "theme_color": "#8f4554",
+  "icons": [
+    {
+      "src": "app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

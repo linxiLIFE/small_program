@@ -43,7 +43,8 @@ async function getBookingContext(payload = {}) {
     booking.getProfile(),
     catalog.getWork(workId)
   ]);
-  return { settings: publicSettings(settings), service, technicians, profile, work };
+  const addons = await catalog.listBookingAddons(service.categoryId);
+  return { settings: publicSettings(settings), service, technicians, profile, work, addons };
 }
 
 async function route(action, payload) {
@@ -51,6 +52,7 @@ async function route(action, payload) {
   switch (action) {
     case 'getHome': return catalog.getHome(await getCurrentSettings());
     case 'listServices': return catalog.listServiceCatalog(payload && payload.categoryId);
+    case 'listBookingAddons': return catalog.listBookingAddons(payload && payload.categoryId);
     case 'listServiceStyles': return catalog.listServiceStyles(payload && payload.serviceId);
     case 'getBookingContext': return getBookingContext(payload || {});
     case 'getService': return catalog.getService(payload && payload.serviceId);

@@ -6,7 +6,8 @@ process.env.CHECKIN_SIGNING_SECRET = 'checkin-test-secret-at-least-32-bytes-long
 
 const { decryptNotification } = require('../cloudfunctions/api/lib/wechat-pay');
 const { encodeToken, decodeToken } = require('../cloudfunctions/api/lib/checkin');
-const { noShowSettlement, successfulRefundedFen } = require('../cloudfunctions/api/lib/booking');
+const { noShowSettlement, successfulRefundedFen, addonTypeOf, serviceIncludesBuilder } = require('../cloudfunctions/api/lib/booking');
+const { addonPriceFen, isFreeRemovalAddon } = require('../cloudfunctions/api/lib/catalog');
 const { cumulativeRefundedFen, remainingRefundableFen, refundInProgress } = require('../cloudfunctions/api/lib/finance-state');
 const { templateData } = require('../cloudfunctions/api/lib/notification-service');
 
@@ -35,6 +36,20 @@ test('no-show penalty consumes points before cash', () => {
 
 test('orders below the penalty are not refunded', () => {
   assert.deepStrictEqual(noShowSettlement({ totalFen:2500, paidFen:1500, pointsConsumed:200, bookingRuleSnapshot:{noShowPenaltyFen:3000}, pointRuleSnapshot:{unit:20,discountFen:100} }), { penaltyFen:2500, penaltyPoints:200, refundPoints:0, refundCashFen:0, noRefund:true });
+});
+
+test('booking add-ons charge every removal except natural-nail removal', () => {
+  assert.strictEqual(addonTypeOf({ name: '卸甲片', tags: ['卸除'] }), 'REMOVAL');
+  assert.strictEqual(addonTypeOf({ name: '塑形建构', isAddon: true }), 'BUILDER');
+  assert.strictEqual(addonTypeOf({ name: '本甲建构纯色', isAddon: false }), '');
+  assert.strictEqual(serviceIncludesBuilder({ name: '本甲建构纯色' }), true);
+  assert.strictEqual(serviceIncludesBuilder({ name: '本甲纯色' }), false);
+  assert.strictEqual(isFreeRemovalAddon({ id: 'svc-nail-removal-natural', name: '卸本甲', priceFen: 1000 }), true);
+  assert.strictEqual(addonPriceFen({ id: 'svc-nail-removal-natural', name: '卸本甲', priceFen: 1000 }, 'REMOVAL'), 0);
+  assert.strictEqual(addonPriceFen({ id: 'svc-nail-removal-tips', name: '卸甲片', priceFen: 2000 }, 'REMOVAL'), 2000);
+  assert.strictEqual(addonPriceFen({ id: 'svc-nail-removal-thick-builder', name: '卸超厚本甲建构', priceFen: 2000 }, 'REMOVAL'), 2000);
+  assert.strictEqual(addonPriceFen({ id: 'svc-foot-nail-removal-natural', name: '卸脚部本甲', priceFen: 1000 }, 'REMOVAL'), 0);
+  assert.strictEqual(addonPriceFen({ id: 'svc-foot-nail-removal-tips', name: '卸脚甲片', priceFen: 2000 }, 'REMOVAL'), 2000);
 });
 
 test('partial refunds keep only the unpaid remainder refundable', () => {

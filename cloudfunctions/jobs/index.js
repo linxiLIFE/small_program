@@ -7,7 +7,7 @@ const path = require('path');
 const sharedRoot = fs.existsSync(path.join(__dirname, 'lib')) ? './lib' : '../api/lib';
 const { db, getOptional } = require(`${sharedRoot}/db`);
 const { COLLECTIONS, PAYMENT_STATUS, REFUND_STATUS, ORDER_STATUS } = require(`${sharedRoot}/constants`);
-const { markPaymentSuccess, markPaymentClosed, markNoShow } = require(`${sharedRoot}/booking`);
+const { markPaymentSuccess, markPaymentClosed, markNoShow, markServiceCompleted } = require(`${sharedRoot}/booking`);
 const { requestRefund, scheduleRefundRetry, reconcilePaymentBeforeCancellation } = require(`${sharedRoot}/payment-service`);
 const wechat = require(`${sharedRoot}/wechat-pay`);
 const { addMinutes } = require(`${sharedRoot}/time`);
@@ -93,6 +93,14 @@ async function processNoShow(job) {
   await markNoShow(job.businessId);
 }
 
+async function processServiceComplete(job) {
+  const order = await getOptional(COLLECTIONS.orders, job.businessId);
+  if (!order || order.status === ORDER_STATUS.COMPLETED) return;
+  if (![ORDER_STATUS.ARRIVED, ORDER_STATUS.IN_SERVICE].includes(order.status)) return;
+  if (Number(order.endAt || 0) > Date.now()) return { deferred: true };
+  await markServiceCompleted(order.id || order._id);
+}
+
 async function processAppointmentReminder(job) {
   const order = await getOptional(COLLECTIONS.orders, job.businessId);
   if (!order || order.status !== ORDER_STATUS.RESERVED) return;
@@ -138,6 +146,13 @@ async function processJob(job, result) {
       }
     }
     else if (claimed.type === 'NO_SHOW') await processNoShow(claimed);
+    else if (claimed.type === 'SERVICE_COMPLETE') {
+      const completionResult = await processServiceComplete(claimed);
+      if (completionResult && completionResult.deferred) {
+        if (await deferJob(claimed)) result.processed += 1;
+        return;
+      }
+    }
     else if (claimed.type === 'APPOINTMENT_REMINDER') await processAppointmentReminder(claimed);
     else if (claimed.type === 'REFUND_RETRY') {
       const refundResult = await processRefund(claimed);
@@ -236,9 +251,30 @@ async function repairRefundJobs() {
   return repaired;
 }
 
+async function repairServiceCompletionJobs(now) {
+  let repaired = 0;
+  const page = await getRepairPage(COLLECTIONS.orders, [ORDER_STATUS.ARRIVED, ORDER_STATUS.IN_SERVICE], 'cursor_repair_service_completion');
+  for (const order of page.records) {
+    const endAt = Number(order.endAt || 0);
+    if (!endAt) continue;
+    const jobId = `job_service_complete_${order.id || order._id}`;
+    const revived = await db.runTransaction(async (transaction) => {
+      const current = await getOptional(COLLECTIONS.orders, order.id || order._id, transaction);
+      if (!current || ![ORDER_STATUS.ARRIVED, ORDER_STATUS.IN_SERVICE].includes(current.status)) return false;
+      const existing = await getOptional(COLLECTIONS.jobs, jobId, transaction);
+      if (existing && ['PENDING', 'RUNNING'].includes(existing.status)) return false;
+      await transaction.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { ...(existing || {}), _id: jobId, id: jobId, type: 'SERVICE_COMPLETE', businessId: current.id || current._id, status: 'PENDING', nextRunAt: Math.max(now, Number(current.endAt)), retryCount: Number(existing && existing.retryCount || 0), leaseUntil: 0, claimToken: '', createdAt: existing && existing.createdAt || now, updatedAt: now } });
+      return true;
+    });
+    if (revived) repaired += 1;
+  }
+  await saveRepairCursor(page);
+  return repaired;
+}
+
 async function repairReconciliationJobs(now) {
-  const [payments, refunds] = await Promise.all([repairPaymentJobs(now), repairRefundJobs()]);
-  return payments + refunds;
+  const [payments, refunds, completions] = await Promise.all([repairPaymentJobs(now), repairRefundJobs(), repairServiceCompletionJobs(now)]);
+  return payments + refunds + completions;
 }
 
 async function cleanupExpiredOperationalRecords(now) {

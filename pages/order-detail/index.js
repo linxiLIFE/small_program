@@ -37,7 +37,7 @@ function paymentProgress(order, confirming = false) {
 }
 
 Page({
-  data: { loading: true, loadError: '', order: {}, actions: [], canCancel: false, paying: false, paymentConfirming: false, paymentChecking: false, qrLoading: false, qrDataUrl: '' },
+  data: { loading: true, loadError: '', order: {}, actions: [], canCancel: false, paying: false, paymentConfirming: false, paymentChecking: false, qrLoading: false, qrDataUrl: '', workImageError: false },
 
   onLoad(options) {
     this.orderId = options.orderId || '';
@@ -87,6 +87,7 @@ Page({
         loading: false,
         loadError: '',
         paymentConfirming: confirming,
+        workImageError: false,
         order: {
           ...order,
           displayTitle,
@@ -119,6 +120,11 @@ Page({
             ABNORMAL: '退款异常'
           }[refundStatus] || '',
           durationText: formatDuration(order.durationMinutes),
+          addons: (order.addons || []).map((item) => ({
+            ...item,
+            priceText: item.priceFen ? formatMoney(item.priceFen) : '免费',
+            durationText: formatDuration(item.durationMinutes)
+          })),
           paymentDeadline,
           countdownText: paymentDeadline ? formatCountdown(remaining) : '',
           countdownUrgent: paymentDeadline && remaining <= 60 * 1000
@@ -137,6 +143,10 @@ Page({
   retryLoadOrder() {
     api.clearCache('getOrder');
     this.loadOrder();
+  },
+
+  handleWorkImageError() {
+    this.setData({ workImageError: true });
   },
 
   async resumePaymentConfirmation() {

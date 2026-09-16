@@ -19,6 +19,11 @@ assert.match(read('utils/api.js'), /pendingRequests/);
 assert.match(read('utils/api.js'), /UNKNOWN_ACTION/);
 assert.match(read('pages/booking/index.js'), /getBookingContext/);
 assert.match(read('pages/booking/index.js'), /loadedKey/);
+assert.match(read('pages/booking/index.js'), /showsAddonStep = isNailBooking && addonType !== 'REMOVAL'/);
+assert.match(read('pages/booking/index.js'), /requiresBuilderChoice = showsAddonStep && addonType !== 'BUILDER'/);
+assert.match(read('pages/booking/index.wxml'), /wx:if="\{\{showsAddonStep\}\}" class="booking-step addon-step"/);
+assert.match(read('pages/booking/index.wxml'), /class="addon-panel card"/);
+assert.doesNotMatch(read('pages/booking/index.wxml'), /需要卸甲吗|需要建构吗|先确认本次是否需要/);
 
 const bookingPage = read('pages/booking/index.js');
 assert.match(bookingPage, /workId: this\.workId/);
@@ -47,8 +52,32 @@ assert.doesNotMatch(read('admin/src/components/CatalogManager.vue'), /整理时�
 assert.match(read('cloudfunctions/api/lib/booking.js'), /Number\(service\.durationMinutes\)/);
 assert.match(read('pages/index/index.js'), /wx\.makePhoneCall/);
 assert.match(read('cloudfunctions/api/index.js'), /updateProfile/);
-assert.match(read('pages/booking/index.wxml'), /选择服务时段/);
+assert.match(read('pages/booking/index.wxml'), /<text class="step-title">时间<\/text>/);
 assert.match(read('pages/booking/index.wxml'), /timePeriods/);
 assert.match(read('pages/booking/index.js'), /buildTimePeriods/);
+assert.match(read('cloudfunctions/api/lib/catalog.js'), /item\.bookableStandalone !== 0/);
+assert.match(read('cloudfunctions/api/lib/catalog.js'), /priceFen: addonPriceFen\(item, 'REMOVAL'\)/);
+assert.match(read('cloudfunctions/api/lib/booking.js'), /standaloneRemoval/);
+assert.match(read('cloudfunctions/api/lib/booking.js'), /priceFen = addonPriceFen\(record, selection\.type\)/);
+assert.match(read('cloudfunctions/api/lib/catalog-admin.js'), /ADDON_SINGLE_STYLE/);
+assert.match(read('cloudfunctions/api/lib/catalog-admin.js'), /单独预约价格必须大于 0/);
+
+const seedCatalog = require('../cloudfunctions/seed/lib/catalog-data');
+const standaloneRemovalPrices = Object.fromEntries(seedCatalog.services
+  .filter((item) => item.addonType === 'REMOVAL')
+  .map((item) => [item.id, item.priceFen]));
+assert.deepEqual(standaloneRemovalPrices, {
+  'svc-nail-removal-natural': 1000,
+  'svc-nail-removal-thick-builder': 2000,
+  'svc-nail-removal-tips': 2000,
+  'svc-foot-nail-removal-natural': 1000,
+  'svc-foot-nail-removal-tips': 2000
+});
+assert.deepEqual(seedCatalog.services
+  .filter((item) => item.addonType === 'REMOVAL' && item.freeAsAddon)
+  .map((item) => item.id), [
+  'svc-nail-removal-natural',
+  'svc-foot-nail-removal-natural'
+]);
 
 console.log('hierarchy tests passed: three-level selection, style-required booking, banner crop and fill');

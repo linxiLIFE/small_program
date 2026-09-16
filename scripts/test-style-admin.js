@@ -31,6 +31,13 @@ function load(name){if(cache[name])return cache[name];const scope={module:{expor
  await assert.rejects(catalog.saveService({name:'新项目',categoryId:category.id,priceFen:100,durationMinutes:30}),/INVALID_CATEGORY/);
  await assert.rejects(catalog.saveService({name:'超限项目',categoryId:'nail',priceFen:10000001,durationMinutes:30}),/INVALID_SERVICE/);
  const service=await catalog.saveService({name:'新项目',categoryId:'nail',categoryName:'伪造',priceFen:100,durationMinutes:30,enabled:true});assert.equal(service.categoryName,'美甲');assert.equal(service.enabled,true);
+ const removal=await catalog.saveService({name:'卸本甲',categoryId:'nail',priceFen:1000,durationMinutes:20,addonType:'REMOVAL',enabled:true});
+ assert.equal(removal.priceFen,1000);assert.equal(removal.bookableStandalone,true);assert.equal(removal.freeAsAddon,true);
+ const removalWorks=Object.values(tables.works).filter(item=>item.serviceId===removal.id&&!item.archived);
+ assert.equal(removalWorks.length,1);assert.equal(removalWorks[0].title,'卸本甲');
+ const paidRemoval=await catalog.saveService({name:'卸甲片',categoryId:'nail',priceFen:2000,durationMinutes:30,addonType:'REMOVAL',enabled:true});
+ assert.equal(paidRemoval.priceFen,2000);assert.equal(paidRemoval.freeAsAddon,false);
+ await assert.rejects(catalog.saveService({name:'免费卸甲',categoryId:'nail',priceFen:0,durationMinutes:20,addonType:'REMOVAL'}),/INVALID_SERVICE/);
  const work=await catalog.saveWork({title:'新款',imageUrl:'https://example.com/a.jpg',serviceId:service.id,featured:true,featuredSort:2,published:true});assert(work.id);assert.equal(work.featured,true);
  const secondWork=await catalog.saveWork({title:'另一款',imageUrl:'https://example.com/b.jpg',serviceId:service.id,featured:false,published:true});
  await catalog.saveFeaturedWorks({orderedIds:[secondWork.id,work.id]});

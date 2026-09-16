@@ -338,7 +338,7 @@
   text-align: center;
 }
 
-.selected-style{display:flex;align-items:center;gap:20rpx;padding:20rpx;margin:24rpx 0}.selected-style image{flex-shrink:0;width:126rpx;height:150rpx;border-radius:16rpx;background:#f1e2dd}.selected-style-copy{flex:1;min-width:0}.selected-style-title,.selected-style-meta{display:block}.selected-style-title{margin-top:8rpx;overflow:hidden;color:#594846;font-size:29rpx;font-weight:700;text-overflow:ellipsis;white-space:nowrap}.selected-style-meta{margin-top:8rpx;overflow:hidden;color:#9a8581;font-size:21rpx;text-overflow:ellipsis;white-space:nowrap}.selected-style button{flex:0 0 100rpx;width:100rpx;height:60rpx;line-height:60rpx;margin:0;padding:0;border-radius:14rpx;font-size:23rpx;background:#f4e8e4;color:#895b61}.booking-empty{display:flex;align-items:center;flex-direction:column;padding:100rpx 24rpx 0;text-align:center}.booking-empty-art{position:relative;width:100%;height:430rpx;overflow:hidden;border-radius:30rpx;background:#f0dfda;box-shadow:0 18rpx 36rpx rgba(104,69,63,.08)}.booking-empty-art image{width:100%;height:100%;display:block}.booking-empty-art-fallback{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14rpx;width:100%;height:100%;background:linear-gradient(145deg,#ecd0cb,#f6e9df 55%,#d9bdc0);color:#a86f75}.booking-empty-art-fallback text:first-child{font-size:76rpx}.booking-empty-art-fallback text:last-child{font-size:28rpx}.booking-empty-art-shade{position:absolute;inset:0;background:linear-gradient(0deg,rgba(55,35,36,.28),transparent 68%)}.booking-empty-title{margin-top:34rpx;color:#594846;font-size:36rpx;font-weight:700}.booking-empty .primary-button{width:100%;margin-top:24rpx}
+.selected-style{display:flex;align-items:center;gap:20rpx;padding:20rpx;margin:24rpx 0}.selected-style image,.selected-style-image-fallback{flex-shrink:0;width:126rpx;height:150rpx;border-radius:16rpx;background:#f1e2dd}.selected-style-image-fallback{display:flex;align-items:center;justify-content:center;color:#a77e7f;font-size:22rpx}.selected-style-copy{flex:1;min-width:0}.selected-style-title,.selected-style-meta{display:block}.selected-style-title{margin-top:8rpx;overflow:hidden;color:#594846;font-size:29rpx;font-weight:700;text-overflow:ellipsis;white-space:nowrap}.selected-style-meta{margin-top:8rpx;overflow:hidden;color:#9a8581;font-size:21rpx;text-overflow:ellipsis;white-space:nowrap}.selected-style button{flex:0 0 100rpx;width:100rpx;height:60rpx;line-height:60rpx;margin:0;padding:0;border-radius:14rpx;font-size:23rpx;background:#f4e8e4;color:#895b61}.booking-empty{display:flex;align-items:center;flex-direction:column;padding:100rpx 24rpx 0;text-align:center}.booking-empty-art{position:relative;width:100%;height:430rpx;overflow:hidden;border-radius:30rpx;background:#f0dfda;box-shadow:0 18rpx 36rpx rgba(104,69,63,.08)}.booking-empty-art image{width:100%;height:100%;display:block}.booking-empty-art-fallback{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14rpx;width:100%;height:100%;background:linear-gradient(145deg,#ecd0cb,#f6e9df 55%,#d9bdc0);color:#a86f75}.booking-empty-art-fallback text:first-child{font-size:76rpx}.booking-empty-art-fallback text:last-child{font-size:28rpx}.booking-empty-art-shade{position:absolute;inset:0;background:linear-gradient(0deg,rgba(55,35,36,.28),transparent 68%)}.booking-empty-title{margin-top:34rpx;color:#594846;font-size:36rpx;font-weight:700}.booking-empty .primary-button{width:100%;margin-top:24rpx}
 
 .time-period-list {
   display: grid;
@@ -723,4 +723,128 @@
   padding: 24rpx 20rpx;
   color: #ab928b;
   text-align: center;
+}
+
+.addon-step {
+  margin-top: 30rpx;
+}
+
+.addon-panel {
+  width: 100%;
+  max-width: 100%;
+  margin-top: 18rpx;
+  padding: 24rpx;
+  overflow: hidden;
+}
+
+.addon-group {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.addon-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 15rpx;
+}
+
+.builder-group {
+  margin-top: 24rpx;
+  padding-top: 24rpx;
+  border-top: 1rpx solid #f0e2de;
+}
+
+.addon-question-title {
+  color: #60484a;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.addon-badge {
+  padding: 3rpx 11rpx;
+  border-radius: 999rpx;
+  background: #edf5ed;
+  color: #68806a;
+  font-size: 18rpx;
+}
+
+.addon-options {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+  overflow: hidden;
+}
+
+.addon-option {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 92rpx;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  margin: 0;
+  padding: 16rpx 18rpx;
+  border: 2rpx solid #eee0dc;
+  border-radius: 18rpx;
+  background: #fff;
+  color: #765b5d;
+  font-size: 24rpx;
+  line-height: 1.35;
+  text-align: left;
+  overflow: hidden;
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+
+.addon-option::after {
+  border: 0;
+}
+
+.addon-option-main {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10rpx;
+}
+
+.addon-option-main text:first-child,
+.addon-option-meta {
+  min-width: 0;
+  max-width: 100%;
+  word-break: break-all;
+  white-space: normal;
+}
+
+.addon-option-check {
+  flex: 0 0 auto;
+  color: #b85f6d;
+  font-size: 23rpx;
+  font-weight: 800;
+}
+
+.addon-option-meta {
+  display: block;
+  margin-top: 5rpx;
+  color: #ad8f88;
+  font-size: 19rpx;
+}
+
+.addon-option.selected {
+  border-color: #bd707a;
+  background: #fff5f3;
+  box-shadow: 0 8rpx 22rpx rgba(154, 91, 98, .11);
+  color: #9b505c;
+}
+
+.addon-summary-row {
+  color: #7d6262;
+  font-size: 22rpx;
 }

@@ -4,7 +4,7 @@ const { db, cloud, getOptional, find } = require('./db');
 const { AppError, assert } = require('./errors');
 const { requireOpenId, ensureUser, getUser, requireRole, safeUser } = require('./auth');
 const { getCurrentSettings, publicSettings } = require('./settings');
-const { getService, listServices, listWorks, listCategories, listTechnicians, getWork } = require('./catalog');
+const { getService, listServices, listWorks, listCategories, listTechnicians, getWork, addonPriceFen } = require('./catalog');
 const { dateToTimestamp, weekday, minutesOfDay, addMinutes, isWithinDateWindow, assertValidStart, overlaps, toDateString, formatParts } = require('./time');
 const { calculatePointsDiscount, earnPoints, rebalancePoints, awardPoints } = require('./money');
 const { encryptPhone, maskPhone } = require('./contact-crypto');
@@ -99,6 +99,61 @@ function technicianCanServe(technician, service) {
   return (technician.skills || []).includes(service.id);
 }
 
+function addonTypeOf(item) {
+  const explicit = String(item && item.addonType || '').toUpperCase();
+  if (['REMOVAL', 'BUILDER'].includes(explicit)) return explicit;
+  const text = [item && item.name, ...(Array.isArray(item && item.tags) ? item.tags : [])].join('');
+  if (/卸(?:甲|除)|卸本甲|卸甲片/.test(text)) return 'REMOVAL';
+  if ((item && (item.isAddon === true || item.bookableStandalone === false)) && /建构/.test(text)) return 'BUILDER';
+  return '';
+}
+
+function serviceIncludesBuilder(service) {
+  return /建构/.test(String(service && service.name || ''));
+}
+
+async function resolveBookingAddons(service, payload = {}, reader = db) {
+  const serviceAddonType = addonTypeOf(service);
+  const standaloneRemoval = serviceAddonType === 'REMOVAL' && service.bookableStandalone !== false && service.bookableStandalone !== 0;
+  const requiresChoice = ['nail', 'foot-nail'].includes(service.categoryId) && !standaloneRemoval;
+  const builderIncluded = requiresChoice && (serviceAddonType === 'BUILDER' || serviceIncludesBuilder(service));
+  if (requiresChoice && Object.prototype.hasOwnProperty.call(payload, 'addonSelectionConfirmed')) {
+    assert(payload.addonSelectionConfirmed === true, 'ADDON_SELECTION_REQUIRED', builderIncluded ? '请先选择是否需要卸甲' : '请先选择是否需要卸甲和建构');
+  }
+  assert(!standaloneRemoval || !String(payload.removalServiceId || '') && !String(payload.builderServiceId || ''), 'ADDON_ALREADY_INCLUDED', '卸甲小项目无需重复选择卸甲或建构');
+  assert(!builderIncluded || !String(payload.builderServiceId || ''), 'BUILDER_ALREADY_INCLUDED', '当前小项目已包含建构，无需重复选择');
+  const requested = [
+    { id: String(payload.removalServiceId || ''), type: 'REMOVAL' },
+    { id: String(payload.builderServiceId || ''), type: 'BUILDER' }
+  ].filter((item) => item.id);
+  assert(new Set(requested.map((item) => item.id)).size === requested.length, 'INVALID_ADDON', '卸甲和建构选项不能重复');
+  const addons = [];
+  for (const selection of requested) {
+    const record = await getOptional(COLLECTIONS.services, selection.id, reader);
+    assert(record && !record.archived && record.enabled !== false, 'ADDON_NOT_FOUND', '所选叠加服务已下架，请重新选择', 409);
+    assert(record.categoryId === service.categoryId && addonTypeOf(record) === selection.type, 'INVALID_ADDON', '叠加服务与当前项目不匹配', 409);
+    const priceFen = addonPriceFen(record, selection.type);
+    const durationMinutes = Number(record.durationMinutes || 0);
+    assert(Number.isSafeInteger(priceFen) && priceFen >= 0 && Number.isSafeInteger(durationMinutes) && durationMinutes > 0, 'INVALID_ADDON', '叠加服务价格或时长不正确', 409);
+    addons.push({
+      id: record.id || record._id,
+      name: record.name,
+      type: selection.type,
+      priceFen,
+      originalPriceFen: Number(record.priceFen || 0),
+      durationMinutes
+    });
+  }
+  const durationMinutes = Number(service.durationMinutes) + addons.reduce((sum, item) => sum + item.durationMinutes, 0);
+  const totalFen = Number(service.priceFen) + addons.reduce((sum, item) => sum + item.priceFen, 0);
+  return {
+    addons,
+    durationMinutes,
+    totalFen,
+    effectiveService: { ...service, durationMinutes }
+  };
+}
+
 async function getPointsAccount(openid, reader = db) {
   const now = Date.now();
   if (reader && typeof reader.insertIfAbsent === 'function') {
@@ -160,9 +215,11 @@ function getSlotFromPlan(plan, startAt, service, settings) {
   return { startAt, endAt, durationMinutes: Number(service.durationMinutes), stepMinutes: settings.booking.slotStepMinutes };
 }
 
-async function validateBookingSlot({ serviceId, technicianId, date, startAt, now = Date.now(), reader = db }) {
+async function validateBookingSlot(payload = {}) {
+  const { serviceId, technicianId, date, startAt, now = Date.now(), reader = db } = payload;
   const settings = await getCurrentSettings();
   const service = await getService(serviceId);
+  const addonSelection = await resolveBookingAddons(service, payload, reader);
   const technician = await getTechnician(technicianId);
   assert(technicianCanServe(technician, service), 'SKILL_MISMATCH', '该技师暂不提供此大项');
   assertValidStart(date, Number(startAt), settings.booking.minAdvanceMinutes, settings.booking.openDays, now);
@@ -170,17 +227,19 @@ async function validateBookingSlot({ serviceId, technicianId, date, startAt, now
   const dateStart = dateToTimestamp(date);
   assert((Number(startAt) - dateStart) % (step * 60 * 1000) === 0, 'INVALID_SLOT', '预约时段必须按 15 分钟步长选择');
   const plan = await getDayPlan(technicianId, date, settings, reader);
-  const slot = getSlotFromPlan(plan, Number(startAt), service, settings);
-  return { settings, service, technician, plan, slot };
+  const slot = getSlotFromPlan(plan, Number(startAt), addonSelection.effectiveService, settings);
+  return { settings, service: addonSelection.effectiveService, baseService: service, addons: addonSelection.addons, totalFen: addonSelection.totalFen, technician, plan, slot };
 }
 
 async function getAvailableSlots(payload) {
   const settings = await getCurrentSettings();
   const service = await getService(payload.serviceId);
+  const addonSelection = await resolveBookingAddons(service, payload);
+  const effectiveService = addonSelection.effectiveService;
   const technician = await getTechnician(payload.technicianId);
   assert(technicianCanServe(technician, service), 'SKILL_MISMATCH', '该技师暂不提供此大项');
   if (!isWithinDateWindow(payload.date, settings.booking.openDays, 0)) {
-    return { date: payload.date, serviceId: service.id, technicianId: technician.id, slots: [], timeline: { date: payload.date, startAt: null, endAt: null, totalMinutes: 0, durationMinutes: Number(service.durationMinutes), stepMinutes: Number(settings.booking.slotStepMinutes || 15), segments: [] } };
+    return { date: payload.date, serviceId: service.id, technicianId: technician.id, slots: [], durationMinutes: effectiveService.durationMinutes, addons: addonSelection.addons, timeline: { date: payload.date, startAt: null, endAt: null, totalMinutes: 0, durationMinutes: Number(effectiveService.durationMinutes), stepMinutes: Number(settings.booking.slotStepMinutes || 15), segments: [] } };
   }
   const plan = await getDayPlan(payload.technicianId, payload.date, settings);
   const slots = [];
@@ -193,10 +252,10 @@ async function getAvailableSlots(payload) {
       const hour = Math.floor(minute / 60);
       const rest = minute % 60;
       const startAt = dateToTimestamp(payload.date, `${String(hour).padStart(2, '0')}:${String(rest).padStart(2, '0')}`);
-      const endAt = addMinutes(startAt, Number(service.durationMinutes));
+      const endAt = addMinutes(startAt, Number(effectiveService.durationMinutes));
       const validByWindow = startAt >= addMinutes(now, settings.booking.minAdvanceMinutes);
       const validByShift = endAt <= dateToTimestamp(payload.date, shift.end);
-      const validByBreak = !isBreak(minute, minute + Number(service.durationMinutes), shift.breaks || []);
+      const validByBreak = !isBreak(minute, minute + Number(effectiveService.durationMinutes), shift.breaks || []);
       const conflict = (plan.occupancies || []).some((item) => occupancyIsActive(item) && overlaps(startAt, endAt, item.startAt, item.endAt));
       if (validByWindow && validByShift && validByBreak && !conflict && !plan.leave) {
         slots.push({ id: `${payload.date}-${hour}-${rest}`, label: `${String(hour).padStart(2, '0')}:${String(rest).padStart(2, '0')}`, startAt, endAt, available: true });
@@ -208,11 +267,11 @@ async function getAvailableSlots(payload) {
     plan,
     now,
     minAdvanceMinutes: settings.booking.minAdvanceMinutes,
-    serviceDurationMinutes: service.durationMinutes,
+    serviceDurationMinutes: effectiveService.durationMinutes,
     stepMinutes: step,
     isActive: occupancyIsActive
   });
-  return { date: payload.date, serviceId: service.id, technicianId: technician.id, stepMinutes: step, slots, timeline };
+  return { date: payload.date, serviceId: service.id, technicianId: technician.id, durationMinutes: effectiveService.durationMinutes, addons: addonSelection.addons, stepMinutes: step, slots, timeline };
 }
 
 async function createQuote(payload) {
@@ -227,9 +286,9 @@ async function createQuote(payload) {
     discountFen: validation.settings.points.discountFen,
     maxPercent: validation.settings.points.maxPercent
   };
-  const price = calculatePointsDiscount({ totalFen: validation.service.priceFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
+  const price = calculatePointsDiscount({ totalFen: validation.totalFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
   const expiresAt = Date.now() + 10 * 60 * 1000;
-  const quoteId = createQuoteId({ workId: work.id, serviceId: validation.service.id, technicianId: validation.technician.id, date: payload.date, startAt: Number(payload.startAt), durationMinutes: Number(validation.service.durationMinutes), pointsToUse: price.pointsToUse, totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen, settingsVersion: validation.settings.version, expiresAt });
+  const quoteId = createQuoteId({ workId: work.id, serviceId: validation.service.id, removalServiceId: String(payload.removalServiceId || ''), builderServiceId: String(payload.builderServiceId || ''), technicianId: validation.technician.id, date: payload.date, startAt: Number(payload.startAt), durationMinutes: Number(validation.service.durationMinutes), pointsToUse: price.pointsToUse, totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen, settingsVersion: validation.settings.version, expiresAt });
   return {
     quoteId,
     expiresAt,
@@ -243,6 +302,8 @@ async function createQuote(payload) {
     discountFen: price.discountFen,
     paidFen: price.paidFen,
     pointsToUse: price.pointsToUse,
+    durationMinutes: validation.service.durationMinutes,
+    addons: validation.addons,
     pointRule: rule,
     serverCalculated: true
   };
@@ -270,6 +331,7 @@ function publicOrder(order) {
     endAt: order.endAt,
     startAtLabel: displayTime(order.startAt),
     durationMinutes: order.serviceSnapshot && order.serviceSnapshot.durationMinutes,
+    addons: Array.isArray(order.addonSnapshots) ? order.addonSnapshots : [],
     totalFen: order.totalFen,
     discountFen: order.discountFen,
     paidFen: order.paidFen,
@@ -405,9 +467,12 @@ async function createOrder(payload) {
   assert(work.serviceId === validation.service.id, 'WORK_SERVICE_MISMATCH', '款式与小项目不匹配');
   const account = await getPointsAccount(context.openid);
   const rule = { unit: validation.settings.points.unit, discountFen: validation.settings.points.discountFen, maxPercent: validation.settings.points.maxPercent };
-  const price = calculatePointsDiscount({ totalFen: validation.service.priceFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
+  const price = calculatePointsDiscount({ totalFen: validation.totalFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
   const claims = readQuoteId(payload.quoteId);
-  assert(claims.workId === work.id && claims.serviceId === validation.service.id && claims.technicianId === validation.technician.id && claims.date === payload.date && Number(claims.startAt) === Number(payload.startAt), 'QUOTE_MISMATCH', '预约信息发生变化，请重新报价');
+  assert(claims.workId === work.id && claims.serviceId === validation.service.id
+    && String(claims.removalServiceId || '') === String(payload.removalServiceId || '')
+    && String(claims.builderServiceId || '') === String(payload.builderServiceId || '')
+    && claims.technicianId === validation.technician.id && claims.date === payload.date && Number(claims.startAt) === Number(payload.startAt), 'QUOTE_MISMATCH', '预约信息发生变化，请重新报价');
   assert(Number(claims.pointsToUse) === price.pointsToUse
     && Number(claims.totalFen) === price.totalFen
     && Number(claims.discountFen) === price.discountFen
@@ -432,7 +497,8 @@ async function createOrder(payload) {
     technicianSnapshot: { id: validation.technician.id, name: validation.technician.name, title: validation.technician.title || '' },
     serviceId: validation.service.id,
     workSnapshot: work ? { id: work.id, title: work.title, imageUrl: work.imageUrl } : null,
-    serviceSnapshot: { id: validation.service.id, name: validation.service.name, categoryId: validation.service.categoryId, categoryName: validation.service.categoryName, priceFen: validation.service.priceFen, durationMinutes: validation.service.durationMinutes },
+    serviceSnapshot: { id: validation.service.id, name: validation.service.name, categoryId: validation.service.categoryId, categoryName: validation.service.categoryName, priceFen: validation.baseService.priceFen, baseDurationMinutes: validation.baseService.durationMinutes, durationMinutes: validation.service.durationMinutes },
+    addonSnapshots: validation.addons,
     date: payload.date, startAt: validation.slot.startAt, endAt: validation.slot.endAt,
     totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen,
     pointsUsed: price.pointsToUse,
@@ -463,6 +529,13 @@ async function createOrder(payload) {
       && currentService && currentService.enabled !== false && !currentService.archived
       && currentWork && currentWork.published !== false && !currentWork.archived
       && currentWork.serviceId === validation.service.id, 'QUOTE_CHANGED', '项目或款式刚刚变更，请重新选择并报价', 409);
+    for (const addon of validation.addons) {
+      const currentAddon = await getOptional(COLLECTIONS.services, addon.id, transaction);
+      assert(currentAddon && !currentAddon.archived && currentAddon.enabled !== false
+        && currentAddon.categoryId === validation.service.categoryId && addonTypeOf(currentAddon) === addon.type
+        && Number(currentAddon.durationMinutes) === Number(addon.durationMinutes)
+        && addonPriceFen(currentAddon, addon.type) === Number(addon.priceFen), 'QUOTE_CHANGED', '卸甲或建构选项刚刚变更，请重新报价', 409);
+    }
     await getOptional(COLLECTIONS.users, context.openid, transaction);
     const scheduleRevision = Number(validation.settings.scheduleRevision || 1);
     await transaction.insertIfAbsent(COLLECTIONS.scheduleTemplates, 'active', {
@@ -984,11 +1057,42 @@ async function beginAdminRefund(orderIdValue, reason, requestedAmountFen) {
   return { ...result, order: publicOrder(result.order) };
 }
 
+async function markServiceCompleted(orderIdValue, now = Date.now()) {
+  return db.runTransaction(async (transaction) => {
+    const order = await getOptional(COLLECTIONS.orders, orderIdValue, transaction);
+    assert(order, 'ORDER_NOT_FOUND', '订单不存在', 404);
+    if (order.status === ORDER_STATUS.COMPLETED) return order;
+    assert([ORDER_STATUS.ARRIVED, ORDER_STATUS.IN_SERVICE].includes(order.status), 'INVALID_TRANSITION', '订单当前状态不允许完成服务');
+    assert(canAdvanceService(order), 'REFUND_IN_PROGRESS', '订单正在退款或已退款，不能继续服务流转');
+    const timing = assertServiceTransitionTime(order, 'complete', now);
+    assert(timing.allowed, timing.code, timing.code === 'SERVICE_COMPLETE_TOO_EARLY' ? '预约服务尚未到结束时间，不能提前完成' : '订单预约时间无效', 409);
+    const next = { ...order, status: ORDER_STATUS.COMPLETED, completedAt: now, updatedAt: now };
+    await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: next });
+    await updateDayOccupancy(transaction, order, ORDER_STATUS.COMPLETED);
+    if (!order.pointsEarned) {
+      const points = earnPoints(order.paidFen, order.pointRuleSnapshot && order.pointRuleSnapshot.pointRateFen || 100);
+      const accountData = await getPointsAccount(order.userId, transaction);
+      const balance = awardPoints({ availablePoints: accountData.available || 0, debtPoints: accountData.debt || 0, earnedPoints: points });
+      await transaction.collection(COLLECTIONS.pointsAccounts).doc(order.userId).set({ data: { ...accountData, available: balance.available, debt: balance.debt, version: Number(accountData.version || 0) + 1, updatedAt: now } });
+      await addLedger(transaction, `earn_${order.id}`, { userId: order.userId, orderId: order.id, type: 'EARN', amount: points, balanceAfter: balance.available, debtAfter: balance.debt, description: '服务完成奖励积分' });
+      next.pointsEarned = points;
+      await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: next });
+    }
+    return next;
+  });
+}
+
 async function transitionStaff(orderIdValue, action) {
   const { context, account } = await requireRole(['OWNER', 'STAFF', 'TECHNICIAN']);
   const allowed = { checkIn: [ORDER_STATUS.RESERVED, ORDER_STATUS.ARRIVED, ORDER_STATUS.NO_SHOW_REVIEW], start: [ORDER_STATUS.ARRIVED], complete: [ORDER_STATUS.IN_SERVICE] };
   assert(allowed[action], 'INVALID_TRANSITION', '不支持的工作台操作');
   const targetStatus = { checkIn: ORDER_STATUS.ARRIVED, start: ORDER_STATUS.IN_SERVICE, complete: ORDER_STATUS.COMPLETED }[action];
+  if (action === 'complete') {
+    const order = await getOptional(COLLECTIONS.orders, orderIdValue);
+    assert(order, 'ORDER_NOT_FOUND', '订单不存在', 404);
+    if (account.role === 'TECHNICIAN') assert(order.technicianId === account.technicianId, 'FORBIDDEN', '技师只能操作自己的预约', 403);
+    return publicOrder(await markServiceCompleted(orderIdValue));
+  }
   const result = await db.runTransaction(async (transaction) => {
     const order = await getOptional(COLLECTIONS.orders, orderIdValue, transaction);
     assert(order, 'ORDER_NOT_FOUND', '订单不存在', 404);
@@ -1002,17 +1106,14 @@ async function transitionStaff(orderIdValue, action) {
     const next = { ...order, status: targetStatus, updatedAt: now };
     if (targetStatus === ORDER_STATUS.ARRIVED) next.arrivedAt = now;
     if (targetStatus === ORDER_STATUS.IN_SERVICE) next.serviceStartedAt = now;
-    if (targetStatus === ORDER_STATUS.COMPLETED) next.completedAt = now;
     await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: next });
     await updateDayOccupancy(transaction, order, targetStatus);
-    if (targetStatus === ORDER_STATUS.COMPLETED && !order.pointsEarned) {
-      const points = earnPoints(order.paidFen, order.pointRuleSnapshot && order.pointRuleSnapshot.pointRateFen || 100);
-      const accountData = await getPointsAccount(order.userId, transaction);
-      const balance = awardPoints({ availablePoints: accountData.available || 0, debtPoints: accountData.debt || 0, earnedPoints: points });
-      await transaction.collection(COLLECTIONS.pointsAccounts).doc(order.userId).set({ data: { ...accountData, available: balance.available, debt: balance.debt, version: Number(accountData.version || 0) + 1, updatedAt: now } });
-      await addLedger(transaction, `earn_${order.id}`, { userId: order.userId, orderId: order.id, type: 'EARN', amount: points, balanceAfter: balance.available, debtAfter: balance.debt, description: '服务完成奖励积分' });
-      next.pointsEarned = points;
-      await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: next });
+    if (targetStatus === ORDER_STATUS.ARRIVED) {
+      const jobId = `job_service_complete_${order.id}`;
+      const existing = await getOptional(COLLECTIONS.jobs, jobId, transaction);
+      if (!existing || !['PENDING', 'RUNNING', 'DONE'].includes(existing.status)) {
+        await transaction.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { ...(existing || {}), _id: jobId, id: jobId, type: 'SERVICE_COMPLETE', businessId: order.id, status: 'PENDING', nextRunAt: Math.max(now, Number(order.endAt || now)), retryCount: Number(existing && existing.retryCount || 0), leaseUntil: 0, claimToken: '', createdAt: existing && existing.createdAt || now, updatedAt: now } });
+      }
     }
     return next;
   });
@@ -1061,6 +1162,7 @@ module.exports = {
   markRefundProcessing,
   beginAdminRefund,
   transitionStaff,
+  markServiceCompleted,
   staffListOrders,
   preparePaymentRecord,
   publicOrder,
@@ -1079,5 +1181,7 @@ module.exports = {
   ORDER_STATUS,
   REFUND_STATUS,
   PAYMENT_STATUS,
-  noShowSettlement
+  noShowSettlement,
+  addonTypeOf,
+  serviceIncludesBuilder
 };

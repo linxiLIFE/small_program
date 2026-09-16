@@ -87,6 +87,8 @@ Page({
         totalText: formatMoney(item.totalFen),
         paidText: formatMoney(item.paidFen),
         durationText: formatDuration(item.durationMinutes),
+        addonLabel: (item.addons || []).map((addon) => addon.name).join(' · '),
+        imageError: false,
         technicianLabel: item.technicianName || '待安排',
         amountLabel: amountLabel(item)
       }));
@@ -106,6 +108,12 @@ Page({
     const status = event.currentTarget.dataset.status || '';
     this.setData({ activeStatus: status });
     this.loadOrders(status);
+  },
+
+  handleImageError(event) {
+    const id = event.currentTarget.dataset.id;
+    const index = this.data.orders.findIndex((item) => item.id === id);
+    if (index >= 0) this.setData({ [`orders[${index}].imageError`]: true });
   },
 
   loadMore() {

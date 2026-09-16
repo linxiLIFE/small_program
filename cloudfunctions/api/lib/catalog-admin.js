@@ -5,7 +5,7 @@ const { db, find, findAll, getOptional } = require('./db');
 const { requireRole } = require('./auth');
 const { assert } = require('./errors');
 const { integer } = require('./money');
-const { publicCategory, publicService, publicWork, publicTechnician } = require('./catalog');
+const { publicCategory, publicService, publicWork, publicTechnician, isFreeRemovalAddon } = require('./catalog');
 const loadAll = findAll || find;
 const MAX_SERVICE_PRICE_FEN = 10_000_000;
 function sortable(payload) {
@@ -54,9 +54,32 @@ async function saveService(payload = {}) {
   const { account } = await requireRole(['OWNER']);
   const category = await getOptional(COLLECTIONS.categories, payload.categoryId);
   assert(category && !category.archived && category.enabled !== false, 'INVALID_CATEGORY', '请选择已启用的大类');
+  const addonType = ['REMOVAL', 'BUILDER'].includes(String(payload.addonType || '').toUpperCase()) ? String(payload.addonType).toUpperCase() : '';
+  assert(!addonType || ['nail', 'foot-nail'].includes(category.id || category._id), 'INVALID_ADDON', '卸甲和建构只能设置在美甲或脚部美甲大项');
   const priceFen = integer(payload.priceFen, '价格'); const durationMinutes = integer(payload.durationMinutes, '时长');
-  assert(priceFen > 0 && priceFen <= MAX_SERVICE_PRICE_FEN && durationMinutes > 0 && durationMinutes <= 720, 'INVALID_SERVICE', '价格须在 0.01 元到 10 万元之间，时长须在 1 到 720 分钟之间');
-  const record = await persist(COLLECTIONS.services, idOf(payload, 'svc'), { name: nameOf(payload.name, '项目名称'), categoryId: category.id || category._id, categoryName: category.name, coverUrl: imageOf(payload, 'coverUrl', true), description: String(payload.description || '').slice(0, 1000), tags: Array.isArray(payload.tags) ? payload.tags.slice(0, 12) : [], priceFen, durationMinutes, enabled: payload.enabled !== false, ...sortable(payload) }, account);
+  assert(priceFen >= 0 && priceFen <= MAX_SERVICE_PRICE_FEN && durationMinutes > 0 && durationMinutes <= 720, 'INVALID_SERVICE', '价格须在 0 元到 10 万元之间，时长须在 1 到 720 分钟之间');
+  assert(priceFen > 0, 'INVALID_SERVICE', '单独预约价格必须大于 0');
+  const serviceId = idOf(payload, 'svc');
+  const name = nameOf(payload.name, '项目名称');
+  const freeAsAddon = addonType === 'REMOVAL' && isFreeRemovalAddon({ id: serviceId, name });
+  const record = await persist(COLLECTIONS.services, serviceId, { name, categoryId: category.id || category._id, categoryName: category.name, coverUrl: imageOf(payload, 'coverUrl', true), description: String(payload.description || '').slice(0, 1000), tags: Array.isArray(payload.tags) ? payload.tags.slice(0, 12) : [], priceFen, durationMinutes, addonType, isAddon: !!addonType, freeAsAddon, bookableStandalone: true, enabled: payload.enabled !== false, ...sortable(payload) }, account);
+  if (addonType) {
+    const serviceId = record.id || record._id;
+    const existingWorks = (await loadAll(COLLECTIONS.works, { serviceId }, { maxRecords: 100 })).filter(item => !item.archived);
+    assert(existingWorks.length <= 1, 'ADDON_SINGLE_STYLE', '卸甲和建构小项目只能保留一个款式', 409);
+    const existing = existingWorks[0];
+    await persist(COLLECTIONS.works, existing && (existing.id || existing._id) || `work-${serviceId}`, {
+      title: record.name,
+      imageUrl: existing && existing.imageUrl || record.coverUrl || '',
+      serviceId,
+      categoryId: category.id || category._id,
+      categoryName: category.name,
+      published: record.enabled !== false,
+      featured: false,
+      featuredSort: 0,
+      sort: Number(record.sort || 0)
+    }, account);
+  }
   return { ...publicService(record), enabled: record.enabled, sort: record.sort };
 }
 async function saveWork(payload = {}) {
@@ -67,7 +90,14 @@ async function saveWork(payload = {}) {
   assert(category && !category.archived && (payload.published === false || category.enabled !== false), 'INVALID_CATEGORY', '所属大类已停用');
   const featuredSort = payload.featuredSort === undefined ? payload.featured === true ? 1000000 : 0 : integer(payload.featuredSort, '精选排序');
   assert(featuredSort >= 0 && featuredSort <= 1000000, 'INVALID_SORT', '精选排序值不正确');
-  const record = await persist(COLLECTIONS.works, idOf(payload, 'work'), { title: nameOf(payload.title, '款式名称'), imageUrl: imageOf(payload, 'imageUrl'), serviceId: service.id || service._id, categoryId: category.id || category._id, categoryName: category.name, published: payload.published !== false, featured: payload.featured === true, featuredSort, ...sortable(payload) }, account);
+  const addonType = String(service.addonType || '').toUpperCase();
+  const id = idOf(payload, 'work');
+  if (['REMOVAL', 'BUILDER'].includes(addonType)) {
+    const serviceId = service.id || service._id;
+    const existingWorks = (await loadAll(COLLECTIONS.works, { serviceId }, { maxRecords: 100 })).filter(item => !item.archived && (item.id || item._id) !== id);
+    assert(!existingWorks.length, 'ADDON_SINGLE_STYLE', '卸甲和建构小项目只能保留一个款式', 409);
+  }
+  const record = await persist(COLLECTIONS.works, id, { title: ['REMOVAL', 'BUILDER'].includes(addonType) ? service.name : nameOf(payload.title, '款式名称'), imageUrl: imageOf(payload, 'imageUrl'), serviceId: service.id || service._id, categoryId: category.id || category._id, categoryName: category.name, published: payload.published !== false, featured: ['REMOVAL', 'BUILDER'].includes(addonType) ? false : payload.featured === true, featuredSort: ['REMOVAL', 'BUILDER'].includes(addonType) ? 0 : featuredSort, ...sortable(payload) }, account);
   return { ...publicWork(record), published: record.published, sort: record.sort };
 }
 

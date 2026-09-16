@@ -9,7 +9,8 @@ Page({
     service: {},
     technician: {},
     technicians: [],
-    selectedTechnicianId: ''
+    selectedTechnicianId: '',
+    imageError: false
   },
 
   onLoad(options) {
@@ -41,6 +42,7 @@ Page({
       this.setData({
         loading: false,
         work,
+        imageError: false,
         service: { ...service, priceText: formatMoney(service.priceFen, false), durationText: formatDuration(service.durationMinutes) },
         technicians,
         selectedTechnicianId: technician.id || '',
@@ -52,7 +54,8 @@ Page({
     }
   },
 
-  previewImage() { if(this.data.work.imageUrl)wx.previewImage({urls:[this.data.work.imageUrl]}); },
+  previewImage() { if(this.data.work.imageUrl && !this.data.imageError)wx.previewImage({urls:[this.data.work.imageUrl]}); },
+  handleImageError() { this.setData({ imageError: true }); },
   selectTechnician(event) {
     const technicianId = event.currentTarget.dataset.id;
     const technician = this.data.technicians.find((item) => item.id === technicianId);

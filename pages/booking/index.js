@@ -59,7 +59,17 @@ Page({
     emptyImage: '',
     emptyCategory: '',
     refundRuleText: '',
-    noShowRuleText: ''
+    noShowRuleText: '',
+    isNailBooking: false,
+    showsAddonStep: false,
+    requiresBuilderChoice: false,
+    removalOptions: [],
+    builderOptions: [],
+    selectedRemovalId: '',
+    selectedBuilderId: '',
+    addonsReady: true,
+    selectedAddons: [],
+    workImageError: false
   },
 
   onLoad(options) {
@@ -124,6 +134,10 @@ Page({
     wx.switchTab({ url: '/pages/services/index' });
   },
 
+  handleWorkImageError() {
+    this.setData({ workImageError: true });
+  },
+
   async loadBooking({ force = false } = {}) {
     if (!this.serviceId || !this.workId) return;
     if (this.loadingPromise && !force) return this.loadingPromise;
@@ -166,23 +180,58 @@ Page({
         : (dates[0] ? dates[0].value : '');
       if (requestId !== this.requestId) return;
       this.bookingSettings = settings;
+      const isNailBooking = ['nail', 'foot-nail'].includes(service.categoryId);
+      const addonType = String(service.addonType || '').toUpperCase();
+      const showsAddonStep = isNailBooking && addonType !== 'REMOVAL';
+      const requiresBuilderChoice = showsAddonStep && addonType !== 'BUILDER' && !/建构/.test(String(service.name || ''));
+      const decorateAddon = (item) => ({
+        ...item,
+        priceText: Number(item.priceFen || 0) === 0 ? '免费' : `¥${formatMoney(item.priceFen, false)}`,
+        durationText: `+${formatDuration(item.durationMinutes)}`
+      });
+      let addonContext = context.addons || { removals: [], builders: [] };
+      const addonsIncomplete = !(addonContext.removals || []).length
+        || requiresBuilderChoice && !(addonContext.builders || []).length;
+      if (showsAddonStep && addonsIncomplete && typeof api.listBookingAddons === 'function') {
+        addonContext = await api.listBookingAddons(service.categoryId);
+      }
+      const removalOptions = (addonContext.removals || []).map((item) => decorateAddon(item));
+      const builderOptions = (addonContext.builders || []).map((item) => decorateAddon(item));
+      if (showsAddonStep && (!removalOptions.length || (requiresBuilderChoice && !builderOptions.length))) {
+        throw new Error('卸甲或建构选项未加载完整，请刷新后重试');
+      }
+      const selectedRemovalId = showsAddonStep ? (preserveSelections ? this.data.selectedRemovalId : '') : 'none';
+      const selectedBuilderId = requiresBuilderChoice
+        ? (preserveSelections ? this.data.selectedBuilderId : '')
+        : 'none';
+      const addonsReady = !showsAddonStep || !!selectedRemovalId && (!requiresBuilderChoice || !!selectedBuilderId);
       const state = getApp().globalData;
       state.catalogSelection = { ...(state.catalogSelection || {}), categoryId: service.categoryId, serviceId: service.id, workId: work.id };
       this.setData({
         loading: false,
         work,
-        service: { ...service, priceText: formatMoney(service.priceFen, false), durationText: formatDuration(service.durationMinutes) },
+        workImageError: false,
+        service: { ...service, baseDurationMinutes: service.durationMinutes, priceText: formatMoney(service.priceFen, false), durationText: formatDuration(service.durationMinutes) },
         technicians,
         dates,
         selectedDate,
         selectedTechnicianId,
-        profile: { ...(profile || {}), phoneLabel: profile && (profile.phoneMasked || maskPhone(profile.phone)) }
-        ,refundRuleText: `距预约开始不足 ${Number(settings.booking?.refundCutoffMinutes || 120)} 分钟不能自行取消或退款`,
+        profile: { ...(profile || {}), phoneLabel: profile && (profile.phoneMasked || maskPhone(profile.phone)) },
+        isNailBooking,
+        showsAddonStep,
+        requiresBuilderChoice,
+        removalOptions,
+        builderOptions,
+        selectedRemovalId,
+        selectedBuilderId,
+        addonsReady,
+        selectedAddons: [],
+        refundRuleText: `距预约开始不足 ${Number(settings.booking?.refundCutoffMinutes || 120)} 分钟不能自行取消或退款`,
         noShowRuleText: `开始后 ${Number(settings.booking?.noShowGraceMinutes || 15)} 分钟仍未核销，将扣除 ${formatMoney(Number(settings.booking?.noShowPenaltyFen || 3000))}；订单金额不足该费用时不退款，积分抵扣部分优先扣除`
       });
       this.loadedKey = bookingKey;
       this.hasLoaded = true;
-      await this.loadSlots({ preserve: true, force: !preserveSelections, slotId: previousSlotId });
+      if (addonsReady) await this.loadSlots({ preserve: true, force: !preserveSelections, slotId: previousSlotId });
     } catch (error) {
       if (requestId !== this.requestId) return;
       this.hasLoaded = false;
@@ -199,7 +248,7 @@ Page({
   },
 
   async loadSlots({ preserve = true, force = false, slotId = this.data.selectedSlotId } = {}) {
-    if (!this.data.selectedTechnicianId || !this.data.selectedDate) return;
+    if (!this.data.selectedTechnicianId || !this.data.selectedDate || !this.data.addonsReady) return;
     if (!force && this.data.slots.length) {
       const timePeriods = buildTimePeriods(this.data.slots, this.bookingSettings?.booking?.slotStepMinutes, this.data.service.durationMinutes);
       const normalizedSlots = timePeriods.reduce((all, period) => all.concat(period.slots), []);
@@ -238,7 +287,8 @@ Page({
       const result = await api.getAvailableSlots({
         serviceId: this.serviceId,
         technicianId: this.data.selectedTechnicianId,
-        date: this.data.selectedDate
+        date: this.data.selectedDate,
+        ...this.addonPayload()
       });
       if (requestId !== this.slotRequestId) return;
       const slots = result.slots || [];
@@ -280,6 +330,38 @@ Page({
   async selectTechnician(event) {
     this.setData({ selectedTechnicianId: event.currentTarget.dataset.id });
     await this.loadSlots({ preserve: false, force: true });
+  },
+
+  addonPayload() {
+    return {
+      addonSelectionConfirmed: !this.data.showsAddonStep || this.data.addonsReady,
+      removalServiceId: this.data.showsAddonStep && this.data.selectedRemovalId && this.data.selectedRemovalId !== 'none' ? this.data.selectedRemovalId : '',
+      builderServiceId: this.data.requiresBuilderChoice && this.data.selectedBuilderId && this.data.selectedBuilderId !== 'none' ? this.data.selectedBuilderId : ''
+    };
+  },
+
+  async selectAddon(event) {
+    const type = event.currentTarget.dataset.type;
+    const id = event.currentTarget.dataset.id || 'none';
+    const changes = type === 'removal' ? { selectedRemovalId: id } : { selectedBuilderId: id };
+    const selectedRemovalId = changes.selectedRemovalId || this.data.selectedRemovalId;
+    const selectedBuilderId = changes.selectedBuilderId || this.data.selectedBuilderId;
+    const selectedAddons = [
+      this.data.removalOptions.find((item) => item.id === selectedRemovalId),
+      this.data.builderOptions.find((item) => item.id === selectedBuilderId)
+    ].filter(Boolean);
+    const totalDuration = Number(this.data.service.baseDurationMinutes || this.data.service.durationMinutes || 0)
+      + selectedAddons.reduce((sum, item) => sum + Number(item.durationMinutes || 0), 0);
+    const addonsReady = !!selectedRemovalId && (!this.data.requiresBuilderChoice || !!selectedBuilderId);
+    this.setData({
+      ...changes,
+      addonsReady,
+      selectedAddons,
+      service: { ...this.data.service, durationMinutes: totalDuration, durationText: formatDuration(totalDuration) },
+      slots: [], timePeriods: [], timeline: {}, timelineHasOptions: false,
+      selectedSlotId: '', selectedSlot: {}, quote: {}, canSubmit: false
+    });
+    if (addonsReady) await this.loadSlots({ preserve: false, force: true });
   },
 
   async selectDate(event) {
@@ -502,7 +584,8 @@ Page({
         technicianId: this.data.selectedTechnicianId,
         date: this.data.selectedDate,
         startAt: this.data.selectedSlot.startAt,
-        pointsToUse: this.data.usePoints ? Number(this.data.profile.points || 0) : 0
+        pointsToUse: this.data.usePoints ? Number(this.data.profile.points || 0) : 0,
+        ...this.addonPayload()
       });
       if (requestId !== this.quoteRequestId) return;
       this.setData({
@@ -512,6 +595,7 @@ Page({
           discountText: formatMoney(result.discountFen || 0),
           paidText: formatMoney(result.paidFen || 0)
         },
+        selectedAddons: (result.addons || this.data.selectedAddons).map((item) => ({ ...item, priceText: formatMoney(item.priceFen || 0, false) })),
         canSubmit: true,
         pointHint: result.pointsToUse ? `本单使用 ${result.pointsToUse} 积分，抵扣 ${formatMoney(result.discountFen)}` : `开启后按本单 ${this.bookingSettings?.points?.maxPercent || 0}% 上限抵扣`
       });
@@ -563,7 +647,8 @@ Page({
         date: this.data.selectedDate,
         startAt: Number(this.data.selectedSlot.startAt),
         quoteId: this.data.quote.quoteId,
-        pointsToUse: Number(this.data.quote.pointsToUse || 0)
+        pointsToUse: Number(this.data.quote.pointsToUse || 0),
+        ...this.addonPayload()
       });
       if (this.idempotencyFingerprint !== requestFingerprint) {
         this.idempotencyFingerprint = requestFingerprint;
@@ -577,6 +662,7 @@ Page({
         startAt: this.data.selectedSlot.startAt,
         quoteId: this.data.quote.quoteId,
         pointsToUse: this.data.quote.pointsToUse || 0,
+        ...this.addonPayload(),
         idempotencyKey: this.idempotencyKey,
         quote: this.data.quote
       });

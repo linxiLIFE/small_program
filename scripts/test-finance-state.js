@@ -48,6 +48,10 @@ test('provider timeout retries the same refund', () => assert.strictEqual(refund
 test('unknown network timeout is retryable', () => assert.strictEqual(refundFailureDisposition({ code: 'ETIMEDOUT' }).retry, true));
 test('booking request hash is stable', () => assert.strictEqual(bookingRequestHash({ serviceId: 's', workId: 'w', technicianId: 't', date: '2026-09-14', startAt: 1, pointsToUse: 2, quoteId: 'q' }), bookingRequestHash({ serviceId: 's', workId: 'w', technicianId: 't', date: '2026-09-14', startAt: 1, pointsToUse: 2, quoteId: 'q' })));
 test('booking request hash changes with the slot', () => assert.notStrictEqual(bookingRequestHash({ startAt: 1 }), bookingRequestHash({ startAt: 2 })));
+test('booking request hash binds removal and builder choices', () => {
+  assert.notStrictEqual(bookingRequestHash({ serviceId: 's', removalServiceId: 'r1' }), bookingRequestHash({ serviceId: 's', removalServiceId: 'r2' }));
+  assert.notStrictEqual(bookingRequestHash({ serviceId: 's', builderServiceId: 'b1' }), bookingRequestHash({ serviceId: 's', builderServiceId: 'b2' }));
+});
 test('future check-in is blocked', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000, bookingRuleSnapshot: { noShowGraceMinutes: 30 } }, 'checkIn', 1).allowed, false));
 test('check-in inside the window is allowed', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000, bookingRuleSnapshot: { noShowGraceMinutes: 30 } }, 'checkIn', 9_000_000).allowed, true));
 test('service cannot complete before its booked end', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000 }, 'complete', 10_500_000).allowed, false));

@@ -7,7 +7,7 @@ function durationFor(id) {
   return DURATION_OPTIONS[hash % DURATION_OPTIONS.length];
 }
 
-function service({ id, categoryId, categoryName, name, priceFen, description, tags = [], sort, isAddon = false }) {
+function service({ id, categoryId, categoryName, name, priceFen, description, tags = [], sort, isAddon = false, addonType = '', freeAsAddon = false, durationMinutes = durationFor(id) }) {
   return {
     _id: id,
     id,
@@ -16,13 +16,13 @@ function service({ id, categoryId, categoryName, name, priceFen, description, ta
     name,
     description,
     priceFen,
-    durationMinutes: durationFor(id),
+    durationMinutes,
     coverUrl: PLACEHOLDER_IMAGE,
     tags,
     sort,
     enabled: true,
     version: 1,
-    ...(isAddon ? { isAddon: true, bookableStandalone: false } : {})
+    ...(isAddon ? { isAddon: true, addonType, bookableStandalone: ['REMOVAL', 'BUILDER'].includes(addonType), ...(addonType === 'REMOVAL' ? { freeAsAddon } : {}) } : {})
   };
 }
 
@@ -55,12 +55,12 @@ const nailServices = [
   service({ id: 'svc-nail-tips-luxury-style', categoryId: 'nail', categoryName: '美甲', name: '甲片轻奢款式', priceFen: 12000, description: '甲片轻奢款式。', tags: ['甲片', '轻奢款式'], sort: 20 }),
   service({ id: 'svc-nail-tips-luxury-custom', categoryId: 'nail', categoryName: '美甲', name: '甲片轻奢高定款', priceFen: 15000, description: '甲片轻奢高定款。', tags: ['甲片', '轻奢', '高定'], sort: 21 }),
   service({ id: 'svc-nail-tips-luxury-shallow', categoryId: 'nail', categoryName: '美甲', name: '轻奢甲片浅贴', priceFen: 28000, description: '轻奢甲片浅贴。', tags: ['甲片', '轻奢', '浅贴'], sort: 22 }),
-  service({ id: 'svc-nail-addon-v-builder', categoryId: 'nail', categoryName: '美甲', name: 'V建构', priceFen: 1500, description: '预约主项目时可叠加。', tags: ['可叠加', '建构'], sort: 23, isAddon: true }),
-  service({ id: 'svc-nail-addon-shaping-builder', categoryId: 'nail', categoryName: '美甲', name: '塑形建构', priceFen: 3000, description: '预约主项目时可叠加。', tags: ['可叠加', '建构'], sort: 24, isAddon: true }),
-  service({ id: 'svc-nail-addon-luxury-shaping-builder', categoryId: 'nail', categoryName: '美甲', name: '轻奢塑形建构', priceFen: 6000, description: '预约主项目时可叠加。', tags: ['可叠加', '建构', '轻奢'], sort: 25, isAddon: true }),
-  service({ id: 'svc-nail-removal-natural', categoryId: 'nail', categoryName: '美甲', name: '卸本甲', priceFen: 1000, description: '本甲卸除服务。', tags: ['卸除', '本甲'], sort: 26 }),
-  service({ id: 'svc-nail-removal-thick-builder', categoryId: 'nail', categoryName: '美甲', name: '卸超厚本甲建构', priceFen: 2000, description: '超厚本甲建构卸除服务。', tags: ['卸除', '本甲', '建构'], sort: 27 }),
-  service({ id: 'svc-nail-removal-tips', categoryId: 'nail', categoryName: '美甲', name: '卸甲片', priceFen: 2000, description: '甲片卸除服务。', tags: ['卸除', '甲片'], sort: 28 })
+  service({ id: 'svc-nail-addon-v-builder', categoryId: 'nail', categoryName: '美甲', name: 'V建构', priceFen: 1500, description: '预约主项目时可叠加。', tags: ['可叠加', '建构'], sort: 23, isAddon: true, addonType: 'BUILDER' }),
+  service({ id: 'svc-nail-addon-shaping-builder', categoryId: 'nail', categoryName: '美甲', name: '塑形建构', priceFen: 3000, description: '预约主项目时可叠加。', tags: ['可叠加', '建构'], sort: 24, isAddon: true, addonType: 'BUILDER' }),
+  service({ id: 'svc-nail-addon-luxury-shaping-builder', categoryId: 'nail', categoryName: '美甲', name: '轻奢塑形建构', priceFen: 6000, description: '预约主项目时可叠加。', tags: ['可叠加', '建构', '轻奢'], sort: 25, isAddon: true, addonType: 'BUILDER' }),
+  service({ id: 'svc-nail-removal-natural', categoryId: 'nail', categoryName: '美甲', name: '卸本甲', priceFen: 1000, durationMinutes: 30, description: '单独预约 ¥10；预约美甲主项目时免费叠加。', tags: ['卸除', '本甲'], sort: 26, isAddon: true, addonType: 'REMOVAL', freeAsAddon: true }),
+  service({ id: 'svc-nail-removal-thick-builder', categoryId: 'nail', categoryName: '美甲', name: '卸超厚本甲建构', priceFen: 2000, durationMinutes: 45, description: '单独预约或作为加项均为 ¥20。', tags: ['卸除', '本甲', '建构'], sort: 27, isAddon: true, addonType: 'REMOVAL' }),
+  service({ id: 'svc-nail-removal-tips', categoryId: 'nail', categoryName: '美甲', name: '卸甲片', priceFen: 2000, durationMinutes: 45, description: '单独预约或作为加项均为 ¥20。', tags: ['卸除', '甲片'], sort: 28, isAddon: true, addonType: 'REMOVAL' })
 ];
 
 const footNailServices = [
@@ -73,7 +73,11 @@ const footNailServices = [
   service({ id: 'svc-foot-nail-builder-luxury-style', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '本甲建构轻奢款式', priceFen: 12000, description: '脚部本甲建构轻奢款式。', tags: ['本甲', '建构', '轻奢款式'], sort: 16 }),
   service({ id: 'svc-foot-nail-tips-40', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '10根脚甲片｜40元', priceFen: 4000, description: '10根脚甲片，40元档位。', tags: ['脚甲片', '10根'], sort: 17 }),
   service({ id: 'svc-foot-nail-tips-80', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '10根脚甲片｜80元', priceFen: 8000, description: '10根脚甲片，80元档位。', tags: ['脚甲片', '10根'], sort: 18 }),
-  service({ id: 'svc-foot-nail-addon-single-tip', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '单独加1个脚甲片', priceFen: 500, description: '预约脚部美甲主项目时可叠加。', tags: ['可叠加', '脚甲片'], sort: 19, isAddon: true })
+  service({ id: 'svc-foot-nail-removal-natural', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '卸脚部本甲', priceFen: 1000, durationMinutes: 30, description: '单独预约 ¥10；预约脚部美甲主项目时免费叠加。', tags: ['卸除', '本甲'], sort: 19, isAddon: true, addonType: 'REMOVAL', freeAsAddon: true }),
+  service({ id: 'svc-foot-nail-removal-tips', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '卸脚甲片', priceFen: 2000, durationMinutes: 40, description: '单独预约或作为加项均为 ¥20。', tags: ['卸除', '脚甲片'], sort: 20, isAddon: true, addonType: 'REMOVAL' }),
+  service({ id: 'svc-foot-nail-addon-v-builder', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '脚部V建构', priceFen: 1500, durationMinutes: 30, description: '预约脚部美甲主项目时可叠加。', tags: ['可叠加', '建构'], sort: 21, isAddon: true, addonType: 'BUILDER' }),
+  service({ id: 'svc-foot-nail-addon-shaping-builder', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '脚部塑形建构', priceFen: 3000, durationMinutes: 45, description: '预约脚部美甲主项目时可叠加。', tags: ['可叠加', '建构'], sort: 22, isAddon: true, addonType: 'BUILDER' }),
+  service({ id: 'svc-foot-nail-addon-single-tip', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '单独加1个脚甲片', priceFen: 500, description: '预约脚部美甲主项目时可叠加。', tags: ['可叠加', '脚甲片'], sort: 23, isAddon: true })
 ];
 
 const lashServices = [
@@ -119,7 +123,7 @@ const legacyWorkIds = {
 };
 
 const works = services
-  .filter((item) => !item.isAddon)
+  .filter((item) => item.bookableStandalone !== false)
   .map((item, index) => ({
     _id: legacyWorkIds[item.id] || `work-${item.id}`,
     id: legacyWorkIds[item.id] || `work-${item.id}`,
