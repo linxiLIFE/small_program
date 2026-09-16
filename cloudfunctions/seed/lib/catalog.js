@@ -70,13 +70,13 @@ function publicTechnician(item) {
 
 async function listCategories() {
   const records = await find(COLLECTIONS.categories, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } });
-  return records.map(publicCategory);
+  return records.filter(item => !item.archived).map(publicCategory);
 }
 
 function countStyles(styles) {
   return styles.reduce((result, item) => {
     const serviceId = item.serviceId || '';
-    if (item.published !== false && serviceId) result[serviceId] = (result[serviceId] || 0) + 1;
+    if (!item.archived && item.published !== false && serviceId) result[serviceId] = (result[serviceId] || 0) + 1;
     return result;
   }, {});
 }
@@ -88,11 +88,11 @@ async function loadCatalog(categoryId = '') {
     find(COLLECTIONS.categories, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } }),
     loadAll(COLLECTIONS.works, {}, { orderBy: { field: 'sort', direction: 'asc' } })
   ]);
-  const categories = categoryRecords.map(publicCategory);
+  const categories = categoryRecords.filter(item => !item.archived).map(publicCategory);
   const categoryById = new Map(categories.map((item) => [item.id, item]));
   const styleCounts = countStyles(styles);
   const services = serviceRecords
-    .filter((item) => categoryById.has(item.categoryId))
+    .filter((item) => !item.archived && categoryById.has(item.categoryId))
     .map((item) => {
       const category = categoryById.get(item.categoryId);
       return { ...publicService(item), styleCount: styleCounts[item.id || item._id] || 0, categoryName: category.name };
@@ -113,7 +113,7 @@ async function listServices(categoryId = '') {
 function decorateWorks(records, services, counts = {}, { includeBookingCount = true, sortByPopularity = true } = {}) {
   const serviceById = new Map(services.map((item) => [item.id, item]));
   const works = records
-    .filter((item) => item.published !== false && serviceById.has(item.serviceId))
+    .filter((item) => !item.archived && item.published !== false && serviceById.has(item.serviceId))
     .map((item) => {
       const service = serviceById.get(item.serviceId);
       return {
@@ -134,7 +134,7 @@ async function listWorks(categoryId = '') {
 }
 
 async function listTechnicians(serviceId = '') {
-  const records = await find(COLLECTIONS.technicians, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } });
+  const records = (await find(COLLECTIONS.technicians, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } })).filter(item => !item.archived);
   if (serviceId) {
     const service = await getOptional(COLLECTIONS.services, serviceId);
     const categoryId = service && service.categoryId;
@@ -150,33 +150,33 @@ async function listTechnicians(serviceId = '') {
 async function getService(serviceId) {
   assert(serviceId, 'INVALID_SERVICE', '缺少项目 ID');
   const record = await getOptional(COLLECTIONS.services, serviceId);
-  assert(record && record.enabled !== false, 'SERVICE_NOT_FOUND', '项目不存在或已下架', 404);
+  assert(record && !record.archived && record.enabled !== false, 'SERVICE_NOT_FOUND', '项目不存在或已下架', 404);
   const [category, styles] = await Promise.all([
     getOptional(COLLECTIONS.categories, record.categoryId),
     loadAll(COLLECTIONS.works, { serviceId: record.id || record._id }, { orderBy: { field: 'sort', direction: 'asc' } })
   ]);
-  assert(category && category.enabled !== false, 'SERVICE_NOT_FOUND', '所属大类已停用', 404);
-  return { ...publicService(record), styleCount: styles.filter(item => item.published !== false).length, categoryName: category.name };
+  assert(category && !category.archived && category.enabled !== false, 'SERVICE_NOT_FOUND', '所属大类已停用', 404);
+  return { ...publicService(record), styleCount: styles.filter(item => !item.archived && item.published !== false).length, categoryName: category.name };
 }
 
 async function listServiceStyles(serviceId) {
   assert(serviceId, 'INVALID_SERVICE', '缺少项目 ID');
   const record = await getOptional(COLLECTIONS.services, serviceId);
-  assert(record && record.enabled !== false, 'SERVICE_NOT_FOUND', '项目不存在或已下架', 404);
+  assert(record && !record.archived && record.enabled !== false, 'SERVICE_NOT_FOUND', '项目不存在或已下架', 404);
   const serviceKey = record.id || record._id;
   const [category, styles] = await Promise.all([
     getOptional(COLLECTIONS.categories, record.categoryId),
     loadAll(COLLECTIONS.works, { serviceId: serviceKey }, { orderBy: { field: 'sort', direction: 'asc' } })
   ]);
-  assert(category && category.enabled !== false, 'SERVICE_NOT_FOUND', '所属大类已停用', 404);
-  const service = { ...publicService(record), styleCount: styles.filter(item => item.published !== false).length, categoryName: category.name };
+  assert(category && !category.archived && category.enabled !== false, 'SERVICE_NOT_FOUND', '所属大类已停用', 404);
+  const service = { ...publicService(record), styleCount: styles.filter(item => !item.archived && item.published !== false).length, categoryName: category.name };
   return { service, works: decorateWorks(styles, [service], {}, { includeBookingCount: false, sortByPopularity: false }) };
 }
 
 async function getWork(workId) {
   assert(workId, 'INVALID_WORK', '缺少作品 ID');
   const record = await getOptional(COLLECTIONS.works, workId);
-  assert(record && record.published !== false, 'WORK_NOT_FOUND', '作品不存在或已下架', 404);
+  assert(record && !record.archived && record.published !== false, 'WORK_NOT_FOUND', '作品不存在或已下架', 404);
   const service = await getService(record.serviceId);
   return {
     ...publicWork(record),

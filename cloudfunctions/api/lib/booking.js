@@ -456,6 +456,13 @@ async function createOrder(payload) {
     // validation can precede an administrator's archive operation.
     const currentTechnician = await getOptional(COLLECTIONS.technicians, validation.technician.id, transaction);
     assert(currentTechnician && currentTechnician.enabled !== false && !currentTechnician.archived, 'TECHNICIAN_NOT_FOUND', '技师不存在或已停用', 404);
+    const currentCategory = await getOptional(COLLECTIONS.categories, validation.service.categoryId, transaction);
+    const currentService = await getOptional(COLLECTIONS.services, validation.service.id, transaction);
+    const currentWork = await getOptional(COLLECTIONS.works, work.id, transaction);
+    assert(currentCategory && currentCategory.enabled !== false && !currentCategory.archived
+      && currentService && currentService.enabled !== false && !currentService.archived
+      && currentWork && currentWork.published !== false && !currentWork.archived
+      && currentWork.serviceId === validation.service.id, 'QUOTE_CHANGED', '项目或款式刚刚变更，请重新选择并报价', 409);
     await getOptional(COLLECTIONS.users, context.openid, transaction);
     const scheduleRevision = Number(validation.settings.scheduleRevision || 1);
     await transaction.insertIfAbsent(COLLECTIONS.scheduleTemplates, 'active', {

@@ -2,6 +2,7 @@ import type { AnalyticsResponse, AdminOrderPage, AdminOrderQuery, Category, Tech
 import { callBusiness } from './cloudbase';
 
 let demoWorks: Work[] = [];
+let demoCategories: Category[] = [{id:'nail',name:'美甲',enabled:true,icon:'✦',color:'#f1ded8',sort:0},{id:'brow',name:'美眉',enabled:true,icon:'⌁',color:'#eee6d9',sort:1}];
 const demo = import.meta.env.VITE_ADMIN_DEMO === 'true';
 
 export function isDemoMode(): boolean {
@@ -102,7 +103,20 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
     return { id, deleted: true } as T;
   }
   if (action === 'staffSession') return {role:'OWNER',name:'店主'} as T;
-  if (action === 'adminCatalog') return { categories: [{id:'nail',name:'美甲',enabled:true,icon:'✦',color:'#f1ded8',sort:0},{id:'brow',name:'美眉',enabled:true,icon:'⌁',color:'#eee6d9',sort:1}], services: demoServices, works: demoWorks, technicians: demoTechnicians } as T;
+  if (action === 'adminCatalog') return { categories: demoCategories, services: demoServices, works: demoWorks, technicians: demoTechnicians } as T;
+  if (['adminDeleteCategory','adminDeleteService','adminDeleteWork'].includes(action)) {
+    const kind = action === 'adminDeleteCategory' ? 'category' : action === 'adminDeleteService' ? 'service' : 'work';
+    const id = String(payload[`${kind}Id`] || '');
+    const index = kind === 'category' ? demoCategories.findIndex(item => item.id === id)
+      : kind === 'service' ? demoServices.findIndex(item => item.id === id) : demoWorks.findIndex(item => item.id === id);
+    if (index < 0) throw new Error('项目不存在或已删除');
+    const serviceIds = kind === 'category' ? demoServices.filter(item => item.categoryId === id).map(item => item.id) : kind === 'service' ? [id] : [];
+    const archivedWorks = demoWorks.filter(item => kind === 'work' ? item.id === id : serviceIds.includes(item.serviceId)).length;
+    demoWorks = demoWorks.filter(item => kind === 'work' ? item.id !== id : !serviceIds.includes(item.serviceId));
+    for (let i = demoServices.length - 1; i >= 0; i--) if (serviceIds.includes(demoServices[i].id)) demoServices.splice(i, 1);
+    if (kind === 'category') demoCategories = demoCategories.filter(item => item.id !== id);
+    return { id, deleted: true, archivedServices: kind === 'category' ? serviceIds.length : 0, archivedWorks: kind === 'work' ? 0 : archivedWorks } as T;
+  }
   if (action === 'adminSchedule') return demoSchedule(String(payload.date || today())) as T;
   if (action === 'adminPreviewTechnicianSchedule') {
     const current = demoSchedule(String(payload.date || today()));
@@ -143,6 +157,12 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
     else demoServices.push(next);
     return demoServices.find((item) => item.id === next.id) as T;
   }
+  if (action === 'adminSaveCategory') {
+    const next = payload as unknown as Category;
+    const index = demoCategories.findIndex(item => item.id === next.id);
+    if (index >= 0) demoCategories[index] = { ...demoCategories[index], ...next }; else demoCategories.push(next);
+    return next as T;
+  }
   if (action === 'adminSaveSettings') {
     Object.assign(demoSettings, payload, { version: demoSettings.version + 1 });
     return demoSettings as T;
@@ -176,6 +196,9 @@ export const adminApi = {
   session: () => request<SessionInfo>('staffSession'),
   uploadImage: (base64:string) => request<{fileID:string;url:string}>('adminUploadImage',{base64}),
   saveCategory: (category:Category) => request<Category>('adminSaveCategory',category as unknown as Record<string,unknown>),
+  deleteCategory: (categoryId:string) => request<{id:string;deleted:boolean;archivedServices:number;archivedWorks:number}>('adminDeleteCategory',{categoryId}),
+  deleteService: (serviceId:string) => request<{id:string;deleted:boolean;archivedServices:number;archivedWorks:number}>('adminDeleteService',{serviceId}),
+  deleteWork: (workId:string) => request<{id:string;deleted:boolean;archivedServices:number;archivedWorks:number}>('adminDeleteWork',{workId}),
   saveTechnician: (technician:Technician) => request<Technician>('adminSaveTechnician',technician as unknown as Record<string,unknown>),
   deleteTechnician: (technicianId:string) => request<{id:string;deleted:boolean}>('adminDeleteTechnician',{technicianId}),
   createTechnicianLogin: (technicianId:string,username:string,password:string) => request<{username:string}>('adminCreateTechnicianLogin',{technicianId,username,password}),

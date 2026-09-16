@@ -2,6 +2,14 @@
 
 > 这份文档是项目继续开发时的上下文记录。内容以实际操作和测试结果为准。
 
+## 2026-09-15 项目与款式三级删除（云函数与管理后台已发布；小程序未上传）
+
+- 管理后台的大项、小项目、款式卡片均增加删除入口及影响范围确认；删除采用目录归档，大项删除连带归档子小项目和款式，小项目删除连带归档子款式。目录图片文件不清理，已创建的顾客订单及其项目、款式、时间、价格快照不修改。
+- 顾客目录不再展示归档条目，也不能用旧项目或款式创建新预约；订单提交时在事务内再次检查大项、小项目及款式，防止删除与旧报价并发时产生新订单。
+- 本地 `npm test`、管理后台生产构建、共享函数同步比较、JavaScript 语法及 `git diff --check` 通过；三级删除回归覆盖子项归档、订单快照保留和已删除条目拒绝再编辑。本地演示后台已点击新建大项→确认删除→列表移除，并检查小项目删除弹窗。
+- 按本功能范围将 `api`、`admin-api` 部署到 `cloud1-d9g5pfect2ece00fa`，函数列表反查均为 `Deployment completed`；两个函数 `getSettings` 无写入调用均成功，返回 settings v19。使用无效大项编号进行路由冒烟：`api` 返回 `INVALID_ID`，`admin-api` 返回 `UNAUTHENTICATED`，均未触发目录写入。
+- 管理后台以 `tcb hosting deploy admin/dist cloud-admin --safe --verify --json` 发布，4/4 文件上传且 `verified: true`，安全备份位于 `.cloudbase-backup/1789477914431/`；线上入口引用 `index-DCbIgxK6.js` / `index-DlLGgbuG.css`，远端与本地 SHA-256 分别一致为 `737bbc601399fcb5efeb195c584cf4d6df6dc2a92044606dc34810659ebd8ae8` / `89e2f3cea5223eddcdfcd514eab171ea52e4ed7a463f1583941f3484f03f7dd6`。未操作真实目录或真实订单，未部署 `jobs`、`payment-callback`、`seed`，未上传小程序体验版；带真实店主会话的线上删除点击和真机预约保留尚未验收。
+
 ## 2026-09-15 微信订阅消息真实模板配置（服务端已发布；小程序未上传）
 
 - 根据公众平台模板详情配置并发布 settings v19：预约成功 `thing1 / date2 / thing19`，到店提醒 `thing2 / time1 / thing7`，核销成功 `thing1 / time5`，退款成功 `thing1 / amount6 / thing3`。核销模板不再发送旧技师字段，退款模板不再发送旧状态字段；退款成功通知覆盖用户取消、后台退款和未到店退款成功回调。

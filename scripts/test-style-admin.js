@@ -10,11 +10,11 @@ const clone = value=>JSON.parse(JSON.stringify(value));
 const db={ collection: table => ({ doc: id => ({ set: async ({data}) => { (tables[table] ||= {})[id]=clone(data); } }) }) };
 db.query=async()=>[[]];
 db.insertIfAbsent=async(table,id,data)=>{if(tables[table]?.[id])return{inserted:false};(tables[table]||={})[id]=clone(data);return{inserted:true};};
-db.command={in:value=>value,gte:value=>value};
+db.command={in:value=>({__in:value}),gte:value=>value};
 db.runTransaction=async fn=>{const before=clone(tables);try{return await fn(db);}catch(error){Object.keys(tables).forEach(k=>delete tables[k]);Object.assign(tables,before);throw error;}};
 const stubs={
  './constants':constants,
- './db':{db,getOptional:async(table,id)=>tables[table]?.[id]||null,find:async(table,where={})=>Object.values(tables[table]||{}).filter(item=>Object.entries(where).every(([key,value])=>item[key]===value)),getContext:()=>({uid:actor.uid})},
+ './db':{db,getOptional:async(table,id)=>tables[table]?.[id]||null,find:async(table,where={})=>Object.values(tables[table]||{}).filter(item=>Object.entries(where).every(([key,value])=>value&&value.__in?value.__in.includes(item[key]):item[key]===value)),getContext:()=>({uid:actor.uid})},
  './auth':{requireRole:async roles=>{if(!roles.includes(actor.role))throw new Error('FORBIDDEN');return{account:actor,context:{uid:actor.uid}};}},
  './errors':{assert:(condition,code)=>{if(!condition)throw new Error(code);},AppError:class extends Error{constructor(code){super(code);}}},
  './money':require('../cloudfunctions/api/lib/money'),
@@ -46,6 +46,32 @@ function load(name){if(cache[name])return cache[name];const scope={module:{expor
  await assert.rejects(catalog.deleteTechnician(booked.id),/TECHNICIAN_HAS_ORDERS/);assert.equal(tables.technicians[booked.id].archived,undefined);
  await catalog.saveFeaturedWorks({orderedIds:[]});
  await catalog.saveWork({...work,published:false});assert.equal((await load('catalog').getHome(constants.DEFAULT_SETTINGS)).works.length,0);
+ const deletableCategory=await catalog.saveCategory({name:'可删除大项',enabled:true});
+ const deleteServices=[];const deleteWorks=[];
+ for(let index=0;index<3;index++){
+   const item=await catalog.saveService({name:`待删小项目${index}`,categoryId:deletableCategory.id,priceFen:100,durationMinutes:30});
+   deleteServices.push(item);
+   deleteWorks.push(await catalog.saveWork({title:`待删款式${index}`,imageUrl:'https://example.com/style.jpg',serviceId:item.id,published:true}));
+ }
+ const snapshots=deleteWorks.map((item,index)=>({id:`catalog-order-${index}`,serviceId:deleteServices[index].id,workSnapshot:{id:item.id,title:item.title,imageUrl:item.imageUrl},serviceSnapshot:{id:deleteServices[index].id,name:deleteServices[index].name,categoryId:deletableCategory.id,categoryName:deletableCategory.name}}));
+ snapshots.forEach(order=>{tables.orders[order.id]=clone(order);});
+ assert.deepEqual(await catalog.deleteCatalog('work',deleteWorks[0].id),{id:deleteWorks[0].id,deleted:true,archivedServices:0,archivedWorks:0});
+ assert.equal(tables.works[deleteWorks[0].id].archived,true);
+ await assert.rejects(load('catalog').getWork(deleteWorks[0].id),/WORK_NOT_FOUND/);
+ assert.deepEqual(await catalog.deleteCatalog('service',deleteServices[1].id),{id:deleteServices[1].id,deleted:true,archivedServices:0,archivedWorks:1});
+ assert.equal(tables.services[deleteServices[1].id].archived,true);assert.equal(tables.works[deleteWorks[1].id].archived,true);
+ await assert.rejects(load('catalog').getService(deleteServices[1].id),/SERVICE_NOT_FOUND/);
+ tables.works.legacyOrphan={id:'legacyOrphan',title:'旧数据款式',serviceId:deleteServices[1].id,categoryId:deletableCategory.id,published:true};
+ assert.deepEqual(await catalog.deleteCatalog('category',deletableCategory.id),{id:deletableCategory.id,deleted:true,archivedServices:2,archivedWorks:2});
+ assert.equal(tables.categories[deletableCategory.id].archived,true);assert.equal(tables.services[deleteServices[2].id].archived,true);assert.equal(tables.works[deleteWorks[2].id].archived,true);
+ assert.equal(tables.works.legacyOrphan.archived,true);
+ const afterDelete=await catalog.listCatalog();
+ assert(!afterDelete.categories.some(item=>item.id===deletableCategory.id));
+ assert(!afterDelete.services.some(item=>deleteServices.some(service=>service.id===item.id)));
+ assert(!afterDelete.works.some(item=>deleteWorks.some(work=>work.id===item.id)));
+ snapshots.forEach(order=>assert.deepEqual(tables.orders[order.id],order));
+ await assert.rejects(catalog.saveWork({...deleteWorks[2]}),/INVALID_SERVICE/);
+ await assert.rejects(catalog.deleteCatalog('work',deleteWorks[0].id),/CATALOG_NOT_FOUND/);
  actor={role:'TECHNICIAN',uid:'tech-user',technicianId:'tech'};
  await assert.rejects(catalog.saveCategory({name:'越权'}),/FORBIDDEN/);
  await assert.rejects(catalog.listCatalog(),/FORBIDDEN/);

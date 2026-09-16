@@ -26,6 +26,17 @@ function imageOf(payload, field, optional = false) {
 async function persist(table, id, data, account) {
   return db.runTransaction(async transaction => {
   const existing = await getOptional(table, id, transaction);
+  assert(!existing || !existing.archived, 'CATALOG_ARCHIVED', '已删除的项目不能重新编辑', 409);
+  if (table === COLLECTIONS.services) {
+    const category = await getOptional(COLLECTIONS.categories, data.categoryId, transaction);
+    assert(category && !category.archived && category.enabled !== false, 'INVALID_CATEGORY', '请选择已启用的大类', 409);
+  }
+  if (table === COLLECTIONS.works) {
+    const service = await getOptional(COLLECTIONS.services, data.serviceId, transaction);
+    const category = service && await getOptional(COLLECTIONS.categories, service.categoryId, transaction);
+    assert(service && !service.archived && (data.published === false || service.enabled !== false), 'INVALID_SERVICE', '请选择已上架的小项目', 409);
+    assert(category && !category.archived && (data.published === false || category.enabled !== false), 'INVALID_CATEGORY', '所属大类已停用', 409);
+  }
   const now = Date.now();
   const record = { ...(existing || {}), ...data, _id: id, id, createdAt: existing && existing.createdAt || now, updatedAt: now, version: Number(existing && existing.version || 0) + 1 };
   await transaction.collection(table).doc(id).set({ data: record });
@@ -42,7 +53,7 @@ async function saveCategory(payload = {}) {
 async function saveService(payload = {}) {
   const { account } = await requireRole(['OWNER']);
   const category = await getOptional(COLLECTIONS.categories, payload.categoryId);
-  assert(category && category.enabled !== false, 'INVALID_CATEGORY', '请选择已启用的大类');
+  assert(category && !category.archived && category.enabled !== false, 'INVALID_CATEGORY', '请选择已启用的大类');
   const priceFen = integer(payload.priceFen, '价格'); const durationMinutes = integer(payload.durationMinutes, '时长');
   assert(priceFen > 0 && priceFen <= MAX_SERVICE_PRICE_FEN && durationMinutes > 0 && durationMinutes <= 720, 'INVALID_SERVICE', '价格须在 0.01 元到 10 万元之间，时长须在 1 到 720 分钟之间');
   const record = await persist(COLLECTIONS.services, idOf(payload, 'svc'), { name: nameOf(payload.name, '项目名称'), categoryId: category.id || category._id, categoryName: category.name, coverUrl: imageOf(payload, 'coverUrl', true), description: String(payload.description || '').slice(0, 1000), tags: Array.isArray(payload.tags) ? payload.tags.slice(0, 12) : [], priceFen, durationMinutes, enabled: payload.enabled !== false, ...sortable(payload) }, account);
@@ -51,9 +62,9 @@ async function saveService(payload = {}) {
 async function saveWork(payload = {}) {
   const { account } = await requireRole(['OWNER']);
   const service = await getOptional(COLLECTIONS.services, payload.serviceId);
-  assert(service && (payload.published === false || service.enabled !== false), 'INVALID_SERVICE', '请选择已上架的小项目');
+  assert(service && !service.archived && (payload.published === false || service.enabled !== false), 'INVALID_SERVICE', '请选择已上架的小项目');
   const category = await getOptional(COLLECTIONS.categories, service.categoryId);
-  assert(category && (payload.published === false || category.enabled !== false), 'INVALID_CATEGORY', '所属大类已停用');
+  assert(category && !category.archived && (payload.published === false || category.enabled !== false), 'INVALID_CATEGORY', '所属大类已停用');
   const featuredSort = payload.featuredSort === undefined ? payload.featured === true ? 1000000 : 0 : integer(payload.featuredSort, '精选排序');
   assert(featuredSort >= 0 && featuredSort <= 1000000, 'INVALID_SORT', '精选排序值不正确');
   const record = await persist(COLLECTIONS.works, idOf(payload, 'work'), { title: nameOf(payload.title, '款式名称'), imageUrl: imageOf(payload, 'imageUrl'), serviceId: service.id || service._id, categoryId: category.id || category._id, categoryName: category.name, published: payload.published !== false, featured: payload.featured === true, featuredSort, ...sortable(payload) }, account);
@@ -88,6 +99,46 @@ async function saveFeaturedWorks(payload = {}) {
     return changed;
   });
   return { orderedIds, updated: records.length };
+}
+
+async function deleteCatalog(kind, idValue) {
+  const { account } = await requireRole(['OWNER']);
+  const tables = { category: COLLECTIONS.categories, service: COLLECTIONS.services, work: COLLECTIONS.works };
+  const table = tables[kind];
+  const id = String(idValue || '').trim();
+  assert(table && /^[a-zA-Z0-9_-]{1,100}$/.test(id), 'INVALID_ID', '项目编号不正确');
+  const counts = await db.runTransaction(async (transaction) => {
+    const root = await getOptional(table, id, transaction);
+    assert(root && !root.archived, 'CATALOG_NOT_FOUND', '项目不存在或已删除', 404);
+    const categoryServices = kind === 'category'
+      ? await loadAll(COLLECTIONS.services, { categoryId: id }, { maxRecords: 10000 }, transaction) : [];
+    const services = kind === 'category' ? categoryServices.filter(item => !item.archived)
+      : kind === 'service' ? [root] : [];
+    const serviceIds = (kind === 'category' ? categoryServices : services).map(item => item.id || item._id);
+    const works = kind === 'work' ? [root] : serviceIds.length
+      ? (await loadAll(COLLECTIONS.works, { serviceId: db.command.in(serviceIds) }, { maxRecords: 10000 }, transaction)).filter(item => !item.archived)
+      : [];
+    const now = Date.now();
+    const archive = async (record, collection, changes) => {
+      const recordId = record.id || record._id;
+      await transaction.collection(collection).doc(recordId).set({ data: {
+        ...record, ...changes, archived: true, archivedAt: now,
+        updatedAt: now, version: Number(record.version || 0) + 1
+      } });
+    };
+    for (const work of works) await archive(work, COLLECTIONS.works, { published: false, featured: false, featuredSort: 0 });
+    for (const service of services) await archive(service, COLLECTIONS.services, { enabled: false });
+    if (kind === 'category') await archive(root, COLLECTIONS.categories, { enabled: false });
+    const auditId = `audit-${crypto.randomUUID()}`;
+    await transaction.collection(COLLECTIONS.auditLogs).doc(auditId).set({ data: {
+      id: auditId, operatorId: account.uid || account.openid, operatorRole: account.role,
+      action: 'ARCHIVE_CATALOG', objectType: table, objectId: id,
+      summary: { kind, serviceCount: kind === 'category' ? services.length : 0, workCount: kind === 'work' ? 0 : works.length },
+      createdAt: now
+    } });
+    return { services: kind === 'category' ? services.length : 0, works: kind === 'work' ? 0 : works.length };
+  });
+  return { id, deleted: true, archivedServices: counts.services, archivedWorks: counts.works };
 }
 async function saveTechnician(payload = {}) {
   const { account } = await requireRole(['OWNER']);
@@ -199,4 +250,4 @@ async function listCatalog() {
     })
   };
 }
-module.exports = { saveCategory, saveService, saveWork, saveFeaturedWorks, saveTechnician, deleteTechnician, listCatalog };
+module.exports = { saveCategory, saveService, saveWork, saveFeaturedWorks, deleteCatalog, saveTechnician, deleteTechnician, listCatalog };

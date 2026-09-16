@@ -21,6 +21,7 @@ const saving = ref(false);
 const uploading = ref(false);
 const error = ref('');
 const notice = ref('');
+const deleteTarget = ref<{ kind: Editor; id: string; name: string; services: number; works: number } | null>(null);
 
 const categories = computed(() => props.catalog.categories || []);
 const services = computed(() => props.catalog.services
@@ -147,6 +148,37 @@ async function toggleFeatured(work: Work) {
 }
 
 function close() { if (!saving.value && !uploading.value) draft.value = null; }
+function askDelete(kind: Editor, item: Category | Service | Work) {
+  error.value = '';
+  notice.value = '';
+  const id = item.id;
+  deleteTarget.value = {
+    kind, id, name: kind === 'work' ? (item as Work).title : (item as Category | Service).name,
+    services: kind === 'category' ? projectCountFor(id) : 0,
+    works: kind === 'category' ? props.catalog.works.filter(work => work.categoryId === id || serviceFor(work.serviceId)?.categoryId === id).length
+      : kind === 'service' ? props.catalog.works.filter(work => work.serviceId === id).length : 0
+  };
+}
+async function confirmDelete() {
+  const target = deleteTarget.value;
+  if (!target || saving.value) return;
+  saving.value = true;
+  error.value = '';
+  try {
+    if (target.kind === 'category') await adminApi.deleteCategory(target.id);
+    else if (target.kind === 'service') await adminApi.deleteService(target.id);
+    else await adminApi.deleteWork(target.id);
+    if (target.kind === 'category' && categoryId.value === target.id) { categoryId.value = ''; serviceId.value = ''; }
+    if (target.kind === 'service' && serviceId.value === target.id) serviceId.value = '';
+    deleteTarget.value = null;
+    notice.value = `已删除${target.kind === 'category' ? '大项' : target.kind === 'service' ? '小项目' : '款式'}“${target.name}”`;
+    emit('changed');
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '删除失败';
+  } finally {
+    saving.value = false;
+  }
+}
 </script>
 <template>
   <section class="catalog-studio">
@@ -154,12 +186,14 @@ function close() { if (!saving.value && !uploading.value) draft.value = null; }
     <div v-if="notice && !draft" class="inline-success" role="status">{{ notice }}</div><div v-if="error && !draft" class="field-error" role="alert">{{ error }}</div>
 
     <div class="catalog-flow">
-      <section class="catalog-flow-section"><div class="flow-heading"><span class="flow-number">01</span><div><h2>选择大项</h2><p>先选大项，再进入对应的小项目。</p></div><span class="flow-count">{{ categories.length }}</span></div><div class="category-choice-grid"><article v-for="category in categories" :key="category.id" :class="['category-choice-card', { selected: categoryId === category.id, disabled: !category.enabled }]" @click="selectCategory(category.id)"><button class="category-choice" type="button"><span class="category-choice-icon" :style="{ background: category.color }">{{ category.icon }}</span><span class="category-choice-copy"><strong>{{ category.name }}</strong><small>{{ projectCountFor(category.id) }} 个小项目 · {{ categoryStyleCountFor(category.id) }} 款式</small></span><span v-if="!category.enabled" class="choice-status">停用</span></button><button class="category-edit" type="button" @click.stop="open('category', category)">编辑</button></article><button class="choice-add-card" type="button" @click="open('category')"><span>＋</span><strong>新增大项</strong></button></div></section>
+      <section class="catalog-flow-section"><div class="flow-heading"><span class="flow-number">01</span><div><h2>选择大项</h2><p>先选大项，再进入对应的小项目。</p></div><span class="flow-count">{{ categories.length }}</span></div><div class="category-choice-grid"><article v-for="category in categories" :key="category.id" :class="['category-choice-card', { selected: categoryId === category.id, disabled: !category.enabled }]" @click="selectCategory(category.id)"><button class="category-choice" type="button"><span class="category-choice-icon" :style="{ background: category.color }">{{ category.icon }}</span><span class="category-choice-copy"><strong>{{ category.name }}</strong><small>{{ projectCountFor(category.id) }} 个小项目 · {{ categoryStyleCountFor(category.id) }} 款式</small></span><span v-if="!category.enabled" class="choice-status">停用</span></button><div class="choice-card-actions"><button type="button" @click.stop="open('category', category)">编辑</button><button class="delete-link" type="button" @click.stop="askDelete('category', category)">删除</button></div></article><button class="choice-add-card" type="button" @click="open('category')"><span>＋</span><strong>新增大项</strong></button></div></section>
 
-      <section class="catalog-flow-section" :class="{ 'flow-disabled': !categoryId }"><div class="flow-heading"><span class="flow-number">02</span><div><h2>{{ selectedCategory?.name || '小项目' }}</h2><p>选择要添加或调整款式的小项目。</p></div><span class="flow-count">{{ services.length }}</span></div><div v-if="categoryId" class="project-choice-grid"><article v-for="service in services" :key="service.id" :class="['project-choice-card', { selected: serviceId === service.id, disabled: !service.enabled }]" @click="selectService(service.id)"><button class="project-choice" type="button"><img v-if="service.coverUrl" :src="service.coverUrl" alt=""/><span v-else class="project-choice-cover">{{ service.categoryName }}</span><span class="project-choice-copy"><strong>{{ service.name }}</strong><small>{{ money(service.priceFen) }} · {{ durationLabel(service.durationMinutes) }}</small><small>{{ service.styleCount || 0 }} 款式</small></span><span :class="['pill', service.enabled ? 'green' : 'sand']">{{ service.enabled ? '上架' : '下架' }}</span></button><button class="project-edit" type="button" @click.stop="open('service', service)">编辑小项目</button></article><button class="choice-add-card project-add-card" type="button" @click="open('service')"><span>＋</span><strong>新增小项目</strong></button></div></section>
+      <section class="catalog-flow-section" :class="{ 'flow-disabled': !categoryId }"><div class="flow-heading"><span class="flow-number">02</span><div><h2>{{ selectedCategory?.name || '小项目' }}</h2><p>选择要添加或调整款式的小项目。</p></div><span class="flow-count">{{ services.length }}</span></div><div v-if="categoryId" class="project-choice-grid"><article v-for="service in services" :key="service.id" :class="['project-choice-card', { selected: serviceId === service.id, disabled: !service.enabled }]" @click="selectService(service.id)"><button class="project-choice" type="button"><img v-if="service.coverUrl" :src="service.coverUrl" alt=""/><span v-else class="project-choice-cover">{{ service.categoryName }}</span><span class="project-choice-copy"><strong>{{ service.name }}</strong><small>{{ money(service.priceFen) }} · {{ durationLabel(service.durationMinutes) }}</small><small>{{ service.styleCount || 0 }} 款式</small></span><span :class="['pill', service.enabled ? 'green' : 'sand']">{{ service.enabled ? '上架' : '下架' }}</span></button><div class="choice-card-actions"><button type="button" @click.stop="open('service', service)">编辑小项目</button><button class="delete-link" type="button" @click.stop="askDelete('service', service)">删除</button></div></article><button class="choice-add-card project-add-card" type="button" @click="open('service')"><span>＋</span><strong>新增小项目</strong></button></div></section>
 
-      <section class="catalog-flow-section" :class="{ 'flow-disabled': !serviceId }"><div class="flow-heading"><span class="flow-number">03</span><div><h2>{{ selectedService?.name || '款式图库' }}</h2><p>{{ serviceId ? '图片、名称和上架状态都在这里调整。' : '先选择小项目后查看对应款式。' }}</p></div><div class="flow-tools"><button v-if="serviceId" :class="['filter-chip', { active: featuredOnly }]" type="button" @click="featuredOnly = !featuredOnly">{{ featuredOnly ? '只看精选' : '全部款式' }}</button><input v-if="serviceId" v-model="search" class="search-field" placeholder="搜索款式" aria-label="搜索款式"/></div></div><div v-if="serviceId" class="portfolio-grid"><article v-for="work in works" :key="work.id" class="portfolio-tile"><button class="portfolio-cover" type="button" :aria-label="'编辑款式 ' + work.title" @click="open('work', work)"><CatalogImage :src="work.imageUrl" :alt="work.title"/><span v-if="!work.published" class="tile-badge">已下架</span><span v-if="work.featured" class="featured-badge">★ 精选</span></button><div class="tile-body"><h3>{{ work.title }}</h3><p>{{ serviceFor(work.serviceId)?.name || '未关联项目' }}</p><div class="tile-actions"><button class="text-button" type="button" @click="open('work', work)">编辑</button><button :class="['feature-toggle', { on: work.featured }]" :disabled="saving || !work.published" type="button" @click="toggleFeatured(work)">{{ work.featured ? '★ 已精选' : '☆ 设为精选' }}</button></div></div></article><button class="add-tile" type="button" @click="open('work')"><span>＋</span>新增款式</button></div><div v-else class="flow-empty"><span>03</span><strong>选择小项目后进入款式图库</strong></div></section>
+      <section class="catalog-flow-section" :class="{ 'flow-disabled': !serviceId }"><div class="flow-heading"><span class="flow-number">03</span><div><h2>{{ selectedService?.name || '款式图库' }}</h2><p>{{ serviceId ? '图片、名称和上架状态都在这里调整。' : '先选择小项目后查看对应款式。' }}</p></div><div class="flow-tools"><button v-if="serviceId" :class="['filter-chip', { active: featuredOnly }]" type="button" @click="featuredOnly = !featuredOnly">{{ featuredOnly ? '只看精选' : '全部款式' }}</button><input v-if="serviceId" v-model="search" class="search-field" placeholder="搜索款式" aria-label="搜索款式"/></div></div><div v-if="serviceId" class="portfolio-grid"><article v-for="work in works" :key="work.id" class="portfolio-tile"><button class="portfolio-cover" type="button" :aria-label="'编辑款式 ' + work.title" @click="open('work', work)"><CatalogImage :src="work.imageUrl" :alt="work.title"/><span v-if="!work.published" class="tile-badge">已下架</span><span v-if="work.featured" class="featured-badge">★ 精选</span></button><div class="tile-body"><h3>{{ work.title }}</h3><p>{{ serviceFor(work.serviceId)?.name || '未关联项目' }}</p><div class="tile-actions"><button class="text-button" type="button" @click="open('work', work)">编辑</button><button :class="['feature-toggle', { on: work.featured }]" :disabled="saving || !work.published" type="button" @click="toggleFeatured(work)">{{ work.featured ? '★ 已精选' : '☆ 设为精选' }}</button><button class="text-button delete-link" type="button" @click="askDelete('work', work)">删除</button></div></div></article><button class="add-tile" type="button" @click="open('work')"><span>＋</span>新增款式</button></div><div v-else class="flow-empty"><span>03</span><strong>选择小项目后进入款式图库</strong></div></section>
     </div>
+
+    <div v-if="deleteTarget" class="editor-backdrop" @click.self="!saving && (deleteTarget = null)" @keydown.esc="!saving && (deleteTarget = null)"><section class="compact-modal catalog-delete-modal" role="dialog" aria-modal="true" aria-label="确认删除项目"><h2>删除“{{ deleteTarget.name }}”？</h2><p v-if="deleteTarget.kind === 'category'">其下 {{ deleteTarget.services }} 个小项目及 {{ deleteTarget.works }} 个款式会同时从项目列表移除。</p><p v-else-if="deleteTarget.kind === 'service'">其下 {{ deleteTarget.works }} 个款式会同时从项目列表移除。</p><p v-else>这款式会从项目列表移除。</p><p>已有顾客预约及订单记录保留，仍可正常查看和处理。</p><p v-if="error" class="field-error" role="alert">{{ error }}</p><div class="catalog-delete-actions"><button class="soft-button" type="button" :disabled="saving" @click="deleteTarget = null">取消</button><button class="primary-button" type="button" :disabled="saving" @click="confirmDelete">{{ saving ? '删除中…' : '确认删除' }}</button></div></section></div>
 
     <div v-if="draft" class="editor-backdrop" @click.self="close" @keydown.esc="close"><section class="studio-modal catalog-editor-modal" role="dialog" aria-modal="true" :aria-label="editor === 'category' ? '编辑大项' : editor === 'service' ? '编辑小项目' : '编辑款式'"><header><div><span class="modal-context">{{ editor === 'category' ? '大项' : editor === 'service' ? '小项目' : '大项 → 小项目 → 款式' }}</span><h2>{{ draft.id ? '编辑' : '新增' }}{{ editor === 'category' ? '大项' : editor === 'service' ? '小项目' : '款式' }}</h2></div><button class="icon-button" type="button" :disabled="saving || uploading" @click="close" aria-label="关闭编辑">×</button></header>
 
