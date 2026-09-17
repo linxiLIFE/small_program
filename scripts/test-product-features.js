@@ -6,10 +6,10 @@ process.env.CHECKIN_SIGNING_SECRET = 'checkin-test-secret-at-least-32-bytes-long
 
 const { decryptNotification } = require('../cloudfunctions/api/lib/wechat-pay');
 const { encodeToken, decodeToken } = require('../cloudfunctions/api/lib/checkin');
-const { noShowSettlement, successfulRefundedFen, addonTypeOf, serviceIncludesBuilder } = require('../cloudfunctions/api/lib/booking');
-const { addonPriceFen, isFreeRemovalAddon } = require('../cloudfunctions/api/lib/catalog');
+const { noShowSettlement, successfulRefundedFen, addonTypeOf, serviceIncludesBuilder, footTipAddonSnapshot, publicOrder } = require('../cloudfunctions/api/lib/booking');
+const { addonPriceFen, isFreeRemovalAddon, serviceBookableStandalone, supportsFootTipAddon } = require('../cloudfunctions/api/lib/catalog');
 const { cumulativeRefundedFen, remainingRefundableFen, refundInProgress } = require('../cloudfunctions/api/lib/finance-state');
-const { templateData } = require('../cloudfunctions/api/lib/notification-service');
+const { templateData, subscriptionQuota } = require('../cloudfunctions/api/lib/notification-service');
 
 let passed = 0;
 function test(name, callback) { callback(); passed += 1; }
@@ -38,18 +38,39 @@ test('orders below the penalty are not refunded', () => {
   assert.deepStrictEqual(noShowSettlement({ totalFen:2500, paidFen:1500, pointsConsumed:200, bookingRuleSnapshot:{noShowPenaltyFen:3000}, pointRuleSnapshot:{unit:20,discountFen:100} }), { penaltyFen:2500, penaltyPoints:200, refundPoints:0, refundCashFen:0, noRefund:true });
 });
 
-test('booking add-ons charge every removal except natural-nail removal', () => {
+test('hand-nail removal pricing follows the 30-yuan threshold', () => {
   assert.strictEqual(addonTypeOf({ name: '卸甲片', tags: ['卸除'] }), 'REMOVAL');
   assert.strictEqual(addonTypeOf({ name: '塑形建构', isAddon: true }), 'BUILDER');
   assert.strictEqual(addonTypeOf({ name: '本甲建构纯色', isAddon: false }), '');
   assert.strictEqual(serviceIncludesBuilder({ name: '本甲建构纯色' }), true);
   assert.strictEqual(serviceIncludesBuilder({ name: '本甲纯色' }), false);
   assert.strictEqual(isFreeRemovalAddon({ id: 'svc-nail-removal-natural', name: '卸本甲', priceFen: 1000 }), true);
-  assert.strictEqual(addonPriceFen({ id: 'svc-nail-removal-natural', name: '卸本甲', priceFen: 1000 }, 'REMOVAL'), 0);
-  assert.strictEqual(addonPriceFen({ id: 'svc-nail-removal-tips', name: '卸甲片', priceFen: 2000 }, 'REMOVAL'), 2000);
-  assert.strictEqual(addonPriceFen({ id: 'svc-nail-removal-thick-builder', name: '卸超厚本甲建构', priceFen: 2000 }, 'REMOVAL'), 2000);
+  const removals = [
+    { id: 'svc-nail-removal-natural', name: '卸本甲', priceFen: 1000 },
+    { id: 'svc-nail-removal-tips', name: '卸甲片', priceFen: 2000 },
+    { id: 'svc-nail-removal-thick-builder', name: '卸超厚本甲建构', priceFen: 2000 }
+  ];
+  const nail30 = { id: 'svc-nail-natural-color-30', categoryId: 'nail', name: '本甲纯色｜30元色板', priceFen: 3000 };
+  const vBuilder15 = { id: 'svc-nail-addon-v-builder', categoryId: 'nail', name: 'V建构', priceFen: 1500 };
+  const nail50 = { id: 'svc-nail-natural-color-50', categoryId: 'nail', name: '本甲纯色｜50元色板', priceFen: 5000 };
+  assert.deepStrictEqual(removals.map((item) => addonPriceFen(item, 'REMOVAL', nail30)), [0, 2000, 2000]);
+  assert.deepStrictEqual(removals.map((item) => addonPriceFen(item, 'REMOVAL', vBuilder15)), [1000, 2000, 2000]);
+  assert.deepStrictEqual(removals.map((item) => addonPriceFen(item, 'REMOVAL', nail50)), [0, 0, 0]);
   assert.strictEqual(addonPriceFen({ id: 'svc-foot-nail-removal-natural', name: '卸脚部本甲', priceFen: 1000 }, 'REMOVAL'), 0);
   assert.strictEqual(addonPriceFen({ id: 'svc-foot-nail-removal-tips', name: '卸脚甲片', priceFen: 2000 }, 'REMOVAL'), 2000);
+});
+
+test('foot natural-nail projects price tips by quantity without extra duration', () => {
+  const service = { id: 'svc-foot-nail-natural-color-40', categoryId: 'foot-nail', name: '本甲纯色｜40元色板', tags: ['本甲'] };
+  assert.strictEqual(supportsFootTipAddon(service), true);
+  assert.strictEqual(supportsFootTipAddon({ id: 'svc-foot-nail-tips-40', categoryId: 'foot-nail', name: '10根脚甲片｜40元', tags: ['脚甲片'] }), false);
+  assert.deepStrictEqual(footTipAddonSnapshot(service, 3), {
+    id: 'svc-foot-nail-addon-single-tip', name: '加脚甲片 ×3', type: 'TIP', quantity: 3,
+    unitPriceFen: 500, priceFen: 1500, originalPriceFen: 500, durationMinutes: 0
+  });
+  assert.throws(() => footTipAddonSnapshot(service, 11), (error) => error && error.code === 'INVALID_ADDON');
+  assert.strictEqual(serviceBookableStandalone({ id: 'svc-foot-nail-removal-natural', categoryId: 'foot-nail', isAddon: true, addonType: 'REMOVAL', bookableStandalone: true }), false);
+  assert.strictEqual(serviceBookableStandalone({ id: 'svc-nail-removal-natural', categoryId: 'nail', isAddon: true, addonType: 'REMOVAL', bookableStandalone: true }), true);
 });
 
 test('partial refunds keep only the unpaid remainder refundable', () => {
@@ -58,6 +79,18 @@ test('partial refunds keep only the unpaid remainder refundable', () => {
   assert.strictEqual(remainingRefundableFen(order), 6500);
   assert.strictEqual(refundInProgress(order), false);
   assert.strictEqual(refundInProgress({ ...order, refundStatus: 'PROCESSING' }), true);
+});
+
+test('failed automatic refunds expose the original amount for a locked retry', () => {
+  const order = publicOrder({ id:'order1', status:'CANCELLED_NO_SHOW', paymentStatus:'SUCCESS', paidFen:4500, refundStatus:'WAITING_FUNDS', refundAmountFen:1500 });
+  assert.strictEqual(order.lastRefundRequestedFen, 1500);
+  assert.strictEqual(order.remainingRefundableFen, 4500);
+  assert.strictEqual(order.refundInProgress, false);
+});
+
+test('explicit refund request amount wins over the legacy fallback', () => {
+  const order = publicOrder({ id:'order1', status:'CANCELLED_NO_SHOW', paymentStatus:'SUCCESS', paidFen:4500, refundStatus:'WAITING_FUNDS', refundAmountFen:1500, requestedRefundFen:1000 });
+  assert.strictEqual(order.lastRefundRequestedFen, 1000);
 });
 
 test('subscription template data uses the configured keyword types', () => {
@@ -69,6 +102,12 @@ test('subscription template data uses the configured keyword types', () => {
   assert.deepStrictEqual(Object.keys(checkInData), ['thing1', 'time5']);
   assert(/^\d{2}:\d{2}$/.test(checkInData.time5.value));
   assert.deepStrictEqual(templateData('noShowRefund', { serviceKey: 'thing1', amountKey: 'amount6', storeKey: 'thing3' }, order, settings), { thing1: { value: '奶油法式美甲' }, amount6: { value: '299.00元' }, thing3: { value: '哈尔滨市南岗区' } });
+});
+
+test('subscription quota supports repeated booking authorizations', () => {
+  assert.deepStrictEqual(subscriptionQuota({ status: 'accept', acceptedAt: 100, usedAt: 0 }), { acceptedCount: 1, usedCount: 0, availableCount: 1 });
+  assert.deepStrictEqual(subscriptionQuota({ status: 'reject', acceptedCount: 3, usedCount: 2 }), { acceptedCount: 3, usedCount: 2, availableCount: 1 });
+  assert.deepStrictEqual(subscriptionQuota({ status: 'acceptWithAudio', acceptedCount: 2, usedCount: 2 }), { acceptedCount: 2, usedCount: 2, availableCount: 0 });
 });
 
 (async () => {

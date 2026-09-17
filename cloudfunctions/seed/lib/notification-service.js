@@ -10,6 +10,20 @@ function subscriptionAccepted(status) {
   return ACCEPTED_SUBSCRIPTION_STATUSES.has(String(status || ''));
 }
 
+function subscriptionQuota(subscription = {}) {
+  const hasCounters = Number.isSafeInteger(subscription.acceptedCount) && Number.isSafeInteger(subscription.usedCount);
+  if (hasCounters) {
+    const acceptedCount = Math.max(0, Number(subscription.acceptedCount));
+    const usedCount = Math.max(0, Math.min(acceptedCount, Number(subscription.usedCount)));
+    return { acceptedCount, usedCount, availableCount: Math.max(0, acceptedCount - usedCount) };
+  }
+  const acceptedAt = Number(subscription.acceptedAt || 0);
+  const usedAt = Number(subscription.usedAt || 0);
+  const acceptedCount = subscriptionAccepted(subscription.status) && acceptedAt > 0 ? 1 : 0;
+  const usedCount = acceptedCount && usedAt >= acceptedAt ? 1 : 0;
+  return { acceptedCount, usedCount, availableCount: Math.max(0, acceptedCount - usedCount) };
+}
+
 function clipped(value, max = 20) {
   return String(value || '').trim().slice(0, max) || '—';
 }
@@ -82,7 +96,19 @@ async function saveSubscriptionPreferences(statuses = {}) {
     const subscriptions = { ...(user.subscriptions || {}) };
     for (const [templateId, status] of Object.entries(statuses || {})) {
       if (!allowed.has(templateId)) continue;
-      subscriptions[templateId] = { status: String(status), acceptedAt: subscriptionAccepted(status) ? now : Number(subscriptions[templateId] && subscriptions[templateId].acceptedAt || 0), updatedAt: now };
+      const previous = subscriptions[templateId] || {};
+      const quota = subscriptionQuota(previous);
+      const accepted = subscriptionAccepted(status);
+      const acceptedCount = quota.acceptedCount + (accepted ? 1 : 0);
+      subscriptions[templateId] = {
+        ...previous,
+        status: String(status),
+        acceptedAt: accepted ? now : Number(previous.acceptedAt || 0),
+        acceptedCount,
+        usedCount: quota.usedCount,
+        availableCount: Math.max(0, acceptedCount - quota.usedCount),
+        updatedAt: now
+      };
     }
     const next = { ...user, subscriptions, updatedAt: now };
     await transaction.collection(COLLECTIONS.users).doc(context.openid).set({ data: next });
@@ -97,12 +123,34 @@ async function notifyOrderEvent(eventName, order) {
   if (!settings.notifications || settings.notifications.enabled === false) return { sent: false, reason: 'DISABLED' };
   const template = settings.notifications.templates && settings.notifications.templates[eventName];
   if (!template || !template.templateId) return { sent: false, reason: 'NOT_CONFIGURED' };
-  const user = await getOptional(COLLECTIONS.users, order.userId);
-  const subscription = user && user.subscriptions && user.subscriptions[template.templateId];
-  if (!subscription || !subscriptionAccepted(subscription.status) || Number(subscription.usedAt || 0) > Number(subscription.acceptedAt || 0)) return { sent: false, reason: 'NOT_SUBSCRIBED' };
   const recordId = `submsg_${eventName}_${order.id}`;
-  const existing = await getOptional(COLLECTIONS.notifications, recordId);
-  if (existing && existing.status === 'DONE') return { sent: true, duplicate: true };
+  const now = Date.now();
+  const claimToken = `${now}_${Math.random().toString(36).slice(2, 12)}`;
+  const claim = await db.runTransaction(async (transaction) => {
+    const existing = await getOptional(COLLECTIONS.notifications, recordId, transaction);
+    if (existing && existing.status === 'DONE') return { duplicate: true };
+    if (existing && existing.status === 'PROCESSING' && Number(existing.leaseUntil || 0) > now) return { inFlight: true };
+    const user = await getOptional(COLLECTIONS.users, order.userId, transaction);
+    const subscriptions = { ...((user && user.subscriptions) || {}) };
+    const subscription = subscriptions[template.templateId] || {};
+    const quota = subscriptionQuota(subscription);
+    if (!quota.availableCount) return { unavailable: true };
+    const usedCount = quota.usedCount + 1;
+    subscriptions[template.templateId] = {
+      ...subscription,
+      acceptedCount: quota.acceptedCount,
+      usedCount,
+      availableCount: Math.max(0, quota.acceptedCount - usedCount),
+      usedAt: now,
+      updatedAt: now
+    };
+    await transaction.collection(COLLECTIONS.users).doc(order.userId).set({ data: { ...user, subscriptions, updatedAt: now } });
+    await transaction.collection(COLLECTIONS.notifications).doc(recordId).set({ data: { ...(existing || {}), _id: recordId, id: recordId, channel: 'SUBSCRIBE_MESSAGE', eventName, orderId: order.id, status: 'PROCESSING', templateId: template.templateId, claimToken, leaseUntil: now + 2 * 60 * 1000, createdAt: existing && existing.createdAt || now, updatedAt: now } });
+    return { claimed: true };
+  });
+  if (claim.duplicate) return { sent: true, duplicate: true };
+  if (claim.inFlight) return { sent: false, reason: 'IN_FLIGHT' };
+  if (!claim.claimed) return { sent: false, reason: 'NOT_SUBSCRIBED' };
   try {
     await cloud.openapi.subscribeMessage.send({
       touser: order.userId,
@@ -112,21 +160,30 @@ async function notifyOrderEvent(eventName, order) {
       miniprogramState: process.env.WX_MINIPROGRAM_STATE || 'formal',
       lang: 'zh_CN'
     });
-    const now = Date.now();
     await db.runTransaction(async (transaction) => {
-      const latestUser = await getOptional(COLLECTIONS.users, order.userId, transaction);
-      const subscriptions = { ...(latestUser.subscriptions || {}) };
-      subscriptions[template.templateId] = { ...(subscriptions[template.templateId] || {}), usedAt: now, updatedAt: now };
-      await transaction.collection(COLLECTIONS.users).doc(order.userId).set({ data: { ...latestUser, subscriptions, updatedAt: now } });
-      await transaction.collection(COLLECTIONS.notifications).doc(recordId).set({ data: { _id: recordId, id: recordId, channel: 'SUBSCRIBE_MESSAGE', eventName, orderId: order.id, status: 'DONE', templateId: template.templateId, createdAt: existing && existing.createdAt || now, updatedAt: now } });
+      const record = await getOptional(COLLECTIONS.notifications, recordId, transaction);
+      if (!record || record.claimToken !== claimToken) return;
+      const completedAt = Date.now();
+      await transaction.collection(COLLECTIONS.notifications).doc(recordId).set({ data: { ...record, status: 'DONE', claimToken: '', leaseUntil: 0, updatedAt: completedAt } });
     });
     return { sent: true };
   } catch (error) {
-    const now = Date.now();
-    await db.collection(COLLECTIONS.notifications).doc(recordId).set({ data: { ...(existing || {}), _id: recordId, id: recordId, channel: 'SUBSCRIBE_MESSAGE', eventName, orderId: order.id, status: 'FAILED', templateId: template.templateId, lastError: String(error.errCode || error.code || error.message || 'SEND_FAILED'), createdAt: existing && existing.createdAt || now, updatedAt: now } });
+    await db.runTransaction(async (transaction) => {
+      const record = await getOptional(COLLECTIONS.notifications, recordId, transaction);
+      if (!record || record.claimToken !== claimToken) return;
+      const failedAt = Date.now();
+      const user = await getOptional(COLLECTIONS.users, order.userId, transaction);
+      const subscriptions = { ...((user && user.subscriptions) || {}) };
+      const subscription = subscriptions[template.templateId] || {};
+      const quota = subscriptionQuota(subscription);
+      const usedCount = Math.max(0, quota.usedCount - 1);
+      subscriptions[template.templateId] = { ...subscription, acceptedCount: quota.acceptedCount, usedCount, availableCount: Math.max(0, quota.acceptedCount - usedCount), updatedAt: failedAt };
+      await transaction.collection(COLLECTIONS.users).doc(order.userId).set({ data: { ...user, subscriptions, updatedAt: failedAt } });
+      await transaction.collection(COLLECTIONS.notifications).doc(recordId).set({ data: { ...record, status: 'FAILED', claimToken: '', leaseUntil: 0, lastError: String(error.errCode || error.code || error.message || 'SEND_FAILED'), updatedAt: failedAt } });
+    });
     console.error('订阅消息发送失败', { eventName, orderId: order.id, code: error.errCode || error.code || '' });
     return { sent: false, reason: 'SEND_FAILED' };
   }
 }
 
-module.exports = { EVENT_NAMES, saveSubscriptionPreferences, notifyOrderEvent, templateData };
+module.exports = { EVENT_NAMES, saveSubscriptionPreferences, notifyOrderEvent, templateData, subscriptionQuota };

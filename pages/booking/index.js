@@ -11,6 +11,16 @@ function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function decorateSelectedAddon(item) {
+  const typeLabel = item.type === 'REMOVAL' ? '卸甲' : item.type === 'TIP' ? '加甲片' : '建构';
+  return {
+    ...item,
+    typeLabel,
+    detailText: item.type === 'TIP' ? `${Number(item.quantity || 0)} 个 · 不增加时长` : `+${Number(item.durationMinutes || 0)} 分钟`,
+    priceText: formatMoney(item.priceFen || 0, false)
+  };
+}
+
 function loadBookingContext(serviceId, workId) {
   return Promise.all([
     api.getSettings(),
@@ -62,11 +72,20 @@ Page({
     noShowRuleText: '',
     isNailBooking: false,
     showsAddonStep: false,
+    showsRemovalChoice: false,
+    removalBadgeText: '',
     requiresBuilderChoice: false,
     removalOptions: [],
     builderOptions: [],
     selectedRemovalId: '',
     selectedBuilderId: '',
+    supportsFootTipAddon: false,
+    footTipOption: null,
+    selectedFootTipChoice: '',
+    selectedFootTipCount: 0,
+    footTipTotalText: '0.00',
+    addonStepTitle: '卸甲 / 建构',
+    addonIncompleteText: '先选卸甲和建构',
     addonsReady: true,
     selectedAddons: [],
     workImageError: false
@@ -180,31 +199,57 @@ Page({
         : (dates[0] ? dates[0].value : '');
       if (requestId !== this.requestId) return;
       this.bookingSettings = settings;
-      const isNailBooking = ['nail', 'foot-nail'].includes(service.categoryId);
       const addonType = String(service.addonType || '').toUpperCase();
-      const showsAddonStep = isNailBooking && addonType !== 'REMOVAL';
-      const requiresBuilderChoice = showsAddonStep && addonType !== 'BUILDER' && !/建构/.test(String(service.name || ''));
+      const expectsFootTipAddon = service.categoryId === 'foot-nail'
+        && !service.isAddon
+        && /本甲/.test([service.name, ...(Array.isArray(service.tags) ? service.tags : [])].join(''));
+      const isNailBooking = ['nail', 'foot-nail'].includes(service.categoryId);
+      const showsRemovalChoice = service.categoryId === 'nail' && addonType !== 'REMOVAL';
+      const requiresBuilderChoice = showsRemovalChoice && addonType !== 'BUILDER' && !/建构/.test(String(service.name || ''));
+      const expectsAddonStep = showsRemovalChoice || expectsFootTipAddon;
       const decorateAddon = (item) => ({
         ...item,
         priceText: Number(item.priceFen || 0) === 0 ? '免费' : `¥${formatMoney(item.priceFen, false)}`,
         durationText: `+${formatDuration(item.durationMinutes)}`
       });
       let addonContext = context.addons || { removals: [], builders: [] };
-      const addonsIncomplete = !(addonContext.removals || []).length
-        || requiresBuilderChoice && !(addonContext.builders || []).length;
-      if (showsAddonStep && addonsIncomplete && typeof api.listBookingAddons === 'function') {
-        addonContext = await api.listBookingAddons(service.categoryId);
+      const addonsIncomplete = showsRemovalChoice && (!(addonContext.removals || []).length
+        || requiresBuilderChoice && !(addonContext.builders || []).length)
+        || expectsFootTipAddon && !addonContext.footTip;
+      if (expectsAddonStep && addonsIncomplete && typeof api.listBookingAddons === 'function') {
+        addonContext = await api.listBookingAddons(service.categoryId, service.id);
       }
-      const removalOptions = (addonContext.removals || []).map((item) => decorateAddon(item));
-      const builderOptions = (addonContext.builders || []).map((item) => decorateAddon(item));
-      if (showsAddonStep && (!removalOptions.length || (requiresBuilderChoice && !builderOptions.length))) {
-        throw new Error('卸甲或建构选项未加载完整，请刷新后重试');
+      const removalOptions = showsRemovalChoice ? (addonContext.removals || []).map((item) => decorateAddon(item)) : [];
+      const builderOptions = requiresBuilderChoice ? (addonContext.builders || []).map((item) => decorateAddon(item)) : [];
+      const footTipOption = expectsFootTipAddon ? addonContext.footTip : null;
+      if (showsRemovalChoice && (!removalOptions.length || (requiresBuilderChoice && !builderOptions.length)) || (expectsFootTipAddon && !footTipOption)) {
+        throw new Error('预约加项未加载完整，请刷新后重试');
       }
-      const selectedRemovalId = showsAddonStep ? (preserveSelections ? this.data.selectedRemovalId : '') : 'none';
+      const selectedRemovalId = showsRemovalChoice ? (preserveSelections ? this.data.selectedRemovalId : '') : 'none';
       const selectedBuilderId = requiresBuilderChoice
         ? (preserveSelections ? this.data.selectedBuilderId : '')
         : 'none';
-      const addonsReady = !showsAddonStep || !!selectedRemovalId && (!requiresBuilderChoice || !!selectedBuilderId);
+      const supportsFootTipAddon = !!footTipOption;
+      const showsAddonStep = showsRemovalChoice || supportsFootTipAddon;
+      const removalBadgeText = Number(service.priceFen || 0) > 3000
+        ? '三种卸甲均免费'
+        : Number(service.priceFen || 0) === 3000
+          ? '仅卸本甲免费'
+          : '卸甲按所选方式收费';
+      const selectedFootTipChoice = supportsFootTipAddon ? (preserveSelections ? this.data.selectedFootTipChoice : '') : 'none';
+      const selectedFootTipCount = selectedFootTipChoice === 'add'
+        ? Math.min(Number(footTipOption.maxQuantity || 10), Math.max(1, Number(this.data.selectedFootTipCount || 1)))
+        : 0;
+      const selectedAddons = [
+        removalOptions.find((item) => item.id === selectedRemovalId),
+        builderOptions.find((item) => item.id === selectedBuilderId),
+        selectedFootTipChoice === 'add' ? decorateSelectedAddon({ ...footTipOption, quantity: selectedFootTipCount, priceFen: Number(footTipOption.unitPriceFen || 500) * selectedFootTipCount }) : null
+      ].filter(Boolean).map((item) => item.typeLabel ? item : decorateSelectedAddon(item));
+      const addonsReady = (!showsRemovalChoice || !!selectedRemovalId
+        && (!requiresBuilderChoice || !!selectedBuilderId))
+        && (!supportsFootTipAddon || !!selectedFootTipChoice);
+      const addonStepTitle = supportsFootTipAddon && !showsRemovalChoice ? '加脚甲片' : (requiresBuilderChoice ? '卸甲 / 建构' : '卸甲');
+      const addonIncompleteText = supportsFootTipAddon && !showsRemovalChoice ? '请选择是否需要加脚甲片' : (requiresBuilderChoice ? '先选卸甲和建构' : '先选卸甲');
       const state = getApp().globalData;
       state.catalogSelection = { ...(state.catalogSelection || {}), categoryId: service.categoryId, serviceId: service.id, workId: work.id };
       this.setData({
@@ -219,13 +264,22 @@ Page({
         profile: { ...(profile || {}), phoneLabel: profile && (profile.phoneMasked || maskPhone(profile.phone)) },
         isNailBooking,
         showsAddonStep,
+        showsRemovalChoice,
+        removalBadgeText,
         requiresBuilderChoice,
         removalOptions,
         builderOptions,
         selectedRemovalId,
         selectedBuilderId,
+        supportsFootTipAddon,
+        footTipOption,
+        selectedFootTipChoice,
+        selectedFootTipCount,
+        footTipTotalText: formatMoney(Number(footTipOption && footTipOption.unitPriceFen || 0) * selectedFootTipCount, false),
+        addonStepTitle,
+        addonIncompleteText,
         addonsReady,
-        selectedAddons: [],
+        selectedAddons,
         refundRuleText: `距预约开始不足 ${Number(settings.booking?.refundCutoffMinutes || 120)} 分钟不能自行取消或退款`,
         noShowRuleText: `开始后 ${Number(settings.booking?.noShowGraceMinutes || 15)} 分钟仍未核销，将扣除 ${formatMoney(Number(settings.booking?.noShowPenaltyFen || 3000))}；订单金额不足该费用时不退款，积分抵扣部分优先扣除`
       });
@@ -333,30 +387,66 @@ Page({
   },
 
   addonPayload() {
-    return {
-      addonSelectionConfirmed: !this.data.showsAddonStep || this.data.addonsReady,
-      removalServiceId: this.data.showsAddonStep && this.data.selectedRemovalId && this.data.selectedRemovalId !== 'none' ? this.data.selectedRemovalId : '',
+    const payload = {
+      addonSelectionConfirmed: !this.data.showsRemovalChoice || this.data.addonsReady,
+      removalServiceId: this.data.showsRemovalChoice && this.data.selectedRemovalId && this.data.selectedRemovalId !== 'none' ? this.data.selectedRemovalId : '',
       builderServiceId: this.data.requiresBuilderChoice && this.data.selectedBuilderId && this.data.selectedBuilderId !== 'none' ? this.data.selectedBuilderId : ''
     };
+    if (this.data.supportsFootTipAddon) {
+      payload.footTipSelectionConfirmed = !!this.data.selectedFootTipChoice;
+      payload.footTipCount = this.data.selectedFootTipChoice === 'add' ? Number(this.data.selectedFootTipCount || 0) : 0;
+    }
+    return payload;
   },
 
   async selectAddon(event) {
     const type = event.currentTarget.dataset.type;
     const id = event.currentTarget.dataset.id || 'none';
     const changes = type === 'removal' ? { selectedRemovalId: id } : { selectedBuilderId: id };
-    const selectedRemovalId = changes.selectedRemovalId || this.data.selectedRemovalId;
-    const selectedBuilderId = changes.selectedBuilderId || this.data.selectedBuilderId;
+    await this.applyAddonSelection(changes);
+  },
+
+  async selectFootTipChoice(event) {
+    const choice = event.currentTarget.dataset.choice === 'add' ? 'add' : 'none';
+    await this.applyAddonSelection({ selectedFootTipChoice: choice, selectedFootTipCount: choice === 'add' ? Math.max(1, Number(this.data.selectedFootTipCount || 1)) : 0 });
+  },
+
+  async changeFootTipCount(event) {
+    if (this.data.selectedFootTipChoice !== 'add') return;
+    const delta = Number(event.currentTarget.dataset.delta || 0);
+    const maxQuantity = Number(this.data.footTipOption && this.data.footTipOption.maxQuantity || 10);
+    const count = Math.min(maxQuantity, Math.max(1, Number(this.data.selectedFootTipCount || 1) + delta));
+    if (count === this.data.selectedFootTipCount) return;
+    await this.applyAddonSelection({ selectedFootTipCount: count });
+  },
+
+  async applyAddonSelection(changes = {}) {
+    const selectedRemovalId = changes.selectedRemovalId !== undefined ? changes.selectedRemovalId : this.data.selectedRemovalId;
+    const selectedBuilderId = changes.selectedBuilderId !== undefined ? changes.selectedBuilderId : this.data.selectedBuilderId;
+    const selectedFootTipChoice = changes.selectedFootTipChoice !== undefined ? changes.selectedFootTipChoice : this.data.selectedFootTipChoice;
+    const selectedFootTipCount = changes.selectedFootTipCount !== undefined ? changes.selectedFootTipCount : this.data.selectedFootTipCount;
+    const footTipAddon = this.data.supportsFootTipAddon && selectedFootTipChoice === 'add'
+      ? decorateSelectedAddon({
+        ...this.data.footTipOption,
+        quantity: selectedFootTipCount,
+        priceFen: Number(this.data.footTipOption.unitPriceFen || 500) * selectedFootTipCount
+      })
+      : null;
     const selectedAddons = [
       this.data.removalOptions.find((item) => item.id === selectedRemovalId),
-      this.data.builderOptions.find((item) => item.id === selectedBuilderId)
-    ].filter(Boolean);
+      this.data.builderOptions.find((item) => item.id === selectedBuilderId),
+      footTipAddon
+    ].filter(Boolean).map((item) => item.typeLabel ? item : decorateSelectedAddon(item));
     const totalDuration = Number(this.data.service.baseDurationMinutes || this.data.service.durationMinutes || 0)
       + selectedAddons.reduce((sum, item) => sum + Number(item.durationMinutes || 0), 0);
-    const addonsReady = !!selectedRemovalId && (!this.data.requiresBuilderChoice || !!selectedBuilderId);
+    const addonsReady = (!this.data.showsRemovalChoice || !!selectedRemovalId
+      && (!this.data.requiresBuilderChoice || !!selectedBuilderId))
+      && (!this.data.supportsFootTipAddon || !!selectedFootTipChoice);
     this.setData({
       ...changes,
       addonsReady,
       selectedAddons,
+      footTipTotalText: formatMoney(Number(this.data.footTipOption && this.data.footTipOption.unitPriceFen || 0) * (selectedFootTipChoice === 'add' ? selectedFootTipCount : 0), false),
       service: { ...this.data.service, durationMinutes: totalDuration, durationText: formatDuration(totalDuration) },
       slots: [], timePeriods: [], timeline: {}, timelineHasOptions: false,
       selectedSlotId: '', selectedSlot: {}, quote: {}, canSubmit: false
@@ -595,7 +685,7 @@ Page({
           discountText: formatMoney(result.discountFen || 0),
           paidText: formatMoney(result.paidFen || 0)
         },
-        selectedAddons: (result.addons || this.data.selectedAddons).map((item) => ({ ...item, priceText: formatMoney(item.priceFen || 0, false) })),
+        selectedAddons: (result.addons || this.data.selectedAddons).map(decorateSelectedAddon),
         canSubmit: true,
         pointHint: result.pointsToUse ? `本单使用 ${result.pointsToUse} 积分，抵扣 ${formatMoney(result.discountFen)}` : `开启后按本单 ${this.bookingSettings?.points?.maxPercent || 0}% 上限抵扣`
       });
@@ -631,11 +721,6 @@ Page({
     if (!this.data.profile.phone && !this.data.profile.phoneMasked) {
       wx.showToast({ title: '请先授权手机号', icon: 'none' });
       return;
-    }
-    try {
-      await api.requestSubscriptionEvents(this.bookingSettings, ['appointmentSuccess', 'arrivalReminder', 'noShowRefund']);
-    } catch (error) {
-      console.warn('预约提醒授权未完成', { code: error.code || error.errCode || '' });
     }
     this.setData({ submitting: true });
     wx.showLoading({ title: '锁定时段中' });
@@ -685,6 +770,7 @@ Page({
         });
         return;
       }
+      await this.requestBookingReminders();
       await this.requestPayment(payment, order.id);
     } catch (error) {
       wx.hideLoading();
@@ -693,6 +779,14 @@ Page({
       await this.loadSlots();
     } finally {
       this.setData({ submitting: false });
+    }
+  },
+
+  async requestBookingReminders() {
+    try {
+      await api.requestSubscriptionEvents(this.bookingSettings, ['appointmentSuccess', 'arrivalReminder', 'noShowRefund']);
+    } catch (error) {
+      console.warn('预约提醒授权未完成', { code: error.code || error.errCode || '' });
     }
   },
 

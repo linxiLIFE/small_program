@@ -44,24 +44,30 @@
   line-height: 1.55;
 }
 
-.invite-entry { display:flex; align-items:center; justify-content:space-between; gap:18rpx; margin-top:20rpx; padding:20rpx 22rpx; }
-.invite-entry>view { display:flex; align-items:center; min-width:0; flex:1; gap:16rpx; }
-.invite-entry-icon { display:flex; align-items:center; justify-content:center; width:58rpx; height:58rpx; border-radius:19rpx; background:#f7e4e3; color:#af6c76; font-size:34rpx; }
-.invite-entry-title,.invite-entry-copy { display:block; }
-.invite-entry-title { color:#604b47; font-size:25rpx; font-weight:650; }
-.invite-entry-copy { margin-top:5rpx; color:#a38b84; font-size:20rpx; }
-.invite-entry button,.invite-code-row button,.invite-bind-row button { margin:0; border-radius:18rpx; background:#a96d76; color:#fff; font-size:22rpx; }
-.invite-entry button { width:116rpx; height:62rpx; line-height:62rpx; }
-.invite-entry button::after,.invite-code-row button::after,.invite-bind-row button::after { border:0; }
-.invite-panel { margin-top:12rpx; padding:24rpx; }
-.invite-code-row { display:flex; align-items:center; justify-content:space-between; }
-.invite-code-row>view text { display:block; color:#a18a83; font-size:20rpx; }
-.invite-code-row>view text:last-child { margin-top:5rpx; color:#8f5d66; font-size:30rpx; font-weight:700; letter-spacing:4rpx; }
-.invite-code-row button { height:58rpx; padding:0 20rpx; line-height:58rpx; }
-.invite-bind-row { display:flex; gap:12rpx; margin-top:22rpx; padding-top:20rpx; border-top:1rpx solid #f0e5e0; }
-.invite-bind-row input { flex:1; height:68rpx; padding:0 20rpx; border-radius:17rpx; background:#f8f1ed; color:#604b47; font-size:23rpx; letter-spacing:2rpx; }
-.invite-bind-row button { height:68rpx; padding:0 24rpx; line-height:68rpx; }
-.invite-bound { display:block; margin-top:20rpx; color:#8a786f; font-size:22rpx; }
+.invite-panel { margin-top:22rpx; padding:28rpx; overflow:hidden; background:linear-gradient(145deg,#fffaf7,#fff5f0); }
+.invite-heading,.invite-code-row,.invite-bind-row,.invite-bound { display:flex; align-items:center; }
+.invite-heading { justify-content:space-between; gap:20rpx; }
+.invite-title,.invite-subtitle,.invite-field-label,.invite-hint,.invite-bound text { display:block; }
+.invite-title { color:#5c4643; font-size:29rpx; font-weight:700; }
+.invite-subtitle { margin-top:7rpx; color:#a18780; font-size:21rpx; line-height:1.5; }
+.invite-mark { color:#c68183; font-size:42rpx; }
+.invite-code-block { margin-top:26rpx; padding:24rpx; border:1rpx solid #efdeda; border-radius:22rpx; background:#fff; }
+.invite-field-label { color:#927872; font-size:21rpx; font-weight:600; }
+.invite-code-row { justify-content:space-between; gap:18rpx; margin-top:12rpx; }
+.invite-code { min-width:0; color:#8f5260; font-size:38rpx; font-weight:750; letter-spacing:6rpx; overflow-wrap:anywhere; }
+.invite-code-row button,.invite-bind-row button { flex:none; margin:0; border-radius:17rpx; background:#a96d76; color:#fff; font-size:22rpx; }
+.invite-code-row button { height:58rpx; padding:0 22rpx; line-height:58rpx; }
+.invite-code-row button[disabled],.invite-bind-row button[disabled] { background:#d9c4c1; color:#fffaf7; }
+.invite-code-row button::after,.invite-bind-row button::after { border:0; }
+.invite-hint { margin-top:13rpx; color:#b19b94; font-size:19rpx; line-height:1.5; }
+.invite-divider { height:1rpx; margin:26rpx 0; background:#efe2de; }
+.invite-bind-row { gap:12rpx; margin-top:12rpx; }
+.invite-bind-row input { flex:1; min-width:0; height:72rpx; padding:0 20rpx; border:1rpx solid #eee0dc; border-radius:17rpx; background:#fff; color:#604b47; font-size:23rpx; letter-spacing:2rpx; box-sizing:border-box; }
+.invite-bind-row button { min-width:154rpx; height:72rpx; padding:0 20rpx; line-height:72rpx; }
+.invite-bound { gap:15rpx; padding:18rpx 20rpx; border-radius:18rpx; background:#f2f7f1; }
+.invite-bound-icon { display:flex; align-items:center; justify-content:center; width:44rpx; height:44rpx; border-radius:50%; background:#719177; color:#fff; font-size:24rpx; }
+.invite-bound text:first-child { color:#607763; font-size:23rpx; font-weight:650; }
+.invite-bound text:last-child { margin-top:4rpx; color:#95a397; font-size:19rpx; }
 
 .balance-label,
 .frozen text {

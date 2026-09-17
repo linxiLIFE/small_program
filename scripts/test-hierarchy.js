@@ -19,9 +19,11 @@ assert.match(read('utils/api.js'), /pendingRequests/);
 assert.match(read('utils/api.js'), /UNKNOWN_ACTION/);
 assert.match(read('pages/booking/index.js'), /getBookingContext/);
 assert.match(read('pages/booking/index.js'), /loadedKey/);
-assert.match(read('pages/booking/index.js'), /showsAddonStep = isNailBooking && addonType !== 'REMOVAL'/);
-assert.match(read('pages/booking/index.js'), /requiresBuilderChoice = showsAddonStep && addonType !== 'BUILDER'/);
+assert.match(read('pages/booking/index.js'), /showsRemovalChoice = service\.categoryId === 'nail' && addonType !== 'REMOVAL'/);
+assert.match(read('pages/booking/index.js'), /showsAddonStep = showsRemovalChoice \|\| supportsFootTipAddon/);
+assert.match(read('pages/booking/index.js'), /requiresBuilderChoice = showsRemovalChoice && addonType !== 'BUILDER'/);
 assert.match(read('pages/booking/index.wxml'), /wx:if="\{\{showsAddonStep\}\}" class="booking-step addon-step"/);
+assert.match(read('pages/booking/index.wxml'), /wx:if="\{\{showsRemovalChoice\}\}" class="addon-group"/);
 assert.match(read('pages/booking/index.wxml'), /class="addon-panel card"/);
 assert.doesNotMatch(read('pages/booking/index.wxml'), /需要卸甲吗|需要建构吗|先确认本次是否需要/);
 
@@ -41,7 +43,22 @@ assert.match(homePage, /mode="aspectFill"/);
 assert.match(homePage, /lazy-load/);
 assert.doesNotMatch(homePage, /notification-prompt|开启微信预约提醒|enableNotifications/);
 assert.doesNotMatch(read('pages/index/index.js'), /requestSubscriptionEvents|loadNotificationPrompt/);
-assert.match(read('pages/booking/index.js'), /requestSubscriptionEvents\(this\.bookingSettings/);
+assert.match(read('pages/booking/index.js'), /await this\.requestBookingReminders\(\);\s+await this\.requestPayment/);
+assert.match(read('pages/order-detail/index.js'), /requestSubscriptionEvents\(settings, \['appointmentSuccess', 'arrivalReminder', 'noShowRefund'\]\)/);
+assert.doesNotMatch(read('pages/profile/index.wxml'), /微信预约提醒|enableReminders/);
+assert.doesNotMatch(read('pages/profile/index.js'), /enableReminders/);
+assert.match(read('pages/points/index.wxml'), /我的邀请码/);
+assert.match(read('pages/points/index.wxml'), /输入邀请码/);
+assert.doesNotMatch(read('pages/points/index.wxml'), /open-type="share"/);
+assert.match(read('pages/staff/index.wxml'), /staff-addon-list/);
+const adminApp = read('admin/src/App.vue');
+const personalSchedule = read('admin/src/components/MySchedulePanel.vue');
+assert.match(personalSchedule, /order\.addons\?\.length/);
+assert.match(personalSchedule, /addon\.type==='REMOVAL'\?'卸甲':'建构'/);
+assert.doesNotMatch(adminApp, /正在整理门店数据/);
+assert.match(adminApp, /catalogPages\.has\(nextPage\).*loadCatalog/);
+assert.match(adminApp, /settingsPages\.has\(nextPage\).*loadSettingsData/);
+assert.match(adminApp, /page\.value='dashboard';\s*\} catch/);
 assert.match(read('components/work-card/work-card.wxml'), /webp/);
 assert.match(read('admin/src/components/HomeManager.vue'), /crop-ratio="2"/);
 assert.match(read('admin/src/components/ImageUploader.vue'), /crop-banner/);
@@ -56,9 +73,9 @@ assert.match(read('pages/booking/index.wxml'), /<text class="step-title">时间<
 assert.match(read('pages/booking/index.wxml'), /timePeriods/);
 assert.match(read('pages/booking/index.js'), /buildTimePeriods/);
 assert.match(read('cloudfunctions/api/lib/catalog.js'), /item\.bookableStandalone !== 0/);
-assert.match(read('cloudfunctions/api/lib/catalog.js'), /priceFen: addonPriceFen\(item, 'REMOVAL'\)/);
+assert.match(read('cloudfunctions/api/lib/catalog.js'), /priceFen: addonPriceFen\(item, 'REMOVAL', service\)/);
 assert.match(read('cloudfunctions/api/lib/booking.js'), /standaloneRemoval/);
-assert.match(read('cloudfunctions/api/lib/booking.js'), /priceFen = addonPriceFen\(record, selection\.type\)/);
+assert.match(read('cloudfunctions/api/lib/booking.js'), /priceFen = addonPriceFen\(record, selection\.type, service\)/);
 assert.match(read('cloudfunctions/api/lib/catalog-admin.js'), /ADDON_SINGLE_STYLE/);
 assert.match(read('cloudfunctions/api/lib/catalog-admin.js'), /单独预约价格必须大于 0/);
 
@@ -79,5 +96,21 @@ assert.deepEqual(seedCatalog.services
   'svc-nail-removal-natural',
   'svc-foot-nail-removal-natural'
 ]);
+const footStandaloneServices = seedCatalog.services
+  .filter((item) => item.categoryId === 'foot-nail' && item.bookableStandalone !== false)
+  .map((item) => item.id);
+assert.deepEqual(footStandaloneServices, [
+  'svc-foot-nail-natural-color-40',
+  'svc-foot-nail-natural-color-60',
+  'svc-foot-nail-natural-color-80',
+  'svc-foot-nail-natural-color-120',
+  'svc-foot-nail-simple-style',
+  'svc-foot-nail-simple-builder-style',
+  'svc-foot-nail-builder-luxury-style',
+  'svc-foot-nail-tips-40',
+  'svc-foot-nail-tips-80'
+]);
+const footTipAddon = seedCatalog.services.find((item) => item.id === 'svc-foot-nail-addon-single-tip');
+assert.deepEqual({ addonType: footTipAddon.addonType, priceFen: footTipAddon.priceFen, durationMinutes: footTipAddon.durationMinutes, bookableStandalone: footTipAddon.bookableStandalone }, { addonType: 'TIP', priceFen: 500, durationMinutes: 0, bookableStandalone: false });
 
 console.log('hierarchy tests passed: three-level selection, style-required booking, banner crop and fill');

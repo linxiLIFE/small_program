@@ -57,19 +57,22 @@ function page(file, api, state = {}) {
   assert(loaded); assert.equal(booking.workId, 'work-001'); assert.equal(booking.serviceId, 'svc-nail-french'); assert(!selected.pendingBooking);
   let repeated = false; booking.loadBooking = () => { repeated = true; }; booking.hasLoaded = true; booking.onShow(); assert(!repeated);
   const bookingDate = mock.getDates()[1].value;
+  const bookingService = { ...mock.services[0], id: 'svc-nail-natural-color-30', name: '本甲纯色｜30元色板', priceFen: 3000 };
+  const bookingWork = { ...mock.works[0], id: 'work-nail-natural-color-30', serviceId: bookingService.id };
   const bookingApi = {
     getBookingContext: async () => ({
       settings: { booking: { openDays: 14, slotStepMinutes: 15 }, points: { maxPercent: 10 } },
-      service: mock.services[0],
+      service: bookingService,
       technicians: [mock.technicians[0]],
       profile: mock.profile,
-      work: mock.works[0],
+      work: bookingWork,
       addons: { removals: [], builders: [] }
     }),
     listBookingAddons: async () => ({
       removals: [
         { id: 'removal-1', name: '卸本甲', type: 'REMOVAL', priceFen: 0, durationMinutes: 30 },
-        { id: 'removal-2', name: '卸甲片', type: 'REMOVAL', priceFen: 2000, durationMinutes: 40 }
+        { id: 'removal-2', name: '卸甲片', type: 'REMOVAL', priceFen: 2000, durationMinutes: 40 },
+        { id: 'removal-3', name: '卸超厚本甲建构', type: 'REMOVAL', priceFen: 2000, durationMinutes: 45 }
       ],
       builders: [{ id: 'builder-1', name: 'V建构', type: 'BUILDER', priceFen: 1500, durationMinutes: 30 }]
     }),
@@ -84,10 +87,11 @@ function page(file, api, state = {}) {
     createQuote: async () => ({ quoteId: 'quote-test', totalFen: 29900, discountFen: 0, paidFen: 29900, pointsToUse: 0 })
   };
   const { instance: groupedBooking } = page('pages/booking/index.js', bookingApi, {});
-  groupedBooking.onLoad({ serviceId: mock.services[0].id, workId: mock.works[0].id });
+  groupedBooking.onLoad({ serviceId: bookingService.id, workId: bookingWork.id });
   groupedBooking.data.selectedDate = bookingDate;
   await groupedBooking.loadBooking();
-  assert.deepStrictEqual(groupedBooking.data.removalOptions.map((item) => item.priceText), ['免费', '¥20.00']);
+  assert.deepStrictEqual(groupedBooking.data.removalOptions.map((item) => item.priceText), ['免费', '¥20.00', '¥20.00']);
+  assert.equal(groupedBooking.data.removalBadgeText, '仅卸本甲免费');
   await groupedBooking.selectAddon({ currentTarget: { dataset: { type: 'removal', id: 'none' } } });
   await groupedBooking.selectAddon({ currentTarget: { dataset: { type: 'builder', id: 'none' } } });
   assert.deepStrictEqual(groupedBooking.data.timePeriods.map((period) => period.label), ['上午', '下午']);
@@ -113,11 +117,53 @@ function page(file, api, state = {}) {
   assert(groupedBooking.data.timelineEndX > endBeforeDrag);
   await groupedBooking.handleTimelineTouchEnd({ changedTouches: [{ clientX: 130 }] });
   assert(!groupedBooking.data.timelineDragging);
+  const footService = { ...bookingService, id: 'svc-foot-nail-natural-color-40', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '本甲纯色｜40元色板', priceFen: 4000, durationMinutes: 60, tags: ['本甲', '纯色'] };
+  const footWork = { ...bookingWork, id: 'work-foot-natural-color-40', serviceId: footService.id };
+  const slotPayloads = [];
+  const footBookingApi = {
+    getBookingContext: async () => ({
+      settings: { booking: { openDays: 14, slotStepMinutes: 15 }, points: { maxPercent: 10 } },
+      service: footService,
+      technicians: [mock.technicians[0]],
+      profile: mock.profile,
+      work: footWork,
+      addons: {
+        removals: [{ id: 'foot-removal-1', name: '卸脚部本甲', type: 'REMOVAL', priceFen: 0, durationMinutes: 30 }],
+        builders: [{ id: 'foot-builder-1', name: '脚部V建构', type: 'BUILDER', priceFen: 1500, durationMinutes: 30 }],
+        footTip: { id: 'svc-foot-nail-addon-single-tip', name: '加脚甲片', type: 'TIP', unitPriceFen: 500, priceFen: 500, durationMinutes: 0, maxQuantity: 10 }
+      }
+    }),
+    getAvailableSlots: async (payload) => {
+      slotPayloads.push(payload);
+      return { stepMinutes: 15, slots: [{ id: 'foot-10', startAt: Date.parse(`${bookingDate}T10:00:00+08:00`), available: true }] };
+    },
+    createQuote: async (payload) => ({ quoteId: 'quote-foot', totalFen: 4000 + Number(payload.footTipCount || 0) * 500, discountFen: 0, paidFen: 4000 + Number(payload.footTipCount || 0) * 500, pointsToUse: 0 })
+  };
+  const { instance: footBooking } = page('pages/booking/index.js', footBookingApi, {});
+  footBooking.onLoad({ serviceId: footService.id, workId: footWork.id });
+  await footBooking.loadBooking();
+  assert.equal(footBooking.data.supportsFootTipAddon, true);
+  assert.equal(footBooking.data.showsRemovalChoice, false);
+  assert.equal(footBooking.data.requiresBuilderChoice, false);
+  assert.equal(footBooking.data.removalOptions.length, 0);
+  assert.equal(footBooking.data.builderOptions.length, 0);
+  assert.equal(footBooking.data.addonStepTitle, '加脚甲片');
+  assert.equal(footBooking.data.addonsReady, false);
+  await footBooking.selectFootTipChoice({ currentTarget: { dataset: { choice: 'add' } } });
+  assert.equal(slotPayloads.at(-1).footTipCount, 1);
+  assert.equal(footBooking.data.service.durationMinutes, 60);
+  await footBooking.changeFootTipCount({ currentTarget: { dataset: { delta: 1 } } });
+  assert.equal(slotPayloads.at(-1).footTipCount, 2);
+  assert.equal(footBooking.data.selectedAddons.find((item) => item.type === 'TIP').priceFen, 1000);
+  assert.equal(footBooking.data.service.durationMinutes, 60);
   const { instance: empty } = page('pages/booking/index.js', {}); empty.onShow(); assert.equal(empty.data.loading, false); assert(!empty.data.service.id);
   const bookingWxml = fs.readFileSync(path.join(__dirname, '..', 'pages/booking/index.wxml'), 'utf8');
   assert.match(bookingWxml, /timeline\.segments\.length && timelineHasOptions/);
   assert.match(bookingWxml, /当天没有可预约时段/);
   assert.match(bookingWxml, /\{\{item\.priceText\}\} · \{\{item\.durationText\}\}/);
+  assert.match(bookingWxml, /加甲片数量/);
+  assert.match(bookingWxml, /不增加服务时长/);
+  assert(!bookingWxml.includes('不加时'));
   assert(!bookingWxml.includes('step-subtitle'));
   assert(!bookingWxml.includes('timeline-instruction'));
   const detailWxml = fs.readFileSync(path.join(__dirname, '..', 'pages/work-detail/index.wxml'), 'utf8');

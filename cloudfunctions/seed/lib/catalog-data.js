@@ -7,7 +7,7 @@ function durationFor(id) {
   return DURATION_OPTIONS[hash % DURATION_OPTIONS.length];
 }
 
-function service({ id, categoryId, categoryName, name, priceFen, description, tags = [], sort, isAddon = false, addonType = '', freeAsAddon = false, durationMinutes = durationFor(id) }) {
+function service({ id, categoryId, categoryName, name, priceFen, description, tags = [], sort, isAddon = false, addonType = '', freeAsAddon = false, bookableStandalone, durationMinutes = durationFor(id) }) {
   return {
     _id: id,
     id,
@@ -22,7 +22,7 @@ function service({ id, categoryId, categoryName, name, priceFen, description, ta
     sort,
     enabled: true,
     version: 1,
-    ...(isAddon ? { isAddon: true, addonType, bookableStandalone: ['REMOVAL', 'BUILDER'].includes(addonType), ...(addonType === 'REMOVAL' ? { freeAsAddon } : {}) } : {})
+    ...(isAddon ? { isAddon: true, addonType, bookableStandalone: bookableStandalone === undefined ? ['REMOVAL', 'BUILDER'].includes(addonType) : !!bookableStandalone, ...(addonType === 'REMOVAL' ? { freeAsAddon } : {}) } : {})
   };
 }
 
@@ -73,11 +73,11 @@ const footNailServices = [
   service({ id: 'svc-foot-nail-builder-luxury-style', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '本甲建构轻奢款式', priceFen: 12000, description: '脚部本甲建构轻奢款式。', tags: ['本甲', '建构', '轻奢款式'], sort: 16 }),
   service({ id: 'svc-foot-nail-tips-40', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '10根脚甲片｜40元', priceFen: 4000, description: '10根脚甲片，40元档位。', tags: ['脚甲片', '10根'], sort: 17 }),
   service({ id: 'svc-foot-nail-tips-80', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '10根脚甲片｜80元', priceFen: 8000, description: '10根脚甲片，80元档位。', tags: ['脚甲片', '10根'], sort: 18 }),
-  service({ id: 'svc-foot-nail-removal-natural', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '卸脚部本甲', priceFen: 1000, durationMinutes: 30, description: '单独预约 ¥10；预约脚部美甲主项目时免费叠加。', tags: ['卸除', '本甲'], sort: 19, isAddon: true, addonType: 'REMOVAL', freeAsAddon: true }),
-  service({ id: 'svc-foot-nail-removal-tips', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '卸脚甲片', priceFen: 2000, durationMinutes: 40, description: '单独预约或作为加项均为 ¥20。', tags: ['卸除', '脚甲片'], sort: 20, isAddon: true, addonType: 'REMOVAL' }),
-  service({ id: 'svc-foot-nail-addon-v-builder', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '脚部V建构', priceFen: 1500, durationMinutes: 30, description: '预约脚部美甲主项目时可叠加。', tags: ['可叠加', '建构'], sort: 21, isAddon: true, addonType: 'BUILDER' }),
-  service({ id: 'svc-foot-nail-addon-shaping-builder', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '脚部塑形建构', priceFen: 3000, durationMinutes: 45, description: '预约脚部美甲主项目时可叠加。', tags: ['可叠加', '建构'], sort: 22, isAddon: true, addonType: 'BUILDER' }),
-  service({ id: 'svc-foot-nail-addon-single-tip', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '单独加1个脚甲片', priceFen: 500, description: '预约脚部美甲主项目时可叠加。', tags: ['可叠加', '脚甲片'], sort: 23, isAddon: true })
+  service({ id: 'svc-foot-nail-removal-natural', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '卸脚部本甲', priceFen: 1000, durationMinutes: 30, description: '仅作为脚部美甲预约加项。', tags: ['卸除', '本甲'], sort: 19, isAddon: true, addonType: 'REMOVAL', freeAsAddon: true, bookableStandalone: false }),
+  service({ id: 'svc-foot-nail-removal-tips', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '卸脚甲片', priceFen: 2000, durationMinutes: 40, description: '仅作为脚部美甲预约加项。', tags: ['卸除', '脚甲片'], sort: 20, isAddon: true, addonType: 'REMOVAL', bookableStandalone: false }),
+  service({ id: 'svc-foot-nail-addon-v-builder', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '脚部V建构', priceFen: 1500, durationMinutes: 30, description: '仅作为脚部美甲预约加项。', tags: ['可叠加', '建构'], sort: 21, isAddon: true, addonType: 'BUILDER', bookableStandalone: false }),
+  service({ id: 'svc-foot-nail-addon-shaping-builder', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '脚部塑形建构', priceFen: 3000, durationMinutes: 45, description: '仅作为脚部美甲预约加项。', tags: ['可叠加', '建构'], sort: 22, isAddon: true, addonType: 'BUILDER', bookableStandalone: false }),
+  service({ id: 'svc-foot-nail-addon-single-tip', categoryId: 'foot-nail', categoryName: '脚部美甲', name: '加脚甲片', priceFen: 500, durationMinutes: 0, description: '仅作为脚部本甲预约的数量加项，每个 ¥5，不增加服务时长。', tags: ['可叠加', '脚甲片'], sort: 23, isAddon: true, addonType: 'TIP', bookableStandalone: false })
 ];
 
 const lashServices = [

@@ -164,8 +164,8 @@ function fallbackBookingAddons(categoryId) {
   return addons || { removals: [], builders: [] };
 }
 
-function listBookingAddons(categoryId) {
-  return cachedCall('listBookingAddons', { categoryId }, () => fallbackBookingAddons(categoryId)).catch((error) => {
+function listBookingAddons(categoryId, serviceId = '') {
+  return cachedCall('listBookingAddons', { categoryId, serviceId }, () => fallbackBookingAddons(categoryId)).catch((error) => {
     if (error && error.code === 'UNKNOWN_ACTION') return fallbackBookingAddons(categoryId);
     throw error;
   });

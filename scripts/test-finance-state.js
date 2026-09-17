@@ -52,6 +52,9 @@ test('booking request hash binds removal and builder choices', () => {
   assert.notStrictEqual(bookingRequestHash({ serviceId: 's', removalServiceId: 'r1' }), bookingRequestHash({ serviceId: 's', removalServiceId: 'r2' }));
   assert.notStrictEqual(bookingRequestHash({ serviceId: 's', builderServiceId: 'b1' }), bookingRequestHash({ serviceId: 's', builderServiceId: 'b2' }));
 });
+test('booking request hash binds the foot-tip quantity', () => {
+  assert.notStrictEqual(bookingRequestHash({ serviceId: 's', footTipCount: 1, footTipSelectionConfirmed: true }), bookingRequestHash({ serviceId: 's', footTipCount: 2, footTipSelectionConfirmed: true }));
+});
 test('future check-in is blocked', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000, bookingRuleSnapshot: { noShowGraceMinutes: 30 } }, 'checkIn', 1).allowed, false));
 test('check-in inside the window is allowed', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000, bookingRuleSnapshot: { noShowGraceMinutes: 30 } }, 'checkIn', 9_000_000).allowed, true));
 test('service cannot complete before its booked end', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000 }, 'complete', 10_500_000).allowed, false));
@@ -77,6 +80,7 @@ const root = path.resolve(__dirname, '..');
 const wechat = fs.readFileSync(path.join(root, 'cloudfunctions/api/lib/wechat-pay.js'), 'utf8');
 const paymentService = fs.readFileSync(path.join(root, 'cloudfunctions/api/lib/payment-service.js'), 'utf8');
 const booking = fs.readFileSync(path.join(root, 'cloudfunctions/api/lib/booking.js'), 'utf8');
+const adminOrders = fs.readFileSync(path.join(root, 'admin/src/components/AdminOrdersPanel.vue'), 'utf8');
 const schema = fs.readFileSync(path.join(root, 'docs/mysql-schema.sql'), 'utf8');
 test('JSAPI request carries provider expiry', () => assert(wechat.includes('time_expire: new Date(Number(timeExpire)).toISOString()')));
 test('payment callback queues late refund instead of calling provider synchronously', () => {
@@ -90,5 +94,10 @@ test('a late callback from an earlier successful partial refund cannot be applie
 });
 test('merchant order number is database-unique', () => assert(schema.includes('UNIQUE KEY `uq_payments_merchant_order_no`')));
 test('refund number is database-unique', () => assert(schema.includes('UNIQUE KEY `uq_refunds_refund_no`')));
+test('admin retry locks the original failed refund amount', () => {
+  assert(adminOrders.includes("retryRefundStatuses=new Set(['RETRY_REQUIRED','CLOSED','WAITING_FUNDS','CONFIG_OR_DATA_ERROR'])"));
+  assert(adminOrders.includes('重试金额不能修改'));
+  assert(adminOrders.includes("isRefundRetry(refundOrder.value)?Number(refundOrder.value?.lastRefundRequestedFen||0)"));
+});
 
 console.log(`finance state tests passed: ${passed} payment/refund/concurrency invariants`);

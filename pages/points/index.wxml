@@ -2,8 +2,13 @@
   <view class="points-heading"><text class="page-title">积分明细</text></view>
   <view class="points-balance-card"><view><text class="balance-label">可用积分</text><text class="balance-number">{{account.available || 0}}</text></view><view class="frozen"><text>冻结中</text><text>{{account.frozen || 0}}</text></view></view>
   <view wx:if="{{account.debt}}" class="debt-note">当前有 {{account.debt}} 积分待冲回，后续完成服务获得的奖励会优先抵扣。</view>
-  <view class="invite-entry card"><view bindtap="toggleInvite"><text class="invite-entry-icon">＋</text><view><text class="invite-entry-title">邀请好友得积分</text><text class="invite-entry-copy">邀请码长期有效，可邀请多位新用户</text></view></view><button open-type="share">邀请</button></view>
-  <view wx:if="{{inviteOpen}}" class="invite-panel card"><view class="invite-code-row"><view><text>我的邀请码</text><text>{{profile.inviteCode||'生成中'}}</text></view><button bindtap="copyInviteCode">复制</button></view><view wx:if="{{!profile.invited}}" class="invite-bind-row"><input value="{{inviteDraft}}" maxlength="16" placeholder="新用户输入邀请码" bindinput="inputInviteCode"/><button loading="{{bindingInvite}}" disabled="{{bindingInvite||!inviteDraft}}" bindtap="bindInvite">绑定</button></view><text wx:else class="invite-bound">已绑定邀请码</text></view>
+  <view class="invite-panel card">
+    <view class="invite-heading"><view><text class="invite-title">邀请积分</text><text class="invite-subtitle">新用户绑定后，双方各得 {{inviteRewardPoints}} 积分</text></view><text class="invite-mark">✦</text></view>
+    <view class="invite-code-block"><text class="invite-field-label">我的邀请码</text><view class="invite-code-row"><text class="invite-code">{{profile.inviteCode||'生成中'}}</text><button disabled="{{!profile.inviteCode}}" bindtap="copyInviteCode">复制</button></view><text class="invite-hint">邀请码长期有效，可以邀请多位新用户</text></view>
+    <view class="invite-divider"></view>
+    <view wx:if="{{!profile.invited}}" class="invite-bind-block"><text class="invite-field-label">输入邀请码</text><view class="invite-bind-row"><input value="{{inviteDraft}}" maxlength="16" placeholder="填写好友的邀请码" bindinput="inputInviteCode"/><button loading="{{bindingInvite}}" disabled="{{bindingInvite||!inviteDraft}}" bindtap="bindInvite">确认绑定</button></view><text class="invite-hint">仅限未下过订单的新用户，绑定后不可更改</text></view>
+    <view wx:else class="invite-bound"><text class="invite-bound-icon">✓</text><view><text>已绑定邀请码</text><text>邀请关系已生效</text></view></view>
+  </view>
 
   <view class="ledger-heading"><text class="section-title">收支记录</text><text class="muted">不设过期</text></view>
   <view wx:if="{{loading}}" class="skeleton ledger-skeleton"></view>

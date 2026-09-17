@@ -122,8 +122,9 @@ Page({
           durationText: formatDuration(order.durationMinutes),
           addons: (order.addons || []).map((item) => ({
             ...item,
+            typeLabel: item.type === 'REMOVAL' ? '卸甲' : item.type === 'TIP' ? '加甲片' : '建构',
             priceText: item.priceFen ? formatMoney(item.priceFen) : '免费',
-            durationText: formatDuration(item.durationMinutes)
+            durationText: item.type === 'TIP' ? `${Number(item.quantity || 0)} 个 · 不增加时长` : `+${formatDuration(item.durationMinutes)}`
           })),
           paymentDeadline,
           countdownText: paymentDeadline ? formatCountdown(remaining) : '',
@@ -214,6 +215,12 @@ Page({
         this.setData({ paying: false });
         wx.showModal({ title: '微信支付待配置', content: (payment && payment.message) || '请先在服务端完成商户资质配置。', showCancel: false });
         return;
+      }
+      try {
+        const settings = await api.getSettings();
+        await api.requestSubscriptionEvents(settings, ['appointmentSuccess', 'arrivalReminder', 'noShowRefund']);
+      } catch (error) {
+        console.warn('预约提醒授权未完成', { code: error.code || error.errCode || '' });
       }
       wx.requestPayment({
         timeStamp: String(payment.timeStamp), nonceStr: payment.nonceStr, package: payment.package,

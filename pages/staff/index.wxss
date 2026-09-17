@@ -109,6 +109,50 @@
   font-size: 25rpx;
 }
 
+.staff-addon-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-top: 20rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 18rpx;
+  background: #fbf3ef;
+}
+
+.staff-addon-item,
+.staff-addon-name {
+  display: flex;
+  align-items: center;
+}
+
+.staff-addon-item {
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.staff-addon-name {
+  min-width: 0;
+  gap: 12rpx;
+  color: #684f4b;
+  font-size: 23rpx;
+}
+
+.staff-addon-type {
+  flex: none;
+  padding: 5rpx 11rpx;
+  border-radius: 999rpx;
+  background: #ead4d3;
+  color: #a35f6a;
+  font-size: 19rpx;
+  font-weight: 600;
+}
+
+.staff-addon-meta {
+  flex: none;
+  color: #9d8179;
+  font-size: 20rpx;
+}
+
 .staff-actions {
   justify-content: flex-end;
   margin-top: 20rpx;

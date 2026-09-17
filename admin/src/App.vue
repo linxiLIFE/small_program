@@ -28,7 +28,11 @@ const error = ref('');
 const notice = ref('');
 const demo = isDemoMode();
 const catalog = ref<CatalogResponse>({ categories: [], services: [], works: [], technicians: [] });
+const catalogLoading = ref(false);
+const catalogLoaded = ref(false);
 const settings = reactive<Settings>({ version: 1, store: { storeName: '四个小姐姐的店', address: '', phone: '', notice: '', latitude: null, longitude: null }, booking: { openDays: 14, minAdvanceMinutes: 60, slotStepMinutes: 15, unpaidHoldMinutes: 5, refundCutoffMinutes: 120, noShowGraceMinutes: 15, noShowPenaltyFen: 3000, noShowPolicy: 'AUTO_PARTIAL_REFUND' }, points: { pointRateFen: 100, unit: 20, discountFen: 100, maxPercent: 10, inviteRewardPoints: 10 }, notifications: { enabled:false, arrivalLeadMinutes:120, templates:{ appointmentSuccess:{templateId:'mSytTDc_RPzemCXFTmlP6_YfL2AXQmeRqmvfDIQnSiM',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'date2',technicianKey:'thing19'}, arrivalReminder:{templateId:'tUQNUcVIWkHmsNVtxD9ktPuKCCY7XtUoRFfbForuUoA',page:'pages/order-detail/index',serviceKey:'thing2',timeKey:'time1',addressKey:'thing7'}, checkInSuccess:{templateId:'YIZfXuyNr6qJeIts_ehZo8ivql7wOmx8Y5PDORMuzc4',page:'pages/order-detail/index',serviceKey:'thing1',timeKey:'time5'}, noShowRefund:{templateId:'rZ_ATdWSGPxs2X96QFO7889txX1acN-xQeIkjgZWdgE',page:'pages/order-detail/index',serviceKey:'thing1',amountKey:'amount6',storeKey:'thing3'} } } });
+const settingsLoading = ref(false);
+const settingsLoaded = ref(false);
 const editingService = ref<Service | null>(null);
 const serviceDraft = reactive<Partial<Service>>({});
 const scheduleDate = ref(todayDate());
@@ -97,6 +101,9 @@ const navItems: Array<{ id: PageKey; label: string; icon: string }> = [
 
 const visibleNav=computed(()=>sessionInfo.value.role==='TECHNICIAN'?[{id:'my-schedule' as PageKey,label:'我的排班',icon:'◷'}]:navItems);
 const pageTitle = computed(() => visibleNav.value.find((item) => item.id === page.value)?.label || (page.value === 'my-schedule' ? '我的排班' : '经营概览'));
+const catalogPages = new Set<PageKey>(['orders','services','featured','team']);
+const settingsPages = new Set<PageKey>(['home','settings']);
+const pageResourceLoading = computed(() => catalogPages.has(page.value) ? catalogLoading.value : settingsPages.has(page.value) ? settingsLoading.value : false);
 
 function formatDate(date: string): string { return date ? date.replace(/-/g, '.') : '—'; }
 
@@ -153,6 +160,9 @@ async function logout() {
     loading.value = false;
     page.value = 'dashboard';
     catalog.value = { categories: [], services: [], works: [], technicians: [] };
+    catalogLoaded.value = false;
+    settingsLoaded.value = false;
+    schedule.value = { date: scheduleDate.value, scheduleVersion: 1, weekly: [], technicians: [] };
   }
 }
 
@@ -163,14 +173,7 @@ async function loadAll() {
     sessionInfo.value=await adminApi.session();
     if(sessionInfo.value.role==='UNASSIGNED')throw new Error('当前账号未被授权。首个店主必须通过受控部署脚本或数据库控制台预先配置。');
     if(sessionInfo.value.role==='TECHNICIAN'){previewTechnicianId.value='';page.value='my-schedule';return;}
-    const tasks = [
-      async()=>{catalog.value=await adminApi.catalog();},
-      async()=>{Object.assign(settings,await adminApi.settings());},
-      async()=>{const result=await adminApi.schedule(scheduleDate.value);schedule.value=result;weeklyDraft.value=clone(result.weekly);syncDayDraft();}
-    ];
-    const failures:string[]=[];
-    for(let i=0;i<tasks.length;i+=2){const results=await Promise.allSettled(tasks.slice(i,i+2).map(task=>task()));for(const result of results)if(result.status==='rejected')failures.push(result.reason instanceof Error?result.reason.message:'加载失败');}
-    if(failures.length)error.value=Array.from(new Set(failures)).join('；');
+    page.value='dashboard';
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载失败';
   } finally {
@@ -178,8 +181,32 @@ async function loadAll() {
   }
 }
 
+let catalogRequest:Promise<void>|null=null;
+async function loadCatalog(force=false) {
+  if(!force&&catalogLoaded.value)return;
+  if(catalogRequest)return catalogRequest;
+  catalogLoading.value=true;
+  catalogRequest=(async()=>{try{catalog.value=await adminApi.catalog();catalogLoaded.value=true;}catch(err){error.value=err instanceof Error?err.message:'目录加载失败';}})().finally(()=>{catalogLoading.value=false;catalogRequest=null;});
+  return catalogRequest;
+}
+
+let settingsRequest:Promise<void>|null=null;
+async function loadSettingsData(force=false) {
+  if(!force&&settingsLoaded.value)return;
+  if(settingsRequest)return settingsRequest;
+  settingsLoading.value=true;
+  settingsRequest=(async()=>{try{Object.assign(settings,await adminApi.settings());settingsLoaded.value=true;}catch(err){error.value=err instanceof Error?err.message:'设置加载失败';}})().finally(()=>{settingsLoading.value=false;settingsRequest=null;});
+  return settingsRequest;
+}
+
+function ensurePageData(nextPage:PageKey) {
+  if(catalogPages.has(nextPage))void loadCatalog();
+  if(settingsPages.has(nextPage))void loadSettingsData();
+  if(nextPage==='technicians'&&!schedule.value.technicians.length)void loadSchedule();
+}
+
 function openTechnicianWorkspace(id:string){previewTechnicianId.value=id;page.value='my-schedule';}
-async function refreshCatalog() { try { catalog.value=await adminApi.catalog(); } catch(err){error.value=err instanceof Error?err.message:'刷新失败';} }
+async function refreshCatalog() { await loadCatalog(true); }
 async function openTechnicianSchedule(id:string){selectedTechnicianId.value=id;page.value='technicians';await loadSchedule();}
 
 async function loadSchedule() {
@@ -322,8 +349,7 @@ watch(scheduleDate, () => {
 });
 
 watch(page, (nextPage) => {
-  if (authenticated.value && ['services','featured','team'].includes(nextPage)) refreshCatalog();
-  if (authenticated.value && nextPage === 'technicians' && !schedule.value.technicians.length) loadSchedule();
+  if (authenticated.value) ensurePageData(nextPage);
 });
 
 onMounted(restoreSession);
@@ -364,10 +390,11 @@ onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
       <div v-if="error" class="alert error">{{ error }} <button @click="error = ''">×</button></div>
       <div v-if="notice" class="alert success">{{ notice }} <button @click="notice = ''">×</button></div>
 
-      <div v-if="loading" class="loading-state"><div class="loader"></div><span>正在整理门店数据…</span></div>
+      <div v-if="loading" class="loading-state"><div class="loader"></div><span>正在进入门店后台…</span></div>
 
       <template v-else>
-        <DashboardPanel v-if="page === 'dashboard'"/>
+        <div v-if="pageResourceLoading" class="loading-state"><div class="loader"></div><span>正在加载当前页面…</span></div>
+        <DashboardPanel v-else-if="page === 'dashboard'"/>
         <HomeManager v-else-if="page === 'home'" :settings="settings" @saved="Object.assign(settings,$event)"/>
 
         <AdminOrdersPanel v-else-if="page === 'orders'" :catalog="catalog"/>

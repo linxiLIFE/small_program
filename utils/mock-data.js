@@ -57,7 +57,8 @@ const bookingAddons = {
     builders: [
       { id: 'demo-foot-builder-v', categoryId: 'foot-nail', name: '脚部V建构', addonType: 'BUILDER', priceFen: 1500, durationMinutes: 30 },
       { id: 'demo-foot-builder-shaping', categoryId: 'foot-nail', name: '脚部塑形建构', addonType: 'BUILDER', priceFen: 3000, durationMinutes: 45 }
-    ]
+    ],
+    footTip: { id: 'svc-foot-nail-addon-single-tip', name: '加脚甲片', type: 'TIP', unitPriceFen: 500, priceFen: 500, durationMinutes: 0, maxQuantity: 10 }
   }
 };
 

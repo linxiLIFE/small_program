@@ -29,12 +29,48 @@ function publicService(item) {
     durationMinutes: Number(item.durationMinutes || 0),
     coverUrl: item.coverUrl || '',
     tags: item.tags || [],
-    isAddon: item.isAddon === true || item.isAddon === 1 || ['REMOVAL', 'BUILDER'].includes(String(item.addonType || '').toUpperCase()),
+    isAddon: item.isAddon === true || item.isAddon === 1 || ['REMOVAL', 'BUILDER', 'TIP'].includes(String(item.addonType || '').toUpperCase()),
     addonType: String(item.addonType || ''),
     freeAsAddon: item.freeAsAddon === true || item.freeAsAddon === 1,
-    bookableStandalone: item.bookableStandalone !== false && item.bookableStandalone !== 0,
+    bookableStandalone: serviceBookableStandalone(item),
     styleCount: Number(item.styleCount || 0),
     version: item.version || 1
+  };
+}
+
+const FOOT_TIP_ADDON_ID = 'svc-foot-nail-addon-single-tip';
+const FOOT_TIP_UNIT_PRICE_FEN = 500;
+const FOOT_TIP_MAX_QUANTITY = 10;
+
+function serviceBookableStandalone(item) {
+  if (!item) return false;
+  const categoryId = String(item.categoryId || '');
+  const addonType = String(item.addonType || '').toUpperCase();
+  const isAddon = item.isAddon === true || item.isAddon === 1 || item.isAddon === '1'
+    || ['REMOVAL', 'BUILDER', 'TIP'].includes(addonType)
+    || String(item.id || item._id || '') === FOOT_TIP_ADDON_ID;
+  if (categoryId === 'foot-nail' && isAddon) return false;
+  return item.bookableStandalone !== false && item.bookableStandalone !== 0;
+}
+
+function supportsFootTipAddon(service) {
+  if (!service || String(service.categoryId || '') !== 'foot-nail') return false;
+  const addonType = String(service.addonType || '').toUpperCase();
+  const isAddon = service.isAddon === true || service.isAddon === 1 || service.isAddon === '1' || !!addonType;
+  const text = [service.name, ...(Array.isArray(service.tags) ? service.tags : [])].join('');
+  return !isAddon && /本甲/.test(text);
+}
+
+function footTipAddonOption(service) {
+  if (!supportsFootTipAddon(service)) return null;
+  return {
+    id: FOOT_TIP_ADDON_ID,
+    name: '加脚甲片',
+    type: 'TIP',
+    unitPriceFen: FOOT_TIP_UNIT_PRICE_FEN,
+    priceFen: FOOT_TIP_UNIT_PRICE_FEN,
+    durationMinutes: 0,
+    maxQuantity: FOOT_TIP_MAX_QUANTITY
   };
 }
 
@@ -96,7 +132,7 @@ async function loadCatalog(categoryId = '') {
   const categoryById = new Map(categories.map((item) => [item.id, item]));
   const styleCounts = countStyles(styles);
   const services = serviceRecords
-    .filter((item) => !item.archived && item.bookableStandalone !== false && item.bookableStandalone !== 0 && categoryById.has(item.categoryId))
+    .filter((item) => !item.archived && serviceBookableStandalone(item) && categoryById.has(item.categoryId))
     .map((item) => {
       const category = categoryById.get(item.categoryId);
       return { ...publicService(item), styleCount: styleCounts[item.id || item._id] || 0, categoryName: category.name };
@@ -106,7 +142,8 @@ async function loadCatalog(categoryId = '') {
 
 function inferredAddonType(item) {
   const explicit = String(item && item.addonType || '').toUpperCase();
-  if (['REMOVAL', 'BUILDER'].includes(explicit)) return explicit;
+  if (['REMOVAL', 'BUILDER', 'TIP'].includes(explicit)) return explicit;
+  if (String(item && (item.id || item._id) || '') === FOOT_TIP_ADDON_ID) return 'TIP';
   const text = [item && item.name, ...(Array.isArray(item && item.tags) ? item.tags : [])].join('');
   if (/卸(?:甲|除)|卸本甲|卸甲片/.test(text)) return 'REMOVAL';
   if ((item && (item.isAddon === true || item.bookableStandalone === false)) && /建构/.test(text)) return 'BUILDER';
@@ -117,7 +154,6 @@ const FREE_REMOVAL_ADDON_IDS = new Set([
   'svc-nail-removal-natural',
   'svc-foot-nail-removal-natural'
 ]);
-
 function isFreeRemovalAddon(item) {
   if (!item) return false;
   const id = item.id || item._id || '';
@@ -126,12 +162,23 @@ function isFreeRemovalAddon(item) {
     || item.freeAsAddon === true || item.freeAsAddon === 1 || item.freeAsAddon === '1';
 }
 
-function addonPriceFen(item, addonType = inferredAddonType(item)) {
-  return addonType === 'REMOVAL' && isFreeRemovalAddon(item) ? 0 : Number(item && item.priceFen || 0);
+function isRemovalFreeForService(item, service) {
+  if (!service) return isFreeRemovalAddon(item);
+  if (String(service.categoryId || '') === 'nail') {
+    const servicePriceFen = Number(service.priceFen || 0);
+    if (servicePriceFen > 3000) return true;
+    if (servicePriceFen < 3000) return false;
+  }
+  return isFreeRemovalAddon(item);
 }
 
-async function listBookingAddons(categoryId = '') {
+function addonPriceFen(item, addonType = inferredAddonType(item), service = null) {
+  return addonType === 'REMOVAL' && isRemovalFreeForService(item, service) ? 0 : Number(item && item.priceFen || 0);
+}
+
+async function listBookingAddons(categoryId = '', service = null) {
   if (!['nail', 'foot-nail'].includes(String(categoryId || ''))) return { removals: [], builders: [] };
+  assert(!service || String(service.categoryId || '') === String(categoryId), 'INVALID_SERVICE', '叠加项与当前项目不匹配');
   // 迁移脚本写入 MySQL JSON 时，布尔值可能被保存为 1/0。这里不在 SQL
   // 条件中用严格布尔值过滤，避免有效叠加项在查询后被内存层二次过滤掉。
   const records = await loadAll(COLLECTIONS.services, { categoryId }, { orderBy: { field: 'sort', direction: 'asc' } });
@@ -140,8 +187,9 @@ async function listBookingAddons(categoryId = '') {
     .map((item) => ({ ...publicService(item), addonType: inferredAddonType(item) }))
     .filter((item) => item.addonType);
   return {
-    removals: options.filter((item) => item.addonType === 'REMOVAL').map((item) => ({ ...item, priceFen: addonPriceFen(item, 'REMOVAL') })),
-    builders: options.filter((item) => item.addonType === 'BUILDER')
+    removals: options.filter((item) => item.addonType === 'REMOVAL').map((item) => ({ ...item, priceFen: addonPriceFen(item, 'REMOVAL', service) })),
+    builders: options.filter((item) => item.addonType === 'BUILDER'),
+    footTip: footTipAddonOption(service)
   };
 }
 
@@ -251,4 +299,4 @@ async function getHome(settings) {
   };
 }
 
-module.exports = { publicCategory, publicService, publicWork, publicTechnician, isFreeRemovalAddon, addonPriceFen, listCategories, listServiceCatalog, listServices, listBookingAddons, listServiceStyles, listWorks, listTechnicians, getService, getWork, getHome };
+module.exports = { publicCategory, publicService, publicWork, publicTechnician, serviceBookableStandalone, supportsFootTipAddon, footTipAddonOption, isFreeRemovalAddon, addonPriceFen, listCategories, listServiceCatalog, listServices, listBookingAddons, listServiceStyles, listWorks, listTechnicians, getService, getWork, getHome, FOOT_TIP_ADDON_ID, FOOT_TIP_UNIT_PRICE_FEN, FOOT_TIP_MAX_QUANTITY };

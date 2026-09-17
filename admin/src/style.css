@@ -473,6 +473,8 @@ input:focus, select:focus, textarea:focus { border-color: #ca9497; box-shadow: 0
 .refund-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 22px 0 18px; }
 .refund-mode button { height: 42px; border: 1px solid #ead8d2; border-radius: 11px; background: #fffdfb; color: #8e756f; font-size: 12px; }
 .refund-mode button.active { border-color: #bd7a83; background: #f8e5e4; color: #9c5964; box-shadow: 0 0 0 3px #faeded; }
+.refund-retry-note { margin: 22px 0 18px; padding: 14px 16px; border-radius: 12px; background: #fff4df; color: #8b674c; font-size: 12px; line-height: 1.7; }
+.refund-retry-note strong { color: #9c5964; }
 .refund-modal > label { margin-top: 16px; }
 .refund-modal .field-error { margin-top: 15px; }
 .refund-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 24px; }
@@ -521,10 +523,15 @@ input:focus, select:focus, textarea:focus { border-color: #ca9497; box-shadow: 0
 .personal-order-heading > div { display: grid; min-width: 0; gap: 5px; }
 .personal-order-heading strong { overflow: hidden; color: #624c48; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .personal-order-heading small { color: #a28b84; font-size: 11px; }
+.personal-order-addons { display: grid; gap: 7px; margin-top: 12px; }
+.personal-order-addons > span { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #eeddd8; border-radius: 11px; background: #fbf2ef; }
+.personal-order-addons b { padding: 3px 7px; border-radius: 999px; background: #ead3d2; color: #9f5d67; font-size: 9px; font-weight: 600; }
+.personal-order-addons strong { overflow: hidden; color: #765b55; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.personal-order-addons small { color: #9d8179; font-size: 9px; white-space: nowrap; }
 .personal-order-details { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin-top: 14px; }
 .personal-order-details span,.personal-order-details a { color: #806a64; font-size: 11px; text-decoration: none; }
 .personal-order-details b { margin-right: 7px; color: #b09790; font-weight: 400; }
 .personal-order-details a { color: #a65f6b; font-weight: 600; }
 .personal-order-id { display: block; margin-top: 12px; overflow: hidden; color: #b9a6a0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 @media(max-width:1100px){.featured-layout{grid-template-columns:1fr}.featured-pick-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:760px){.featured-layout{grid-template-columns:1fr}.featured-selected,.featured-picker{padding:16px}.featured-order-item{grid-template-columns:24px 58px minmax(0,1fr)}.featured-order-item>img,.featured-order-item>.catalog-image-empty{width:58px;height:58px}.featured-item-actions{grid-column:2/-1;justify-content:flex-end}.featured-pick-grid{grid-template-columns:1fr}.refund-summary{grid-template-columns:1fr}.scanner-photo{width:100%}.personal-order-card{grid-template-columns:74px minmax(0,1fr)}.personal-order-image{width:74px;height:92px}.personal-order-details{grid-template-columns:1fr}}
+@media(max-width:760px){.featured-layout{grid-template-columns:1fr}.featured-selected,.featured-picker{padding:16px}.featured-order-item{grid-template-columns:24px 58px minmax(0,1fr)}.featured-order-item>img,.featured-order-item>.catalog-image-empty{width:58px;height:58px}.featured-item-actions{grid-column:2/-1;justify-content:flex-end}.featured-pick-grid{grid-template-columns:1fr}.refund-summary{grid-template-columns:1fr}.scanner-photo{width:100%}.personal-order-card{grid-template-columns:74px minmax(0,1fr)}.personal-order-image{width:74px;height:92px}.personal-order-addons>span{grid-template-columns:auto minmax(0,1fr)}.personal-order-addons small{grid-column:2}.personal-order-details{grid-template-columns:1fr}}

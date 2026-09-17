@@ -1,6 +1,6 @@
 const api = require('../../utils/api');
 const { ORDER_STATUS_LABELS, ROLE_LABELS } = require('../../utils/constants');
-const { formatDateTimeRange } = require('../../utils/format');
+const { formatMoney, formatDateTimeRange, formatDuration } = require('../../utils/format');
 
 Page({
   data: { loading: true, loadingMore:false, nextCursor:null, profile: {}, orders: [], skeletons: [1, 2], activeStatus: 'RESERVED', tabs: [{ id: 'RESERVED', label: '待到店' }, { id: 'NO_SHOW_REVIEW', label: '未到店复核' }, { id: 'ARRIVED', label: '已到店' }, { id: 'IN_SERVICE', label: '服务中' }] },
@@ -32,7 +32,17 @@ Page({
     try {
       const result = await api.staffListOrders(status,append?Number(this.data.nextCursor||0):0,20);
       if (requestId !== this.requestId) return;
-      const orders = (result.orders || []).map((item) => ({ ...item, statusLabel: item.statusLabel || ORDER_STATUS_LABELS[item.status] || '处理中', timeLabel: item.startAt ? formatDateTimeRange(item.startAt, item.endAt, item.durationMinutes) : item.startAtLabel || '待确定' }));
+      const orders = (result.orders || []).map((item) => ({
+        ...item,
+        statusLabel: item.statusLabel || ORDER_STATUS_LABELS[item.status] || '处理中',
+        timeLabel: item.startAt ? formatDateTimeRange(item.startAt, item.endAt, item.durationMinutes) : item.startAtLabel || '待确定',
+        addons: (item.addons || []).map((addon) => ({
+          ...addon,
+          typeLabel: addon.type === 'REMOVAL' ? '卸甲' : addon.type === 'TIP' ? '加甲片' : '建构',
+          durationLabel: addon.type === 'TIP' ? `${Number(addon.quantity || 0)} 个 · 不增加时长` : `+${formatDuration(addon.durationMinutes)}`,
+          priceLabel: Number(addon.priceFen || 0) > 0 ? formatMoney(addon.priceFen) : '免费'
+        }))
+      }));
       this.hasLoaded = true;
       this.setData({ orders:append?this.data.orders.concat(orders):orders, nextCursor:result.nextCursor, loading: false, loadingMore:false });
     } catch (error) {

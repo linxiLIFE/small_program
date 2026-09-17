@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const constants = require('../cloudfunctions/api/lib/constants');
 let actor = {role:'OWNER',uid:'owner'};
-const tables = {categories:{nail:{id:'nail',name:'美甲',enabled:true},brow:{id:'brow',name:'眉毛',enabled:true}},services:{service:{id:'service',name:'法式',categoryId:'nail',categoryName:'美甲',enabled:true,priceFen:9900,durationMinutes:60}},works:{},technicians:{tech:{id:'tech',name:'技师',enabled:true,skills:['service']},other:{id:'other',name:'其他',enabled:true,skills:['service']}},orders:{},technician_days:{},staff_accounts:{},audit_logs:{}};
+const tables = {categories:{nail:{id:'nail',name:'美甲',enabled:true},'foot-nail':{id:'foot-nail',name:'脚部美甲',enabled:true},brow:{id:'brow',name:'眉毛',enabled:true}},services:{service:{id:'service',name:'法式',categoryId:'nail',categoryName:'美甲',enabled:true,priceFen:9900,durationMinutes:60}},works:{},technicians:{tech:{id:'tech',name:'技师',enabled:true,skills:['service']},other:{id:'other',name:'其他',enabled:true,skills:['service']}},orders:{},technician_days:{},staff_accounts:{},audit_logs:{}};
 const clone = value=>JSON.parse(JSON.stringify(value));
 const db={ collection: table => ({ doc: id => ({ set: async ({data}) => { (tables[table] ||= {})[id]=clone(data); } }) }) };
 db.query=async()=>[[]];
@@ -37,6 +37,8 @@ function load(name){if(cache[name])return cache[name];const scope={module:{expor
  assert.equal(removalWorks.length,1);assert.equal(removalWorks[0].title,'卸本甲');
  const paidRemoval=await catalog.saveService({name:'卸甲片',categoryId:'nail',priceFen:2000,durationMinutes:30,addonType:'REMOVAL',enabled:true});
  assert.equal(paidRemoval.priceFen,2000);assert.equal(paidRemoval.freeAsAddon,false);
+ const footRemoval=await catalog.saveService({name:'卸脚部本甲',categoryId:'foot-nail',priceFen:1000,durationMinutes:30,addonType:'REMOVAL',enabled:true});
+ assert.equal(footRemoval.bookableStandalone,false);
  await assert.rejects(catalog.saveService({name:'免费卸甲',categoryId:'nail',priceFen:0,durationMinutes:20,addonType:'REMOVAL'}),/INVALID_SERVICE/);
  const work=await catalog.saveWork({title:'新款',imageUrl:'https://example.com/a.jpg',serviceId:service.id,featured:true,featuredSort:2,published:true});assert(work.id);assert.equal(work.featured,true);
  const secondWork=await catalog.saveWork({title:'另一款',imageUrl:'https://example.com/b.jpg',serviceId:service.id,featured:false,published:true});

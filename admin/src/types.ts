@@ -41,7 +41,7 @@ export interface AdminOrder {
   remainingRefundableFen?: number;
   refundInProgress?: boolean;
   partiallyRefunded?: boolean;
-  addons?: Array<{ id:string; name:string; type:'REMOVAL'|'BUILDER'; priceFen:number; durationMinutes:number }>;
+  addons?: Array<{ id:string; name:string; type:'REMOVAL'|'BUILDER'|'TIP'; priceFen:number; durationMinutes:number; quantity?:number; unitPriceFen?:number }>;
 }
 
 export interface Service {
@@ -57,7 +57,7 @@ export interface Service {
   enabled: boolean;
   sort: number;
   isAddon?: boolean;
-  addonType?: ''|'REMOVAL'|'BUILDER';
+  addonType?: ''|'REMOVAL'|'BUILDER'|'TIP';
   freeAsAddon?: boolean;
   bookableStandalone?: boolean;
 }

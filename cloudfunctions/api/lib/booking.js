@@ -4,7 +4,7 @@ const { db, cloud, getOptional, find } = require('./db');
 const { AppError, assert } = require('./errors');
 const { requireOpenId, ensureUser, getUser, requireRole, safeUser } = require('./auth');
 const { getCurrentSettings, publicSettings } = require('./settings');
-const { getService, listServices, listWorks, listCategories, listTechnicians, getWork, addonPriceFen } = require('./catalog');
+const { getService, listServices, listWorks, listCategories, listTechnicians, getWork, addonPriceFen, serviceBookableStandalone, supportsFootTipAddon, FOOT_TIP_ADDON_ID, FOOT_TIP_UNIT_PRICE_FEN, FOOT_TIP_MAX_QUANTITY } = require('./catalog');
 const { dateToTimestamp, weekday, minutesOfDay, addMinutes, isWithinDateWindow, assertValidStart, overlaps, toDateString, formatParts } = require('./time');
 const { calculatePointsDiscount, earnPoints, rebalancePoints, awardPoints } = require('./money');
 const { encryptPhone, maskPhone } = require('./contact-crypto');
@@ -112,13 +112,34 @@ function serviceIncludesBuilder(service) {
   return /建构/.test(String(service && service.name || ''));
 }
 
+function footTipAddonSnapshot(service, quantity) {
+  const count = Number(quantity || 0);
+  assert(Number.isSafeInteger(count) && count >= 0 && count <= FOOT_TIP_MAX_QUANTITY, 'INVALID_ADDON', `加脚甲片数量须在 0-${FOOT_TIP_MAX_QUANTITY} 个之间`);
+  assert(count === 0 || supportsFootTipAddon(service), 'INVALID_ADDON', '只有脚部本甲项目可以加脚甲片');
+  if (!count) return null;
+  return {
+    id: FOOT_TIP_ADDON_ID,
+    name: `加脚甲片 ×${count}`,
+    type: 'TIP',
+    quantity: count,
+    unitPriceFen: FOOT_TIP_UNIT_PRICE_FEN,
+    priceFen: count * FOOT_TIP_UNIT_PRICE_FEN,
+    originalPriceFen: FOOT_TIP_UNIT_PRICE_FEN,
+    durationMinutes: 0
+  };
+}
+
 async function resolveBookingAddons(service, payload = {}, reader = db) {
   const serviceAddonType = addonTypeOf(service);
   const standaloneRemoval = serviceAddonType === 'REMOVAL' && service.bookableStandalone !== false && service.bookableStandalone !== 0;
-  const requiresChoice = ['nail', 'foot-nail'].includes(service.categoryId) && !standaloneRemoval;
+  const requiresChoice = service.categoryId === 'nail' && !standaloneRemoval;
   const builderIncluded = requiresChoice && (serviceAddonType === 'BUILDER' || serviceIncludesBuilder(service));
   if (requiresChoice && Object.prototype.hasOwnProperty.call(payload, 'addonSelectionConfirmed')) {
     assert(payload.addonSelectionConfirmed === true, 'ADDON_SELECTION_REQUIRED', builderIncluded ? '请先选择是否需要卸甲' : '请先选择是否需要卸甲和建构');
+  }
+  const supportsFootTips = supportsFootTipAddon(service);
+  if (supportsFootTips && Object.prototype.hasOwnProperty.call(payload, 'footTipSelectionConfirmed')) {
+    assert(payload.footTipSelectionConfirmed === true, 'ADDON_SELECTION_REQUIRED', '请先选择是否需要加脚甲片');
   }
   assert(!standaloneRemoval || !String(payload.removalServiceId || '') && !String(payload.builderServiceId || ''), 'ADDON_ALREADY_INCLUDED', '卸甲小项目无需重复选择卸甲或建构');
   assert(!builderIncluded || !String(payload.builderServiceId || ''), 'BUILDER_ALREADY_INCLUDED', '当前小项目已包含建构，无需重复选择');
@@ -132,7 +153,7 @@ async function resolveBookingAddons(service, payload = {}, reader = db) {
     const record = await getOptional(COLLECTIONS.services, selection.id, reader);
     assert(record && !record.archived && record.enabled !== false, 'ADDON_NOT_FOUND', '所选叠加服务已下架，请重新选择', 409);
     assert(record.categoryId === service.categoryId && addonTypeOf(record) === selection.type, 'INVALID_ADDON', '叠加服务与当前项目不匹配', 409);
-    const priceFen = addonPriceFen(record, selection.type);
+    const priceFen = addonPriceFen(record, selection.type, service);
     const durationMinutes = Number(record.durationMinutes || 0);
     assert(Number.isSafeInteger(priceFen) && priceFen >= 0 && Number.isSafeInteger(durationMinutes) && durationMinutes > 0, 'INVALID_ADDON', '叠加服务价格或时长不正确', 409);
     addons.push({
@@ -144,6 +165,8 @@ async function resolveBookingAddons(service, payload = {}, reader = db) {
       durationMinutes
     });
   }
+  const footTipAddon = footTipAddonSnapshot(service, payload.footTipCount);
+  if (footTipAddon) addons.push(footTipAddon);
   const durationMinutes = Number(service.durationMinutes) + addons.reduce((sum, item) => sum + item.durationMinutes, 0);
   const totalFen = Number(service.priceFen) + addons.reduce((sum, item) => sum + item.priceFen, 0);
   return {
@@ -219,6 +242,7 @@ async function validateBookingSlot(payload = {}) {
   const { serviceId, technicianId, date, startAt, now = Date.now(), reader = db } = payload;
   const settings = await getCurrentSettings();
   const service = await getService(serviceId);
+  assert(serviceBookableStandalone(service), 'SERVICE_NOT_BOOKABLE', '该脚部加项不能作为小项目单独预约', 409);
   const addonSelection = await resolveBookingAddons(service, payload, reader);
   const technician = await getTechnician(technicianId);
   assert(technicianCanServe(technician, service), 'SKILL_MISMATCH', '该技师暂不提供此大项');
@@ -288,7 +312,7 @@ async function createQuote(payload) {
   };
   const price = calculatePointsDiscount({ totalFen: validation.totalFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
   const expiresAt = Date.now() + 10 * 60 * 1000;
-  const quoteId = createQuoteId({ workId: work.id, serviceId: validation.service.id, removalServiceId: String(payload.removalServiceId || ''), builderServiceId: String(payload.builderServiceId || ''), technicianId: validation.technician.id, date: payload.date, startAt: Number(payload.startAt), durationMinutes: Number(validation.service.durationMinutes), pointsToUse: price.pointsToUse, totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen, settingsVersion: validation.settings.version, expiresAt });
+  const quoteId = createQuoteId({ workId: work.id, serviceId: validation.service.id, removalServiceId: String(payload.removalServiceId || ''), builderServiceId: String(payload.builderServiceId || ''), footTipCount: Number(payload.footTipCount || 0), technicianId: validation.technician.id, date: payload.date, startAt: Number(payload.startAt), durationMinutes: Number(validation.service.durationMinutes), pointsToUse: price.pointsToUse, totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen, settingsVersion: validation.settings.version, expiresAt });
   return {
     quoteId,
     expiresAt,
@@ -315,6 +339,8 @@ function publicOrder(order) {
   const refundedFen = cumulativeRefundedFen(order);
   const remainingFen = remainingRefundableFen(order);
   const refundPending = refundInProgress(order);
+  const retryRefund = [REFUND_STATUS.RETRY_REQUIRED, REFUND_STATUS.CLOSED, REFUND_STATUS.WAITING_FUNDS, REFUND_STATUS.CONFIG_OR_DATA_ERROR].includes(order.refundStatus);
+  const lastRefundRequestedFen = Math.max(0, Number(order.requestedRefundFen === undefined && retryRefund ? order.refundAmountFen || 0 : order.requestedRefundFen || 0));
   return {
     id: order.id || order._id,
     status: order.status,
@@ -349,8 +375,8 @@ function publicOrder(order) {
     arrivedAt: order.arrivedAt || 0,
     refundAmountFen: refundedFen,
     refundedFen,
-    pendingRefundFen: refundPending ? Math.max(0, Number(order.requestedRefundFen || 0)) : 0,
-    lastRefundRequestedFen: Math.max(0, Number(order.requestedRefundFen || 0)),
+    pendingRefundFen: refundPending ? lastRefundRequestedFen : 0,
+    lastRefundRequestedFen,
     remainingRefundableFen: remainingFen,
     refundInProgress: refundPending,
     partiallyRefunded: refundedFen > 0 && remainingFen > 0,
@@ -443,7 +469,7 @@ async function ensureRefundIntent(reader, order, reason, options = {}) {
   };
   await reader.collection(COLLECTIONS.refunds).doc(refundId).set({ data: refund });
   await scheduleRefundJob(reader, order.id, refundId, now);
-  return { order: { ...order, refundId, refundStatus: refund.status }, refund };
+  return { order: { ...order, refundId, refundStatus: refund.status, requestedRefundFen: amountFen }, refund };
 }
 
 async function returnConsumedPoints(reader, order, description, pointsToReturn) {
@@ -472,6 +498,7 @@ async function createOrder(payload) {
   assert(claims.workId === work.id && claims.serviceId === validation.service.id
     && String(claims.removalServiceId || '') === String(payload.removalServiceId || '')
     && String(claims.builderServiceId || '') === String(payload.builderServiceId || '')
+    && Number(claims.footTipCount || 0) === Number(payload.footTipCount || 0)
     && claims.technicianId === validation.technician.id && claims.date === payload.date && Number(claims.startAt) === Number(payload.startAt), 'QUOTE_MISMATCH', '预约信息发生变化，请重新报价');
   assert(Number(claims.pointsToUse) === price.pointsToUse
     && Number(claims.totalFen) === price.totalFen
@@ -530,11 +557,19 @@ async function createOrder(payload) {
       && currentWork && currentWork.published !== false && !currentWork.archived
       && currentWork.serviceId === validation.service.id, 'QUOTE_CHANGED', '项目或款式刚刚变更，请重新选择并报价', 409);
     for (const addon of validation.addons) {
+      if (addon.type === 'TIP') {
+        assert(supportsFootTipAddon(currentService)
+          && Number(addon.quantity) === Number(payload.footTipCount || 0)
+          && Number(addon.unitPriceFen) === FOOT_TIP_UNIT_PRICE_FEN
+          && Number(addon.priceFen) === Number(addon.quantity) * FOOT_TIP_UNIT_PRICE_FEN
+          && Number(addon.durationMinutes) === 0, 'QUOTE_CHANGED', '加脚甲片数量或价格已变更，请重新报价', 409);
+        continue;
+      }
       const currentAddon = await getOptional(COLLECTIONS.services, addon.id, transaction);
       assert(currentAddon && !currentAddon.archived && currentAddon.enabled !== false
         && currentAddon.categoryId === validation.service.categoryId && addonTypeOf(currentAddon) === addon.type
         && Number(currentAddon.durationMinutes) === Number(addon.durationMinutes)
-        && addonPriceFen(currentAddon, addon.type) === Number(addon.priceFen), 'QUOTE_CHANGED', '卸甲或建构选项刚刚变更，请重新报价', 409);
+        && addonPriceFen(currentAddon, addon.type, currentService) === Number(addon.priceFen), 'QUOTE_CHANGED', '卸甲或建构选项刚刚变更，请重新报价', 409);
     }
     await getOptional(COLLECTIONS.users, context.openid, transaction);
     const scheduleRevision = Number(validation.settings.scheduleRevision || 1);
@@ -1183,5 +1218,6 @@ module.exports = {
   PAYMENT_STATUS,
   noShowSettlement,
   addonTypeOf,
-  serviceIncludesBuilder
+  serviceIncludesBuilder,
+  footTipAddonSnapshot
 };

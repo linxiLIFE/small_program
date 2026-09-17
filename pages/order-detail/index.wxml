@@ -54,7 +54,7 @@
         </view>
       </view>
       <view wx:if="{{order.addons.length}}" class="addon-detail-list">
-        <view wx:for="{{order.addons}}" wx:key="id" class="detail-row"><text class="row-label">{{item.type === 'REMOVAL' ? '卸甲' : '建构'}} · {{item.name}}</text><text class="row-value">{{item.priceText}} · +{{item.durationText}}</text></view>
+        <view wx:for="{{order.addons}}" wx:key="id" class="detail-row"><text class="row-label">{{item.typeLabel}} · {{item.name}}</text><text class="row-value">{{item.priceText}} · {{item.durationText}}</text></view>
       </view>
     </view>
 

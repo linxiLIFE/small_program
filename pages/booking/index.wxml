@@ -11,10 +11,10 @@
     </view>
 
     <view wx:if="{{showsAddonStep}}" class="booking-step addon-step">
-      <view class="step-heading"><text class="step-number">01</text><text class="step-title">{{requiresBuilderChoice ? '卸甲 / 建构' : '卸甲'}}</text></view>
+      <view class="step-heading"><text class="step-number">01</text><text class="step-title">{{addonStepTitle}}</text></view>
       <view class="addon-panel card">
-        <view class="addon-group">
-        <view class="addon-group-heading"><text class="addon-question-title">卸甲</text><text class="addon-badge">卸本甲免费</text></view>
+        <view wx:if="{{showsRemovalChoice}}" class="addon-group">
+        <view class="addon-group-heading"><text class="addon-question-title">卸甲</text><text class="addon-badge">{{removalBadgeText}}</text></view>
         <view class="addon-options">
           <button class="addon-option {{selectedRemovalId === 'none' ? 'selected' : ''}}" data-type="removal" data-id="none" bindtap="selectAddon"><view class="addon-option-main"><text>不需要</text><text wx:if="{{selectedRemovalId === 'none'}}" class="addon-option-check">✓</text></view></button>
           <button wx:for="{{removalOptions}}" wx:key="id" class="addon-option {{selectedRemovalId === item.id ? 'selected' : ''}}" data-type="removal" data-id="{{item.id}}" bindtap="selectAddon"><view class="addon-option-main"><text>{{item.name}}</text><text wx:if="{{selectedRemovalId === item.id}}" class="addon-option-check">✓</text></view><text class="addon-option-meta">{{item.priceText}} · {{item.durationText}}</text></button>
@@ -26,6 +26,17 @@
           <button class="addon-option {{selectedBuilderId === 'none' ? 'selected' : ''}}" data-type="builder" data-id="none" bindtap="selectAddon"><view class="addon-option-main"><text>不需要</text><text wx:if="{{selectedBuilderId === 'none'}}" class="addon-option-check">✓</text></view></button>
           <button wx:for="{{builderOptions}}" wx:key="id" class="addon-option {{selectedBuilderId === item.id ? 'selected' : ''}}" data-type="builder" data-id="{{item.id}}" bindtap="selectAddon"><view class="addon-option-main"><text>{{item.name}}</text><text wx:if="{{selectedBuilderId === item.id}}" class="addon-option-check">✓</text></view><text class="addon-option-meta">{{item.priceText}} · {{item.durationText}}</text></button>
         </view>
+        </view>
+        <view wx:if="{{supportsFootTipAddon}}" class="addon-group foot-tip-group {{showsRemovalChoice ? '' : 'only'}}">
+          <view class="addon-group-heading foot-tip-heading"><view><text class="addon-question-title">是否需要加脚甲片</text><text class="foot-tip-subtitle">可按实际需要选择数量</text></view><text class="foot-tip-price">¥5/个</text></view>
+          <view class="foot-tip-choices">
+            <button class="foot-tip-choice {{selectedFootTipChoice === 'none' ? 'selected' : ''}}" data-choice="none" bindtap="selectFootTipChoice"><text>不需要</text><text wx:if="{{selectedFootTipChoice === 'none'}}">✓</text></button>
+            <button class="foot-tip-choice {{selectedFootTipChoice === 'add' ? 'selected' : ''}}" data-choice="add" bindtap="selectFootTipChoice"><text>需要加甲片</text><text wx:if="{{selectedFootTipChoice === 'add'}}">✓</text></button>
+          </view>
+          <view wx:if="{{selectedFootTipChoice === 'add'}}" class="foot-tip-counter">
+            <view class="foot-tip-counter-copy"><text>加甲片数量</text><text>小计 ¥{{footTipTotalText}} · 不增加服务时长</text></view>
+            <view class="quantity-stepper"><button disabled="{{selectedFootTipCount <= 1}}" data-delta="-1" bindtap="changeFootTipCount">−</button><view><text class="quantity-value">{{selectedFootTipCount}}</text><text>个</text></view><button disabled="{{selectedFootTipCount >= footTipOption.maxQuantity}}" data-delta="1" bindtap="changeFootTipCount">+</button></view>
+          </view>
         </view>
       </view>
     </view>
@@ -55,7 +66,7 @@
 
     <view class="booking-step slot-step">
       <view class="step-heading"><text class="step-number">{{showsAddonStep ? '04' : '03'}}</text><text class="step-title">时间</text></view>
-      <view wx:if="{{showsAddonStep && !addonsReady}}" class="timeline-no-options card">{{requiresBuilderChoice ? '先选卸甲和建构' : '先选卸甲'}}</view>
+      <view wx:if="{{showsAddonStep && !addonsReady}}" class="timeline-no-options card">{{addonIncompleteText}}</view>
       <view wx:elif="{{timeline.segments.length && timelineHasOptions}}" class="timeline-card card" data-time-periods="{{timePeriods.length}}">
         <view class="timeline-heading"><text class="timeline-date">{{selectedDate}}</text><text class="timeline-duration">{{service.durationText}}</text></view>
         <view class="timeline-stage">
@@ -91,11 +102,11 @@
 
     <view class="booking-policy-card card">
       <view class="policy-mark">!</view>
-      <view><text class="policy-title">预约与退款规则</text><text>{{refundRuleText}}</text><text>{{noShowRuleText}}</text></view>
+      <view><text class="policy-title">预约与退款规则</text><text>{{refundRuleText}}</text><text>{{noShowRuleText}}</text><text>非人为原因7天内免费修补</text></view>
     </view>
 
     <view class="booking-summary card">
-      <view wx:for="{{selectedAddons}}" wx:key="id" class="summary-row addon-summary-row"><text>{{item.type === 'REMOVAL' ? '卸甲' : '建构'}} · {{item.name}}（+{{item.durationMinutes}}分钟）</text><text>{{item.priceFen ? '¥' + item.priceText : '免费'}}</text></view>
+      <view wx:for="{{selectedAddons}}" wx:key="id" class="summary-row addon-summary-row"><text>{{item.typeLabel}} · {{item.name}}（{{item.detailText}}）</text><text>{{item.priceFen ? '¥' + item.priceText : '免费'}}</text></view>
       <view class="summary-row"><text>项目金额</text><text>{{quote.quoteId ? quote.totalText : '--'}}</text></view>
       <view class="summary-row discount-row"><text>积分抵扣（{{quote.quoteId ? quote.pointsToUse : 0}} 分）</text><text>{{quote.quoteId ? '- ' + quote.discountText : '--'}}</text></view>
       <view class="divider"></view>

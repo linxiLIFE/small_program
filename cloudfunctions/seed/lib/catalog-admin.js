@@ -62,7 +62,8 @@ async function saveService(payload = {}) {
   const serviceId = idOf(payload, 'svc');
   const name = nameOf(payload.name, '项目名称');
   const freeAsAddon = addonType === 'REMOVAL' && isFreeRemovalAddon({ id: serviceId, name });
-  const record = await persist(COLLECTIONS.services, serviceId, { name, categoryId: category.id || category._id, categoryName: category.name, coverUrl: imageOf(payload, 'coverUrl', true), description: String(payload.description || '').slice(0, 1000), tags: Array.isArray(payload.tags) ? payload.tags.slice(0, 12) : [], priceFen, durationMinutes, addonType, isAddon: !!addonType, freeAsAddon, bookableStandalone: true, enabled: payload.enabled !== false, ...sortable(payload) }, account);
+  const bookableStandalone = (category.id || category._id) !== 'foot-nail' || !addonType;
+  const record = await persist(COLLECTIONS.services, serviceId, { name, categoryId: category.id || category._id, categoryName: category.name, coverUrl: imageOf(payload, 'coverUrl', true), description: String(payload.description || '').slice(0, 1000), tags: Array.isArray(payload.tags) ? payload.tags.slice(0, 12) : [], priceFen, durationMinutes, addonType, isAddon: !!addonType, freeAsAddon, bookableStandalone, enabled: payload.enabled !== false, ...sortable(payload) }, account);
   if (addonType) {
     const serviceId = record.id || record._id;
     const existingWorks = (await loadAll(COLLECTIONS.works, { serviceId }, { maxRecords: 100 })).filter(item => !item.archived);

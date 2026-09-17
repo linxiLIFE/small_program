@@ -20,7 +20,7 @@ const demoServices: Service[] = [
 ];
 
 let demoOrders: AdminOrder[] = [
-  { id: 'demo-order-001', status: 'RESERVED', statusLabel: '待到店', serviceName: '奶油法式美甲', technicianName: '林老师', technicianId:'tech-lin', customerName: '演示顾客', phone: '13800138000', phoneMasked: '138****8000', startAtLabel: '9月9日 11:00', startAt:Date.now()+86400000,endAt:Date.now()+91800000,createdAt:Date.now()-86400000,paidAt:Date.now()-85000000,paidFen: 29900, remainingRefundableFen:29900, refundStatus: '' },
+  { id: 'demo-order-001', status: 'RESERVED', statusLabel: '待到店', serviceName: '奶油法式美甲', technicianName: '林老师', technicianId:'tech-lin', customerName: '演示顾客', phone: '13800138000', phoneMasked: '138****8000', startAtLabel: '9月9日 11:00', startAt:Date.now()+86400000,endAt:Date.now()+91800000,createdAt:Date.now()-86400000,paidAt:Date.now()-85000000,paidFen: 44900, remainingRefundableFen:44900, refundStatus: '', addons:[{id:'demo-removal',name:'卸本甲',type:'REMOVAL',priceFen:0,durationMinutes:15},{id:'demo-builder',name:'V 建构',type:'BUILDER',priceFen:15000,durationMinutes:20}] },
   { id: 'demo-order-002', status: 'COMPLETED', statusLabel: '已完成', serviceName: '自然野生眉设计', technicianName: '周老师', technicianId:'tech-zhou', customerName: '另一位顾客', phone: '13900000000', phoneMasked: '139****0000', startAtLabel: '9月7日 15:00', startAt:Date.now()-86400000,endAt:Date.now()-82800000,createdAt:Date.now()-172800000,paidAt:Date.now()-172000000,paidFen: 19900, remainingRefundableFen:19900, refundStatus: '' }
 ];
 
@@ -123,7 +123,7 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
     const technician = current.technicians.find((item) => item.id === payload.technicianId) || current.technicians[0];
     const plan = technician?.plan || demoSchedule(String(payload.date || today())).technicians[0]?.plan;
     if (!technician || !plan) throw new Error('演示技师不存在');
-    return { technician: { ...technician, plan: undefined }, days: [plan], plan, orders: [] } as T;
+    return { technician: { ...technician, plan: undefined }, days: [plan], plan, orders: demoOrders.filter((item) => item.technicianId === technician.id) } as T;
   }
   if (action === 'adminSaveScheduleDay') {
     const current = demoSchedule(String(payload.date || today()));

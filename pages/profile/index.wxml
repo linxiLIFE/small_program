@@ -16,8 +16,6 @@
     <view class="order-summary-grid"><view wx:for="{{orderSummary}}" wx:key="id" class="order-summary-item" data-status="{{item.id}}" bindtap="openOrdersStatus"><view class="order-summary-icon {{item.id === 'PENDING_PAYMENT' ? 'rose' : item.id === 'RESERVED' ? 'sand' : item.id === 'ACTIVE_SERVICE' ? 'plum' : 'green'}}">{{item.icon}}</view><text class="order-summary-count">{{item.count}}</text><text class="order-summary-label">{{item.label}}</text></view></view>
   </view>
 
-  <view class="reminder-card card" bindtap="enableReminders"><view class="menu-icon rose">◌</view><view class="menu-copy"><text>微信预约提醒</text><text>预约成功、到店与未到店退款</text></view><text class="menu-arrow">›</text></view>
-
   <view class="menu-card card">
     <view class="menu-item" bindtap="contactService"><view class="menu-icon sand">⌁</view><view class="menu-copy"><text>联系客服</text></view><text class="menu-arrow">›</text></view>
     <view class="divider"></view>
