@@ -86,6 +86,7 @@ async function route(action, payload) {
     case 'staffTransition': return booking.transitionStaff(payload && payload.orderId, payload && payload.action);
     case 'adminUploadImage': return require('./lib/media').uploadImage(payload || {});
     case 'adminSaveCategory': return require('./lib/catalog-admin').saveCategory(payload || {});
+    case 'adminReorderCatalog': return require('./lib/catalog-admin').reorderCatalog(payload || {});
     case 'adminDeleteCategory': return require('./lib/catalog-admin').deleteCatalog('category', payload && payload.categoryId);
     case 'adminDeleteService': return require('./lib/catalog-admin').deleteCatalog('service', payload && payload.serviceId);
     case 'adminDeleteWork': return require('./lib/catalog-admin').deleteCatalog('work', payload && payload.workId);

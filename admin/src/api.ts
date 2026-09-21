@@ -2,7 +2,7 @@ import type { AnalyticsResponse, AdminOrderPage, AdminOrderQuery, Category, Tech
 import { callBusiness } from './cloudbase';
 
 let demoWorks: Work[] = [];
-let demoCategories: Category[] = [{id:'nail',name:'美甲',enabled:true,icon:'✦',color:'#f1ded8',sort:0},{id:'brow',name:'美眉',enabled:true,icon:'⌁',color:'#eee6d9',sort:1}];
+let demoCategories: Category[] = [{id:'nail',name:'美甲',enabled:true,icon:'✦',color:'#f1ded8',sort:1},{id:'brow',name:'美眉',enabled:true,icon:'⌁',color:'#eee6d9',sort:2}];
 const demo = import.meta.env.VITE_ADMIN_DEMO === 'true';
 
 export function isDemoMode(): boolean {
@@ -71,6 +71,41 @@ function demoSchedule(date = today()): ScheduleResponse {
   };
 }
 
+function demoParentId(kind: string, item: Category | Service | Work): string {
+  if (kind === 'service') return (item as Service).categoryId;
+  if (kind === 'work') return (item as Work).serviceId;
+  return '';
+}
+
+function demoItems(kind: string): Array<Category | Service | Work> {
+  if (kind === 'category') return demoCategories;
+  if (kind === 'service') return demoServices;
+  if (kind === 'work') return demoWorks;
+  throw new Error('项目类型不正确');
+}
+
+function demoOrder(items: Array<Category | Service | Work>) {
+  return items.sort((left, right) => Number(left.sort || 0) - Number(right.sort || 0) || left.id.localeCompare(right.id));
+}
+
+function reorderDemoCatalog(kind: string, id: string, sort: number, previousParentId?: string): Category | Service | Work {
+  const items = demoItems(kind);
+  const target = items.find((item) => item.id === id);
+  if (!target) throw new Error('项目不存在或已删除');
+  const parentId = demoParentId(kind, target);
+  if (previousParentId !== undefined && previousParentId !== parentId) {
+    demoOrder(items.filter((item) => demoParentId(kind, item) === previousParentId && item.id !== id))
+      .forEach((item, index) => { item.sort = index + 1; });
+  }
+  const peers = demoOrder(items.filter((item) => demoParentId(kind, item) === parentId && item.id !== id));
+  const requested = Number.isSafeInteger(sort) && sort > 0 ? sort : peers.length + 1;
+  if (requested > peers.length + 1) throw new Error(`显示顺序必须在 1 到 ${peers.length + 1} 之间`);
+  const ordered = peers.slice();
+  ordered.splice(requested - 1, 0, target);
+  ordered.forEach((item, index) => { item.sort = index + 1; });
+  return target;
+}
+
 async function request<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   if (demo) return demoRequest<T>(action, payload);
   return callBusiness<T>(action, payload);
@@ -104,6 +139,7 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
   }
   if (action === 'staffSession') return {role:'OWNER',name:'店主'} as T;
   if (action === 'adminCatalog') return { categories: demoCategories, services: demoServices, works: demoWorks, technicians: demoTechnicians } as T;
+  if (action === 'adminReorderCatalog') return reorderDemoCatalog(String(payload.kind || ''), String(payload.id || ''), Number(payload.sort)) as T;
   if (['adminDeleteCategory','adminDeleteService','adminDeleteWork'].includes(action)) {
     const kind = action === 'adminDeleteCategory' ? 'category' : action === 'adminDeleteService' ? 'service' : 'work';
     const id = String(payload[`${kind}Id`] || '');
@@ -136,14 +172,16 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
   if (action === 'adminPaymentStatus') return { configured: false, missing: ['WX_MCH_ID', 'WX_MCH_SERIAL_NO', 'WX_API_V3_KEY', 'WX_PRIVATE_KEY', 'WX_NOTIFY_URL', 'WX_PLATFORM_PUBLIC_KEY_PEM_OR_WX_PLATFORM_CERT_PEM'], callbackCertificateConfigured: false, note: '仅返回状态，不返回密钥。' } as T;
   if (action === 'adminUploadImage') {
     const base64 = typeof payload.base64 === 'string' ? payload.base64 : '';
-    return { fileID: `demo-file-${Date.now()}`, url: base64 ? `data:image/jpeg;base64,${base64}` : '' } as T;
+    const mimeType = typeof payload.mimeType === 'string' && /^image\/(jpeg|png|webp)$/.test(payload.mimeType) ? payload.mimeType : 'image/jpeg';
+    return { fileID: `demo-file-${Date.now()}`, url: base64 ? `data:${mimeType};base64,${base64}` : '' } as T;
   }
   if (action === 'getSettings') return demoSettings as T;
   if (action === 'adminSaveWork') {
     const work = payload as unknown as Work;
     const index = demoWorks.findIndex(item => item.id === work.id);
-    if (index >= 0) demoWorks[index] = { ...work }; else demoWorks.push({ ...work });
-    return work as T;
+    const previousParentId = index >= 0 ? demoWorks[index].serviceId : undefined;
+    if (index >= 0) demoWorks[index] = { ...demoWorks[index], ...work }; else demoWorks.push({ ...work });
+    return reorderDemoCatalog('work', work.id, Number(work.sort), previousParentId) as T;
   }
   if (action === 'adminSaveFeaturedWorks') {
     const orderedIds = Array.isArray(payload.orderedIds) ? payload.orderedIds.map(String) : [];
@@ -153,15 +191,16 @@ async function demoRequest<T>(action: string, payload: Record<string, unknown>):
   if (action === 'adminSaveService') {
     const next = payload as unknown as Service;
     const index = demoServices.findIndex((item) => item.id === next.id);
+    const previousParentId = index >= 0 ? demoServices[index].categoryId : undefined;
     if (index >= 0) demoServices[index] = { ...demoServices[index], ...next };
     else demoServices.push(next);
-    return demoServices.find((item) => item.id === next.id) as T;
+    return reorderDemoCatalog('service', next.id, Number(next.sort), previousParentId) as T;
   }
   if (action === 'adminSaveCategory') {
     const next = payload as unknown as Category;
     const index = demoCategories.findIndex(item => item.id === next.id);
     if (index >= 0) demoCategories[index] = { ...demoCategories[index], ...next }; else demoCategories.push(next);
-    return next as T;
+    return reorderDemoCatalog('category', next.id, Number(next.sort)) as T;
   }
   if (action === 'adminSaveSettings') {
     Object.assign(demoSettings, payload, { version: demoSettings.version + 1 });
@@ -194,8 +233,9 @@ export const adminApi = {
   orders: (query: AdminOrderQuery | string = {}) => request<AdminOrderPage>('adminListOrders', typeof query==='string'?{status:query}:query as Record<string,unknown>),
   redeemCheckInCode: async (code:string) => normalizeCheckInResult(await request<RedeemCheckInResponse>('redeemCheckInCode',{code})),
   session: () => request<SessionInfo>('staffSession'),
-  uploadImage: (base64:string) => request<{fileID:string;url:string}>('adminUploadImage',{base64}),
+  uploadImage: (base64:string,mimeType='image/jpeg') => request<{fileID:string;url:string}>('adminUploadImage',{base64,mimeType}),
   saveCategory: (category:Category) => request<Category>('adminSaveCategory',category as unknown as Record<string,unknown>),
+  reorderCatalog: (kind:'category'|'service'|'work', id:string, sort:number) => request<{id:string;kind:string;sort:number;updated:number}>('adminReorderCatalog',{kind,id,sort}),
   deleteCategory: (categoryId:string) => request<{id:string;deleted:boolean;archivedServices:number;archivedWorks:number}>('adminDeleteCategory',{categoryId}),
   deleteService: (serviceId:string) => request<{id:string;deleted:boolean;archivedServices:number;archivedWorks:number}>('adminDeleteService',{serviceId}),
   deleteWork: (workId:string) => request<{id:string;deleted:boolean;archivedServices:number;archivedWorks:number}>('adminDeleteWork',{workId}),

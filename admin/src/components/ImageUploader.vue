@@ -5,7 +5,8 @@ import { adminApi } from '../api';
 const props = defineProps<{ modelValue: string; previewUrl?: string; label?: string; cropRatio?: number; cropLabel?: string }>();
 const emit = defineEmits<{ 'update:modelValue': [value: string]; busy: [value: boolean] }>();
 
-const MAX_EDGE = 1280;
+const MAX_BANNER_EDGE = 1280;
+const MAX_CATALOG_EDGE = 1024;
 const MAX_BASE64_LENGTH = 2700000;
 const preview = ref(props.previewUrl || (props.modelValue?.startsWith('cloud://') ? '' : props.modelValue));
 const uploading = ref(false);
@@ -29,6 +30,10 @@ const cropRatio = computed(() => {
 });
 
 const cropContext = computed(() => props.cropLabel || props.label || '图片');
+
+function outputMaxEdge(): number {
+  return Number(props.cropRatio || 0) === 2 ? MAX_BANNER_EDGE : MAX_CATALOG_EDGE;
+}
 
 const cropSize = computed(() => {
   const width = viewportSize.value.width || 640;
@@ -177,10 +182,16 @@ function cropRect() {
 }
 
 async function uploadCanvas(canvas: HTMLCanvasElement) {
-  let data = canvas.toDataURL('image/jpeg', .82);
-  if (data.length > MAX_BASE64_LENGTH) data = canvas.toDataURL('image/jpeg', .62);
+  const encode = (quality: number) => {
+    const webp = canvas.toDataURL('image/webp', quality);
+    return webp.startsWith('data:image/webp;') ? webp : canvas.toDataURL('image/jpeg', quality);
+  };
+  let data = encode(.78);
+  if (data.length > MAX_BASE64_LENGTH) data = encode(.62);
+  if (data.length > MAX_BASE64_LENGTH) data = canvas.toDataURL('image/jpeg', .48);
   if (data.length > MAX_BASE64_LENGTH) throw new Error('图片过大，请裁剪后重试');
-  const result = await adminApi.uploadImage(data.split(',')[1]);
+  const mimeType = /^data:([^;]+);/.exec(data)?.[1] || 'image/jpeg';
+  const result = await adminApi.uploadImage(data.split(',')[1], mimeType);
   emit('update:modelValue', result.fileID);
   preview.value = result.url || data;
 }
@@ -192,7 +203,7 @@ async function confirmCrop() {
   try {
     const source = cropSource.value;
     const rect = cropRect();
-    const scale = Math.min(1, MAX_EDGE / Math.max(rect.width, rect.height));
+    const scale = Math.min(1, outputMaxEdge() / Math.max(rect.width, rect.height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(rect.width * scale));
     canvas.height = Math.max(1, Math.round(rect.height * scale));
@@ -246,7 +257,7 @@ async function upload(event: Event) {
   emit('busy', true);
   try {
     const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const scale = Math.min(1, outputMaxEdge() / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(bitmap.width * scale));
     canvas.height = Math.max(1, Math.round(bitmap.height * scale));

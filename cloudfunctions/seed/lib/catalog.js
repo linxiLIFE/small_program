@@ -4,6 +4,16 @@ const { assert } = require('./errors');
 const { bookingCounts, byPopularity } = require('./analytics');
 const loadAll = findAll || find;
 
+function compareDisplayOrder(left, right) {
+  const leftSort = Number(left && left.sort);
+  const rightSort = Number(right && right.sort);
+  const leftRank = Number.isSafeInteger(leftSort) && leftSort > 0 ? leftSort : Number.MAX_SAFE_INTEGER;
+  const rightRank = Number.isSafeInteger(rightSort) && rightSort > 0 ? rightSort : Number.MAX_SAFE_INTEGER;
+  return leftRank - rightRank
+    || Number(left && left.createdAt || 0) - Number(right && right.createdAt || 0)
+    || String(left && (left.id || left._id) || '').localeCompare(String(right && (right.id || right._id) || ''));
+}
+
 function publicCategory(item) {
   return {
     id: item.id || item._id,
@@ -34,6 +44,7 @@ function publicService(item) {
     freeAsAddon: item.freeAsAddon === true || item.freeAsAddon === 1,
     bookableStandalone: serviceBookableStandalone(item),
     styleCount: Number(item.styleCount || 0),
+    sort: Number(item.sort || 0),
     version: item.version || 1
   };
 }
@@ -87,7 +98,8 @@ function publicWork(item, { includeBookingCount = true } = {}) {
     durationMinutes: Number(item.durationMinutes || 0),
     technicianId: item.technicianId || '',
     featured: item.featured === true,
-    featuredSort: Number(item.featuredSort || 0)
+    featuredSort: Number(item.featuredSort || 0),
+    sort: Number(item.sort || 0)
   };
   if (includeBookingCount) work.bookingCount = Number(item.bookingCount || 0);
   return work;
@@ -110,7 +122,7 @@ function publicTechnician(item) {
 
 async function listCategories() {
   const records = await find(COLLECTIONS.categories, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } });
-  return records.filter(item => !item.archived).map(publicCategory);
+  return records.filter(item => !item.archived).sort(compareDisplayOrder).map(publicCategory);
 }
 
 function countStyles(styles) {
@@ -128,15 +140,16 @@ async function loadCatalog(categoryId = '') {
     find(COLLECTIONS.categories, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } }),
     loadAll(COLLECTIONS.works, {}, { orderBy: { field: 'sort', direction: 'asc' } })
   ]);
-  const categories = categoryRecords.filter(item => !item.archived).map(publicCategory);
+  const categories = categoryRecords.filter(item => !item.archived).sort(compareDisplayOrder).map(publicCategory);
   const categoryById = new Map(categories.map((item) => [item.id, item]));
   const styleCounts = countStyles(styles);
   const services = serviceRecords
     .filter((item) => !item.archived && serviceBookableStandalone(item) && categoryById.has(item.categoryId))
     .map((item) => {
       const category = categoryById.get(item.categoryId);
-      return { ...publicService(item), styleCount: styleCounts[item.id || item._id] || 0, categoryName: category.name };
-    });
+      return { ...publicService(item), styleCount: styleCounts[item.id || item._id] || 0, categoryName: category.name, categorySort: category.sort };
+    })
+    .sort((left, right) => Number(left.categorySort || 0) - Number(right.categorySort || 0) || compareDisplayOrder(left, right));
   return { categories, services, styles };
 }
 
@@ -214,11 +227,18 @@ function decorateWorks(records, services, counts = {}, { includeBookingCount = t
         ...(includeBookingCount ? { bookingCount: counts[item.id || item._id] || 0 } : {}),
         categoryId: service.categoryId,
         categoryName: service.categoryName,
+        categorySort: Number(service.categorySort || 0),
+        serviceSort: Number(service.sort || 0),
         serviceName: service.name,
         durationMinutes: service.durationMinutes
       };
     });
-  return sortByPopularity ? works.sort(byPopularity) : works;
+  return sortByPopularity
+    ? works.sort((left, right) => Number(left.categorySort || 0) - Number(right.categorySort || 0)
+      || Number(left.serviceSort || 0) - Number(right.serviceSort || 0)
+      || compareDisplayOrder(left, right)
+      || byPopularity(left, right))
+    : works.sort(compareDisplayOrder);
 }
 
 async function listWorks(categoryId = '') {

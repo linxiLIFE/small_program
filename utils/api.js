@@ -1,5 +1,6 @@
 const cloudConfig = require('../cloud-config');
 const mock = require('./mock-data');
+const { withCachedImagePaths } = require('./image-cache');
 
 const responseCache = new Map();
 const pendingRequests = new Map();
@@ -69,7 +70,7 @@ function cacheKey(action, payload) {
 function cachedCall(action, payload, fallback) {
   const key = cacheKey(action, payload);
   const cached = responseCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value);
+  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(withCachedImagePaths(cached.value));
 
   const pending = pendingRequests.get(key);
   if (pending) return pending;
@@ -87,7 +88,7 @@ function cachedCall(action, payload, fallback) {
       }
     }
     pendingRequests.delete(key);
-    return value;
+    return withCachedImagePaths(value);
   }, (error) => {
     pendingRequests.delete(key);
     throw error;
