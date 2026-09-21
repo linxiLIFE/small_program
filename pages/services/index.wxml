@@ -8,6 +8,14 @@
     </view>
 
     <view wx:if="{{activeCategoryId}}" class="selection-section project-selection"><view class="selection-heading"><text class="section-title">选择小项目</text><text class="selection-count">{{filteredServices.length}} 个项目</text></view>
+      <view wx:if="{{activeCategoryId === 'nail'}}" class="nail-removal-notice">
+        <view class="nail-removal-orb"><text>✦</text></view>
+        <view class="nail-removal-copy">
+          <view class="nail-removal-title-row"><text class="nail-removal-title">温馨提醒</text></view>
+          <text class="nail-removal-main">美甲金额超过 <text class="nail-removal-highlight">¥40</text>，卸甲服务费全免</text>
+          <text class="nail-removal-subtitle">¥40 及以下项目按所选卸甲方式计费，费用以预约页展示为准</text>
+        </view>
+      </view>
       <view wx:if="{{filteredServices.length}}" class="project-list"><service-card wx:for="{{filteredServices}}" wx:key="id" service="{{item}}" compact="{{true}}" selected="{{activeServiceId === item.id}}" bindselect="handleProjectTap"/></view>
       <empty-state wx:else title="该大项暂未设置小项目"/>
     </view>

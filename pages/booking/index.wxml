@@ -102,7 +102,7 @@
 
     <view class="booking-policy-card card">
       <view class="policy-mark">!</view>
-      <view><text class="policy-title">预约与退款规则</text><text>{{refundRuleText}}</text><text>{{noShowRuleText}}</text><text>非人为原因7天内免费修补</text></view>
+      <view><text class="policy-title">预约与退款规则</text><text>{{refundRuleText}}</text><text>{{noShowRuleText}}</text><text>非人为原因7天内免费修补</text><text>消费1元可累积1积分，20积分可抵扣1元</text></view>
     </view>
 
     <view class="booking-summary card">
