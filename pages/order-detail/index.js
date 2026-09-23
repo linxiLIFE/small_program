@@ -37,7 +37,7 @@ function paymentProgress(order, confirming = false) {
 }
 
 Page({
-  data: { loading: true, loadError: '', order: {}, actions: [], canCancel: false, paying: false, paymentConfirming: false, paymentChecking: false, qrLoading: false, qrDataUrl: '', workImageError: false },
+  data: { loading: true, loadError: '', order: {}, actions: [], canCancel: false, paying: false, paymentConfirming: false, paymentChecking: false, qrLoading: false, qrDataUrl: '', workImageError: false, workImageFallbackAttempted: false },
 
   onLoad(options) {
     this.orderId = options.orderId || '';
@@ -68,7 +68,16 @@ Page({
     }
     if (!this.data.order.id) this.setData({ loading: true, loadError: '' });
     try {
-      const order = await api.getOrder(this.orderId);
+      const [order, settings] = await Promise.all([
+        api.getOrder(this.orderId),
+        typeof api.getSettings === 'function'
+          ? api.getSettings().catch((error) => {
+            console.warn('预约提醒设置加载失败', { code: error.code || error.errCode || '' });
+            return null;
+          })
+          : Promise.resolve(null)
+      ]);
+      this.bookingSettings = settings;
       if (!order) {
         this.setData({ loading: false, loadError: '订单不存在或已被移除。', order: {} });
         return;
@@ -88,6 +97,7 @@ Page({
         loadError: '',
         paymentConfirming: confirming,
         workImageError: false,
+        workImageFallbackAttempted: false,
         order: {
           ...order,
           displayTitle,
@@ -147,6 +157,12 @@ Page({
   },
 
   handleWorkImageError() {
+    const work = this.data.order && this.data.order.work;
+    const remoteUrl = work && work.imageRemoteUrl;
+    if (!this.data.workImageFallbackAttempted && remoteUrl && remoteUrl !== work.imageUrl) {
+      this.setData({ workImageFallbackAttempted: true });
+      return;
+    }
     this.setData({ workImageError: true });
   },
 
@@ -207,20 +223,23 @@ Page({
       return;
     }
     this.setData({ paying: true });
-    wx.showLoading({ title: '准备支付' });
     try {
+      // 继续支付同样需要在用户点击后先申请本次预约的订阅额度。
+      try {
+        const settings = this.bookingSettings || (typeof api.getSettings === 'function' ? await api.getSettings() : null);
+        if (typeof api.requestSubscriptionEvents === 'function') {
+          await api.requestSubscriptionEvents(settings, ['appointmentSuccess', 'arrivalReminder', 'noShowRefund']);
+        }
+      } catch (error) {
+        console.warn('预约提醒授权未完成', { code: error.code || error.errCode || '' });
+      }
+      wx.showLoading({ title: '准备支付' });
       const payment = await api.preparePayment(this.data.order.id);
       wx.hideLoading();
       if (!payment || !payment.configured || !payment.timeStamp) {
         this.setData({ paying: false });
         wx.showModal({ title: '微信支付待配置', content: (payment && payment.message) || '请先在服务端完成商户资质配置。', showCancel: false });
         return;
-      }
-      try {
-        const settings = await api.getSettings();
-        await api.requestSubscriptionEvents(settings, ['appointmentSuccess', 'arrivalReminder', 'noShowRefund']);
-      } catch (error) {
-        console.warn('预约提醒授权未完成', { code: error.code || error.errCode || '' });
       }
       wx.requestPayment({
         timeStamp: String(payment.timeStamp), nonceStr: payment.nonceStr, package: payment.package,

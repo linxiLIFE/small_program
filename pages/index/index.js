@@ -42,7 +42,7 @@ Page({
     });
     const banners = (result.banners || [])
       .filter((item) => item && item.imageUrl)
-      .map((item, index) => ({ ...item, lazy: index > 0 }));
+      .map((item, index) => ({ ...item, lazy: index > 0, imageError: false, imageFallbackAttempted: false }));
     const works = (result.works || []).map((work) => ({
       ...work,
       serviceName: work.serviceName || services.find((service) => service.id === work.serviceId)?.name || ''
@@ -60,8 +60,18 @@ Page({
   },
 
   previewBanner(event) {
-    const urls = this.data.banners.map(item => item.imageUrl).filter(Boolean);
+    const urls = this.data.banners.map(item => item.imageFallbackAttempted ? item.imageRemoteUrl : item.imageUrl).filter(Boolean);
     if (urls.length) wx.previewImage({urls, current: urls[event.currentTarget.dataset.index]});
+  },
+  handleBannerImageError(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    const banner = this.data.banners[index];
+    if (!banner) return;
+    if (!banner.imageFallbackAttempted && banner.imageRemoteUrl && banner.imageRemoteUrl !== banner.imageUrl) {
+      this.setData({ [`banners[${index}].imageFallbackAttempted`]: true });
+      return;
+    }
+    this.setData({ [`banners[${index}].imageError`]: true });
   },
   openLocation() {
     const store=this.data.store;

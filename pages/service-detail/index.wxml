@@ -8,7 +8,7 @@
   <empty-state wx:elif="{{error}}" title="{{error}}" button-text="重试" bindaction="loadDetail"/>
   <block wx:else>
     <view class="detail-cover-wrap">
-      <image wx:if="{{service.coverUrl}}" class="detail-cover" mode="aspectFill" webp="{{true}}" src="{{service.coverUrl}}" />
+      <image wx:if="{{service.coverUrl && !coverImageError}}" class="detail-cover" mode="aspectFill" webp="{{true}}" src="{{coverFallbackAttempted ? service.coverRemoteUrl : service.coverUrl}}" binderror="handleCoverImageError" />
       <view wx:else class="detail-cover-fallback"><text>四个小姐姐的店</text><text>{{service.categoryName}}</text></view>
       <view class="cover-overlay"></view>
       <view class="cover-caption"><text class="cover-title">{{service.name}}</text></view>

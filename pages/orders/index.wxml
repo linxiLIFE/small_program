@@ -11,7 +11,7 @@
   <view wx:if="{{loading}}" class="order-loading"><view wx:for="{{skeletons}}" wx:key="*this" class="skeleton order-skeleton"></view></view>
   <view wx:elif="{{orders.length}}" class="order-list">
     <view wx:for="{{orders}}" wx:key="id" class="order-card card" data-id="{{item.id}}" bindtap="openOrder">
-      <view class="order-visual"><image wx:if="{{item.work && item.work.imageUrl && !item.imageError}}" src="{{item.work.imageUrl}}" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" data-id="{{item.id}}" binderror="handleImageError"/><view wx:else class="order-visual-fallback">预约</view></view>
+      <view class="order-visual"><image wx:if="{{item.work && item.work.imageUrl && !item.imageError}}" src="{{item.imageFallbackAttempted ? item.work.imageRemoteUrl : item.work.imageUrl}}" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" data-id="{{item.id}}" binderror="handleImageError"/><view wx:else class="order-visual-fallback">预约</view></view>
       <view class="order-content">
         <view class="order-card-top">
           <view class="order-card-title">

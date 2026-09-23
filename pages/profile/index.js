@@ -18,7 +18,7 @@ function buildOrderSummary(orders) {
 }
 
 Page({
-  data: { loading: true, profile: {}, storePhone: '', settings: {}, isDemo: false, editingName: false, draftNickname: '', orderSummary: buildOrderSummary([]) },
+  data: { loading: true, profile: {}, avatarError: false, storePhone: '', settings: {}, isDemo: false, editingName: false, draftNickname: '', orderSummary: buildOrderSummary([]) },
 
   onLoad(options) {
     if (options && options.invite) {
@@ -44,6 +44,7 @@ Page({
       this.setData({
         loading: false,
         profile: { ...profile, phoneLabel: profile.phoneMasked || maskPhone(profile.phone) },
+        avatarError: false,
         settings,
         storePhone: settings && settings.store ? settings.store.phone || '' : '',
         isDemo: !!getApp().globalData.isDemo,
@@ -58,6 +59,10 @@ Page({
 
   openOrders() {
     wx.navigateTo({ url: '/pages/orders/index' });
+  },
+
+  handleAvatarError() {
+    this.setData({ avatarError: true });
   },
 
   openOrdersStatus(event) {

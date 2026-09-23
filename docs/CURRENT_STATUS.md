@@ -2,13 +2,27 @@
 
 > 这份文档是项目继续开发时的上下文记录。内容以实际操作和测试结果为准。
 
-## 2026-09-22 目录顺序编辑与图片缓存提速（仅本地源码）
+## 2026-09-22 审阅问题与目录卡片布局修复（云函数与后台已部署；小程序未上传）
+
+- 管理后台小项目卡片的显示序号改为叠在封面上，不再占网格列；卡片宽度按边框盒计算，避免序号和拖动把手挤乱图片、标题及状态。款式网格同一行拖动按左右半区判断，跨行拖动按上下半区判断。
+- 目录排序统一把 0、缺失或无效序号排在有效序号之后，并在后台响应中保留创建时间作旧记录的稳定回退；款式目录按大项、小项目、款式的人工顺序展示，不再被人气排序遮盖。编辑或拖动一个目录组时，服务端事务会压紧并整理该组的旧序号；未对生产目录执行迁移。
+- 小程序只采用仍存在的本地图片缓存文件；发现路径失效时仅清除缓存索引，不删除本地文件，并继续显示网络图、尝试恢复临时 URL。卡片、首页横幅、详情、预约、订单及头像图片失败时会先回退网络地址，再显示占位图。
+- 管理后台不再依赖 `createImageBitmap`；上传压缩和裁切统一用 `Image` 与 Canvas 处理，兼容缺少该 API 的浏览器。云函数临时图片 URL 对未解析文件重试一次。
+- 发布门槛中的 `npm run prepare:functions`、相关 JavaScript `node --check`、共享模块 `cmp`、`git diff --check` 和管理后台 `vue-tsc`/Vite 生产构建均通过；Vite 仍提示 JS 分包超过 500 kB。按本轮工作约束未运行项目测试。
+- 2026-09-22 已将 `api`、`admin-api` 单独部署到 `cloud1-d9g5pfect2ece00fa`，云端函数列表状态均为 `Deployment completed`；`jobs`、`payment-callback` 未更新，未部署 `seed`。两个入口的只读 `getHome` 和 `listServices` 调用成功，大项顺序为美甲 1、脚部美甲 2、睫毛 3、纹绣 4；服务列表各返回 51 项，抽查款式列表成功。未执行目录写入、数据库迁移或订单操作。
+- 管理后台通过 `tcb hosting deploy admin/dist cloud-admin --safe --verify --json -e cloud1-d9g5pfect2ece00fa` 发布 17 个文件，`verified: true`，备份位于 `.cloudbase-backup/1790012231094/`。线上 `/cloud-admin/index.html` 返回 HTTP 200；`index-YFYe_0Bu.js`（SHA-256 `fc25df8b7a76936e94f6ceba86cb0344f3d384ac634425ca22d527c9bf01bc67`）与 `index-DztgM25-.css`（SHA-256 `5db2e7f26a86172ba0c563d06ecdbdc5d22cab6fdbd9c74fb8a7a794e6b1a390`）均与本地产物一致。
+- 未上传小程序体验版，因此小程序本地图片缓存和顾客端图片回退尚未生效；后台排序布局尚未用真实店主会话现场操作验收。
+
+## 2026-09-22 目录顺序编辑与图片缓存提速（后台与 api/admin-api 已部署；小程序未上传）
 
 - 大项、小项目和款式按各自同级范围保存连续的唯一 `sort` 序号。管理后台卡片显示当前序号，长按排序把手可拖动；编辑窗口可输入序号，保存时在事务中移动条目并调整受影响的同级序号。新增条目排到同级末尾，归档删除后压紧序号。
 - 顾客端大项、小项目和款式列表按已保存的目录顺序读取；首页精选继续使用精选列表自己的 `featuredSort`。
 - 管理后台新上传图片优先转为 WebP，款式/项目图最长边 1024px，横幅最长边 1280px；不支持 WebP Canvas 的浏览器改用 JPEG。历史云图片不自动重写。
 - 小程序 API 响应仍保留短时数据缓存；此外对带 CloudBase 文件 ID 的图片，首次网络显示后低优先级下载并保存最多 40 张、累计不超过 12 MiB 的本地副本，后续响应按文件 ID 替换为本地路径。缓存达到上限后停止新增缓存，不主动删除本地文件。
-- 本轮只改本地代码，未运行测试或生产构建，未部署云函数/后台，未修改数据库目录，也未上传小程序体验版；拖动、真机本地文件缓存和图片首屏速度仍需后续验收。
+- 发布前已执行 `npm run prepare:functions`、`npm --prefix admin run build -- --emptyOutDir=false`、相关 JavaScript `node --check`、目录模块 `cmp` 和 `git diff --check`；后台构建通过，Vite 提示主 JS 分包超过 500 kB。按本轮工作约束未运行项目测试。
+- 2026-09-22 将 `api`、`admin-api` 发布到 `cloud1-d9g5pfect2ece00fa`，函数列表反查均为 `Deployment completed`。`jobs`、`payment-callback` 未更新；生产函数清单未包含 `seed`。线上只读调用 `api/getHome` 返回 `InvokeResult=0`，大项顺序为美甲 1、脚部美甲 2、睫毛 3、纹绣 4；没有执行目录写入、数据库迁移或订单操作。
+- 管理后台已通过 `tcb hosting deploy admin/dist cloud-admin --safe --verify --json` 发布 12 个文件，`verified: true`，安全备份位于 `.cloudbase-backup/1790010025601/`。线上 `/cloud-admin/index.html` 返回 HTTP 200；入口引用 `index-Ro2PMzaX.js`（SHA-256 `03223fa5308bb1ef61149f55af9018a1d41d932cf0c716db5cc876e9e3e2efbb`）和 `index-CKlYa1M_.css`（SHA-256 `7b1890e99cbb720d94c98dd42c7fc1cee431ce9a9f6b31c08c1782a62b33ab9f`），均与本地产物一致。
+- 未上传小程序体验版；因此 `utils/image-cache.js` 的顾客端本地图片缓存仍需随小程序上传后才会生效。尚未使用真实店主会话操作拖动/保存排序，后台交互和小程序真机图片速度仍待验收。
 
 ## 2026-09-17 脚部美甲目录收口与按数量加脚甲片（服务端与后台已发布；小程序未上传）
 

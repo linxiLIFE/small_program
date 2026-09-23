@@ -147,7 +147,10 @@ function imageFromFile(file: File): Promise<{ src: string; image: HTMLImageEleme
   const src = URL.createObjectURL(file);
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve({ src, image });
+    image.onload = () => {
+      if (image.naturalWidth > 0 && image.naturalHeight > 0) resolve({ src, image });
+      else { URL.revokeObjectURL(src); reject(new Error('图片无法读取，请换一张图片')); }
+    };
     image.onerror = () => { URL.revokeObjectURL(src); reject(new Error('图片无法读取，请换一张图片')); };
     image.src = src;
   });
@@ -255,22 +258,24 @@ async function upload(event: Event) {
   }
   uploading.value = true;
   emit('busy', true);
+  let source: { src: string; image: HTMLImageElement } | null = null;
   try {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, outputMaxEdge() / Math.max(bitmap.width, bitmap.height));
+    source = await imageFromFile(file);
+    const image = source.image;
+    const scale = Math.min(1, outputMaxEdge() / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
     const context = canvas.getContext('2d');
-    if (!context) { bitmap.close(); throw new Error('浏览器无法处理图片'); }
+    if (!context) throw new Error('浏览器无法处理图片');
     context.fillStyle = '#ffffff';
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
+    context.drawImage(image, 0, 0, image.naturalWidth, image.naturalHeight, 0, 0, canvas.width, canvas.height);
     await uploadCanvas(canvas);
   } catch (err) {
     error.value = err instanceof Error ? err.message : '上传失败，请重试';
   } finally {
+    if (source) URL.revokeObjectURL(source.src);
     uploading.value = false;
     emit('busy', false);
     input.value = '';

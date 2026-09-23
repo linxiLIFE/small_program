@@ -406,6 +406,7 @@ async function listCatalog() {
   return {
     categories: categories.filter(item => !item.archived).map(item => ({
       ...publicCategory(item),
+      createdAt: Number(item.createdAt || 0),
       serviceCount: serviceCounts[item.id || item._id] || 0,
       styleCount: categoryStyleCounts[item.id || item._id] || 0,
       coverUrl: item.coverUrl || '',
@@ -413,12 +414,13 @@ async function listCatalog() {
     })).sort(compareCatalogOrder),
     services: visibleServices.map(item => ({
       ...publicService(item),
+      createdAt: Number(item.createdAt || 0),
       styleCount: styleCounts[item.id || item._id] || 0,
       categoryName: categories.find(c => (c.id || c._id) === item.categoryId)?.name || item.categoryName,
       enabled: item.enabled !== false,
       sort: item.sort || 0
     })).sort(compareCatalogOrder),
-    works: visibleWorks.map(item => ({ ...publicWork(item), bookingCount: counts[item.id || item._id] || 0, published: item.published !== false, sort: item.sort || 0 })).sort(compareCatalogOrder),
+    works: visibleWorks.map(item => ({ ...publicWork(item), createdAt: Number(item.createdAt || 0), bookingCount: counts[item.id || item._id] || 0, published: item.published !== false, sort: item.sort || 0 })).sort(compareCatalogOrder),
     technicians: technicians.filter(item => !item.archived).map(item => {
       const categoryIds = Array.isArray(item.categoryIds) && item.categoryIds.length
         ? item.categoryIds

@@ -94,10 +94,12 @@ test('explicit refund request amount wins over the legacy fallback', () => {
 });
 
 test('subscription template data uses the configured keyword types', () => {
-  const order = { startAt: Date.parse('2026-09-15T10:30:00+08:00'), workSnapshot: { title: '奶油法式美甲' }, technicianSnapshot: { name: '林老师' }, refundAmountFen: 29900 };
+  const order = { startAt: Date.parse('2026-09-15T10:30:00+08:00'), endAt: Date.parse('2026-09-15T12:00:00+08:00'), durationMinutes: 90, workSnapshot: { title: '奶油法式美甲' }, technicianSnapshot: { name: '林老师' }, refundAmountFen: 29900 };
   const settings = { store: { address: '哈尔滨市南岗区' } };
-  assert.deepStrictEqual(templateData('appointmentSuccess', { serviceKey: 'thing1', timeKey: 'date2', technicianKey: 'thing19' }, order, settings), { thing1: { value: '奶油法式美甲' }, date2: { value: '2026-09-15' }, thing19: { value: '林老师' } });
-  assert.deepStrictEqual(templateData('arrivalReminder', { serviceKey: 'thing2', timeKey: 'time1', addressKey: 'thing7' }, order, settings), { thing2: { value: '奶油法式美甲' }, time1: { value: '10:30' }, thing7: { value: '哈尔滨市南岗区' } });
+  assert.deepStrictEqual(templateData('appointmentSuccess', { serviceKey: 'thing1', timeKey: 'date2', technicianKey: 'thing19' }, order, settings), { thing1: { value: '奶油法式美甲' }, date2: { value: '2026-09-15 10:30-12:00' }, thing19: { value: '林老师' } });
+  assert.deepStrictEqual(templateData('arrivalReminder', { serviceKey: 'thing2', timeKey: 'time1', addressKey: 'thing7' }, order, settings), { thing2: { value: '奶油法式美甲' }, time1: { value: '10:30-12:00' }, thing7: { value: '哈尔滨市南岗区' } });
+  const fallbackOrder = { ...order, endAt: 0 };
+  assert.strictEqual(templateData('arrivalReminder', { serviceKey: 'thing2', timeKey: 'time1', addressKey: 'thing7' }, fallbackOrder, settings).time1.value, '10:30-12:00');
   const checkInData = templateData('checkInSuccess', { serviceKey: 'thing1', timeKey: 'time5' }, order, settings);
   assert.deepStrictEqual(Object.keys(checkInData), ['thing1', 'time5']);
   assert(/^\d{2}:\d{2}$/.test(checkInData.time5.value));

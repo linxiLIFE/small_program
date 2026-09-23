@@ -4,7 +4,9 @@ const { formatMoney, formatDuration } = require('../../utils/format');
 Page({
   data: {
     loading: true, error: '',
-    service: {}
+    service: {},
+    coverImageError: false,
+    coverFallbackAttempted: false
   },
 
   onLoad(options) {
@@ -25,7 +27,7 @@ Page({
         priceText: formatMoney(service.priceFen, false),
         durationText: formatDuration(service.durationMinutes)
       };
-      this.setData({ loading: false, service: normalized });
+      this.setData({ loading: false, service: normalized, coverImageError: false, coverFallbackAttempted: false });
     } catch(error) {
       if (requestId !== this.requestId) return;
       this.setData({ loading: false, error: hasData ? '' : (error.message || '加载失败') });
@@ -35,6 +37,15 @@ Page({
   startBooking() {
     const service = this.data.service;
     wx.navigateTo({ url: `/pages/style-select/index?categoryId=${encodeURIComponent(service.categoryId)}&serviceId=${encodeURIComponent(service.id)}` });
+  },
+
+  handleCoverImageError() {
+    const remoteUrl = this.data.service.coverRemoteUrl;
+    if (!this.data.coverFallbackAttempted && remoteUrl && remoteUrl !== this.data.service.coverUrl) {
+      this.setData({ coverFallbackAttempted: true });
+      return;
+    }
+    this.setData({ coverImageError: true });
   },
 
   goBack() {

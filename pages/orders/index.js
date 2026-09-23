@@ -89,6 +89,7 @@ Page({
         durationText: formatDuration(item.durationMinutes),
         addonLabel: (item.addons || []).map((addon) => addon.name).join(' · '),
         imageError: false,
+        imageFallbackAttempted: false,
         technicianLabel: item.technicianName || '待安排',
         amountLabel: amountLabel(item)
       }));
@@ -113,7 +114,13 @@ Page({
   handleImageError(event) {
     const id = event.currentTarget.dataset.id;
     const index = this.data.orders.findIndex((item) => item.id === id);
-    if (index >= 0) this.setData({ [`orders[${index}].imageError`]: true });
+    if (index < 0) return;
+    const work = this.data.orders[index].work || {};
+    if (!this.data.orders[index].imageFallbackAttempted && work.imageRemoteUrl && work.imageRemoteUrl !== work.imageUrl) {
+      this.setData({ [`orders[${index}].imageFallbackAttempted`]: true });
+      return;
+    }
+    this.setData({ [`orders[${index}].imageError`]: true });
   },
 
   loadMore() {

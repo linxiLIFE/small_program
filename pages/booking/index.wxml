@@ -2,9 +2,9 @@
   <view wx:if="{{loading}}" class="booking-loading">
     <view class="skeleton booking-skeleton"></view><view class="skeleton booking-skeleton short"></view>
   </view>
-  <view wx:elif="{{!service.id}}" class="booking-empty"><view class="booking-empty-art"><image wx:if="{{emptyImage}}" src="{{emptyImage}}" mode="aspectFill" webp="{{true}}"/><view wx:else class="booking-empty-art-fallback"><view class="booking-art-orbit orbit-one"></view><view class="booking-art-orbit orbit-two"></view><view class="booking-art-core"><text>拾</text></view><text class="booking-art-spark spark-one">✦</text><text class="booking-art-spark spark-two">·</text></view><view class="booking-empty-art-shade"></view></view><button class="primary-button" bindtap="chooseStyle">选款</button></view>
+  <view wx:elif="{{!service.id}}" class="booking-empty"><view class="booking-empty-art"><image wx:if="{{emptyImage && !emptyImageError}}" src="{{emptyImageFallbackAttempted ? emptyImageRemoteUrl : emptyImage}}" mode="aspectFill" webp="{{true}}" binderror="handleEmptyImageError"/><view wx:else class="booking-empty-art-fallback"><view class="booking-art-orbit orbit-one"></view><view class="booking-art-orbit orbit-two"></view><view class="booking-art-core"><text>拾</text></view><text class="booking-art-spark spark-one">✦</text><text class="booking-art-spark spark-two">·</text></view><view class="booking-empty-art-shade"></view></view><button class="primary-button" bindtap="chooseStyle">选款</button></view>
   <block wx:else>
-    <view wx:if="{{work}}" class="selected-style card"><image wx:if="{{work.imageUrl && !workImageError}}" src="{{work.imageUrl}}" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" binderror="handleWorkImageError"/><view wx:else class="selected-style-image-fallback">款式</view><view class="selected-style-copy"><text class="selected-style-title">{{work.title}}</text><text class="selected-style-meta">{{service.categoryName}} · {{service.name}}</text></view><button bindtap="chooseStyle">更换</button></view>
+    <view wx:if="{{work}}" class="selected-style card"><image wx:if="{{work.imageUrl && !workImageError}}" src="{{workImageFallbackAttempted ? work.imageRemoteUrl : work.imageUrl}}" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" binderror="handleWorkImageError"/><view wx:else class="selected-style-image-fallback">款式</view><view class="selected-style-copy"><text class="selected-style-title">{{work.title}}</text><text class="selected-style-meta">{{service.categoryName}} · {{service.name}}</text></view><button bindtap="chooseStyle">更换</button></view>
     <view class="booking-service card">
       <view class="booking-service-copy"><text class="booking-service-name">{{service.name}}</text><text class="booking-service-meta">{{service.durationText}} · {{service.categoryName}}</text></view>
       <text class="booking-service-price">¥{{service.priceText}}</text>
@@ -46,7 +46,7 @@
       <scroll-view class="technician-scroll" scroll-x="true" show-scrollbar="false">
         <view class="technician-scroll-inner">
           <view wx:for="{{technicians}}" wx:key="id" class="booking-tech {{selectedTechnicianId === item.id ? 'selected' : ''}}" data-id="{{item.id}}" bindtap="selectTechnician">
-            <image wx:if="{{item.avatarUrl}}" class="booking-tech-avatar" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{item.avatarUrl}}" />
+            <image wx:if="{{item.avatarUrl && !item.avatarError}}" class="booking-tech-avatar" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{item.avatarFallbackAttempted ? item.avatarRemoteUrl : item.avatarUrl}}" data-id="{{item.id}}" binderror="handleTechnicianAvatarError" />
             <view wx:else class="booking-tech-avatar avatar-fallback">{{item.initial}}</view>
             <text class="booking-tech-name">{{item.name}}</text><text class="booking-tech-title">{{item.title}}</text>
             <view wx:if="{{selectedTechnicianId === item.id}}" class="tech-check">✓</view>

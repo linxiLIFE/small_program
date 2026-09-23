@@ -4,14 +4,40 @@ const { assert } = require('./errors');
 const { bookingCounts, byPopularity } = require('./analytics');
 const loadAll = findAll || find;
 
+function displayRank(value) {
+  const sort = Number(value);
+  return Number.isSafeInteger(sort) && sort > 0 ? sort : Number.MAX_SAFE_INTEGER;
+}
+
 function compareDisplayOrder(left, right) {
-  const leftSort = Number(left && left.sort);
-  const rightSort = Number(right && right.sort);
-  const leftRank = Number.isSafeInteger(leftSort) && leftSort > 0 ? leftSort : Number.MAX_SAFE_INTEGER;
-  const rightRank = Number.isSafeInteger(rightSort) && rightSort > 0 ? rightSort : Number.MAX_SAFE_INTEGER;
+  const leftRank = displayRank(left && left.sort);
+  const rightRank = displayRank(right && right.sort);
   return leftRank - rightRank
     || Number(left && left.createdAt || 0) - Number(right && right.createdAt || 0)
     || String(left && (left.id || left._id) || '').localeCompare(String(right && (right.id || right._id) || ''));
+}
+
+function addCatalogOrderContext(target, context = {}) {
+  Object.defineProperties(target, {
+    categoryCreatedAt: { value: Number(context.categoryCreatedAt || 0), enumerable: false },
+    categoryOrderId: { value: String(context.categoryOrderId || target.categoryId || ''), enumerable: false },
+    serviceCreatedAt: { value: Number(context.serviceCreatedAt || 0), enumerable: false },
+    serviceOrderId: { value: String(context.serviceOrderId || target.serviceId || target.id || ''), enumerable: false }
+  });
+  return target;
+}
+
+function compareCatalogGroup(left, right, sortField, createdAtField, idField) {
+  return compareDisplayOrder(
+    { sort: left && left[sortField], createdAt: left && left[createdAtField], id: left && left[idField] },
+    { sort: right && right[sortField], createdAt: right && right[createdAtField], id: right && right[idField] }
+  );
+}
+
+function compareCatalogDisplay(left, right) {
+  return compareCatalogGroup(left, right, 'categorySort', 'categoryCreatedAt', 'categoryOrderId')
+    || compareCatalogGroup(left, right, 'serviceSort', 'serviceCreatedAt', 'serviceOrderId')
+    || compareDisplayOrder(left, right);
 }
 
 function publicCategory(item) {
@@ -140,16 +166,28 @@ async function loadCatalog(categoryId = '') {
     find(COLLECTIONS.categories, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } }),
     loadAll(COLLECTIONS.works, {}, { orderBy: { field: 'sort', direction: 'asc' } })
   ]);
-  const categories = categoryRecords.filter(item => !item.archived).sort(compareDisplayOrder).map(publicCategory);
-  const categoryById = new Map(categories.map((item) => [item.id, item]));
+  const orderedCategoryRecords = categoryRecords.filter(item => !item.archived).sort(compareDisplayOrder);
+  const categories = orderedCategoryRecords.map(publicCategory);
+  const categoryById = new Map(orderedCategoryRecords.map((item) => [item.id || item._id, item]));
   const styleCounts = countStyles(styles);
   const services = serviceRecords
     .filter((item) => !item.archived && serviceBookableStandalone(item) && categoryById.has(item.categoryId))
     .map((item) => {
       const category = categoryById.get(item.categoryId);
-      return { ...publicService(item), styleCount: styleCounts[item.id || item._id] || 0, categoryName: category.name, categorySort: category.sort };
+      return addCatalogOrderContext({
+        ...publicService(item),
+        styleCount: styleCounts[item.id || item._id] || 0,
+        categoryName: category.name,
+        categorySort: category.sort
+      }, {
+        categoryCreatedAt: category.createdAt,
+        categoryOrderId: category.id || category._id,
+        serviceCreatedAt: item.createdAt,
+        serviceOrderId: item.id || item._id
+      });
     })
-    .sort((left, right) => Number(left.categorySort || 0) - Number(right.categorySort || 0) || compareDisplayOrder(left, right));
+    .sort((left, right) => compareCatalogGroup(left, right, 'categorySort', 'categoryCreatedAt', 'categoryOrderId')
+      || compareCatalogGroup(left, right, 'sort', 'serviceCreatedAt', 'serviceOrderId'));
   return { categories, services, styles };
 }
 
@@ -216,13 +254,13 @@ async function listServices(categoryId = '') {
   return services;
 }
 
-function decorateWorks(records, services, counts = {}, { includeBookingCount = true, sortByPopularity = true } = {}) {
+function decorateWorks(records, services, counts = {}, { includeBookingCount = true } = {}) {
   const serviceById = new Map(services.map((item) => [item.id, item]));
   const works = records
     .filter((item) => !item.archived && item.published !== false && serviceById.has(item.serviceId))
     .map((item) => {
       const service = serviceById.get(item.serviceId);
-      return {
+      return addCatalogOrderContext({
         ...publicWork(item, { includeBookingCount }),
         ...(includeBookingCount ? { bookingCount: counts[item.id || item._id] || 0 } : {}),
         categoryId: service.categoryId,
@@ -231,14 +269,9 @@ function decorateWorks(records, services, counts = {}, { includeBookingCount = t
         serviceSort: Number(service.sort || 0),
         serviceName: service.name,
         durationMinutes: service.durationMinutes
-      };
+      }, service);
     });
-  return sortByPopularity
-    ? works.sort((left, right) => Number(left.categorySort || 0) - Number(right.categorySort || 0)
-      || Number(left.serviceSort || 0) - Number(right.serviceSort || 0)
-      || compareDisplayOrder(left, right)
-      || byPopularity(left, right))
-    : works.sort(compareDisplayOrder);
+  return works.sort(compareCatalogDisplay);
 }
 
 async function listWorks(categoryId = '') {
@@ -282,8 +315,17 @@ async function listServiceStyles(serviceId) {
     loadAll(COLLECTIONS.works, { serviceId: serviceKey }, { orderBy: { field: 'sort', direction: 'asc' } })
   ]);
   assert(category && !category.archived && category.enabled !== false, 'SERVICE_NOT_FOUND', '所属大类已停用', 404);
-  const service = { ...publicService(record), styleCount: styles.filter(item => !item.archived && item.published !== false).length, categoryName: category.name };
-  return { service, works: decorateWorks(styles, [service], {}, { includeBookingCount: false, sortByPopularity: false }) };
+  const service = addCatalogOrderContext({
+    ...publicService(record),
+    styleCount: styles.filter(item => !item.archived && item.published !== false).length,
+    categoryName: category.name
+  }, {
+    categoryCreatedAt: category.createdAt,
+    categoryOrderId: category.id || category._id,
+    serviceCreatedAt: record.createdAt,
+    serviceOrderId: record.id || record._id
+  });
+  return { service, works: decorateWorks(styles, [service], {}, { includeBookingCount: false }) };
 }
 
 async function getWork(workId) {

@@ -67,6 +67,9 @@ Page({
     canSubmit: false,
     pointHint: '',
     emptyImage: '',
+    emptyImageRemoteUrl: '',
+    emptyImageError: false,
+    emptyImageFallbackAttempted: false,
     emptyCategory: '',
     refundRuleText: '',
     noShowRuleText: '',
@@ -88,7 +91,8 @@ Page({
     addonIncompleteText: '先选卸甲和建构',
     addonsReady: true,
     selectedAddons: [],
-    workImageError: false
+    workImageError: false,
+    workImageFallbackAttempted: false
   },
 
   onLoad(options) {
@@ -126,14 +130,15 @@ Page({
     this.emptyStateLoaded = true;
     try {
       const result = await api.getHome();
-      const image = (result.banners || []).find((item) => item.imageUrl)?.imageUrl
-        || (result.categories || []).find((item) => item.coverUrl)?.coverUrl
-        || '';
+      const banner = (result.banners || []).find((item) => item.imageUrl);
+      const categoryWithCover = (result.categories || []).find((item) => item.coverUrl);
+      const image = banner ? banner.imageUrl : categoryWithCover ? categoryWithCover.coverUrl : '';
+      const imageRemoteUrl = banner ? banner.imageRemoteUrl || '' : categoryWithCover ? categoryWithCover.coverRemoteUrl || '' : '';
       const category = (result.categories || [])[0];
-      this.setData({ emptyImage: image, emptyCategory: category ? category.name : '' });
+      this.setData({ emptyImage: image, emptyImageRemoteUrl: imageRemoteUrl, emptyImageError: false, emptyImageFallbackAttempted: false, emptyCategory: category ? category.name : '' });
     } catch (error) {
       // 空状态本身不应因为宣传图接口暂不可用而阻塞预约入口。
-      this.setData({ emptyImage: '', emptyCategory: '' });
+      this.setData({ emptyImage: '', emptyImageRemoteUrl: '', emptyImageError: false, emptyImageFallbackAttempted: false, emptyCategory: '' });
     }
   },
 
@@ -154,7 +159,31 @@ Page({
   },
 
   handleWorkImageError() {
+    const remoteUrl = this.data.work && this.data.work.imageRemoteUrl;
+    if (!this.data.workImageFallbackAttempted && remoteUrl && remoteUrl !== this.data.work.imageUrl) {
+      this.setData({ workImageFallbackAttempted: true });
+      return;
+    }
     this.setData({ workImageError: true });
+  },
+
+  handleEmptyImageError() {
+    if (!this.data.emptyImageFallbackAttempted && this.data.emptyImageRemoteUrl && this.data.emptyImageRemoteUrl !== this.data.emptyImage) {
+      this.setData({ emptyImageFallbackAttempted: true });
+      return;
+    }
+    this.setData({ emptyImageError: true });
+  },
+
+  handleTechnicianAvatarError(event) {
+    const index = this.data.technicians.findIndex((item) => item.id === event.currentTarget.dataset.id);
+    if (index < 0) return;
+    const technician = this.data.technicians[index];
+    if (!technician.avatarFallbackAttempted && technician.avatarRemoteUrl && technician.avatarRemoteUrl !== technician.avatarUrl) {
+      this.setData({ [`technicians[${index}].avatarFallbackAttempted`]: true });
+      return;
+    }
+    this.setData({ [`technicians[${index}].avatarError`]: true });
   },
 
   async loadBooking({ force = false } = {}) {
@@ -186,6 +215,8 @@ Page({
       const dates = mock.getDates(openDays);
       const technicians = (technicianResult.technicians || []).map((item) => ({
         ...item,
+        avatarError: false,
+        avatarFallbackAttempted: false,
         initial: item.name ? item.name.slice(0, 1) : '师'
       }));
       const preferredTechnicianId = !preserveSelections && this.initialTechnicianId
@@ -256,6 +287,7 @@ Page({
         loading: false,
         work,
         workImageError: false,
+        workImageFallbackAttempted: false,
         service: { ...service, baseDurationMinutes: service.durationMinutes, priceText: formatMoney(service.priceFen, false), durationText: formatDuration(service.durationMinutes) },
         technicians,
         dates,
@@ -723,8 +755,11 @@ Page({
       return;
     }
     this.setData({ submitting: true });
-    wx.showLoading({ title: '锁定时段中' });
     try {
+      // 订阅消息必须紧跟用户点击触发，不能等创建订单和准备支付完成后再申请。
+      // 这样全积分、0 元预约也会获得本次预约对应的通知额度。
+      await this.requestBookingReminders();
+      wx.showLoading({ title: '锁定时段中' });
       const requestFingerprint = JSON.stringify({
         workId: this.workId,
         serviceId: this.serviceId,
@@ -770,7 +805,6 @@ Page({
         });
         return;
       }
-      await this.requestBookingReminders();
       await this.requestPayment(payment, order.id);
     } catch (error) {
       wx.hideLoading();

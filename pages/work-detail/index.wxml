@@ -3,7 +3,7 @@
   <empty-state wx:elif="{{error}}" title="{{error}}" button-text="重试" bindaction="loadDetail"/>
   <block wx:else>
     <view class="work-hero" bindtap="previewImage">
-      <image wx:if="{{work.imageUrl && !imageError}}" class="work-hero-image" mode="aspectFill" webp="{{true}}" src="{{work.imageUrl}}" binderror="handleImageError" />
+      <image wx:if="{{work.imageUrl && !imageError}}" class="work-hero-image" mode="aspectFill" webp="{{true}}" src="{{imageFallbackAttempted ? work.imageRemoteUrl : work.imageUrl}}" binderror="handleImageError" />
       <view wx:else class="work-hero-fallback"><text>拾光</text></view>
       <view class="work-hero-overlay"></view>
       <view class="work-hero-caption"><text class="work-hero-title">{{work.title}}</text></view>
@@ -13,7 +13,7 @@
         <view class="artist-section-heading"><view><text class="artist-kicker">服务技师</text><text class="artist-heading-title">选择技师</text></view><text class="artist-count">{{technicians.length}}位</text></view>
         <view class="artist-grid">
           <view wx:for="{{technicians}}" wx:key="id" class="artist-option {{selectedTechnicianId === item.id ? 'selected' : ''}}" data-id="{{item.id}}" bindtap="selectTechnician">
-            <view class="artist-option-top"><image wx:if="{{item.avatarUrl}}" class="artist-avatar" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{item.avatarUrl}}" /><view wx:else class="artist-avatar artist-fallback">{{item.initial}}</view><view wx:if="{{selectedTechnicianId === item.id}}" class="artist-check">✓</view></view>
+            <view class="artist-option-top"><image wx:if="{{item.avatarUrl && !item.avatarError}}" class="artist-avatar" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" src="{{item.avatarFallbackAttempted ? item.avatarRemoteUrl : item.avatarUrl}}" data-id="{{item.id}}" binderror="handleTechnicianAvatarError" /><view wx:else class="artist-avatar artist-fallback">{{item.initial}}</view><view wx:if="{{selectedTechnicianId === item.id}}" class="artist-check">✓</view></view>
             <text class="artist-name">{{item.name}}</text><text class="artist-title">{{item.title}}</text>
           </view>
         </view>

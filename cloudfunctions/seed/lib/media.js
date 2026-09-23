@@ -38,10 +38,24 @@ async function resolveImages(value) {
   const urls = new Map();
   const ids = [...refs].filter(id=>{const cached=imageCache.get(id);if(cached&&cached.expires>Date.now()){urls.set(id,cached.url);return false;}return true;});
   for (let index = 0; index < ids.length; index += 50) {
-    try {
-      const result = await cloud.getTempFileURL({ fileList: ids.slice(index, index + 50) });
-      (result.fileList || []).forEach(item => { if (item.tempFileURL && (!item.status || item.status===0)) { urls.set(item.fileID, item.tempFileURL);imageCache.set(item.fileID,{url:item.tempFileURL,expires:Date.now()+600000}); } });
-    } catch(error) { console.warn('media resolution failed', {code:error.code || error.errCode}); }
+    let unresolved = ids.slice(index, index + 50);
+    let lastError = null;
+    for (let attempt = 0; attempt < 2 && unresolved.length; attempt += 1) {
+      try {
+        const result = await cloud.getTempFileURL({ fileList: unresolved });
+        (result.fileList || []).forEach(item => {
+          if (item.tempFileURL && (!item.status || Number(item.status) === 0)) {
+            urls.set(item.fileID, item.tempFileURL);
+            imageCache.set(item.fileID, { url: item.tempFileURL, expires: Date.now() + 600000 });
+          }
+        });
+        unresolved = unresolved.filter(id => !urls.has(id));
+        lastError = null;
+      } catch(error) {
+        lastError = error;
+      }
+    }
+    if (unresolved.length && lastError) console.warn('media resolution failed', {code:lastError.code || lastError.errCode});
   }
   if(imageCache.size>500)for(const id of Array.from(imageCache.keys()).slice(0,imageCache.size-500))imageCache.delete(id);
   const transform = item => {

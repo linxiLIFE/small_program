@@ -416,7 +416,7 @@ async function bindInviteCode(inviteCode) {
 
 function configuredTemplateIds(settings, events) {
   const templates = settings && settings.notifications && settings.notifications.templates || {};
-  return (events || []).map((event) => templates[event] && templates[event].templateId).filter(Boolean).slice(0, 3);
+  return Array.from(new Set((events || []).map((event) => templates[event] && templates[event].templateId).filter(Boolean))).slice(0, 3);
 }
 
 async function requestSubscriptionEvents(settings, events) {

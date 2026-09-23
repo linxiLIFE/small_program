@@ -33,15 +33,34 @@ function timeText(timestamp) {
   return `${parts.month}月${parts.day}日 ${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
 }
 
-function templateTimeText(timestamp, key) {
+function validTimestamp(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0;
+}
+
+function clockText(timestamp) {
   const parts = formatParts(timestamp);
-  if (/^date\d+$/.test(String(key || ''))) {
-    return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+  return `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
+}
+
+function dateText(timestamp) {
+  const parts = formatParts(timestamp);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
+function templateTimeText(startAt, endAt, key, durationMinutes = 0) {
+  const startTimestamp = validTimestamp(startAt) ? Number(startAt) : Date.now();
+  let endTimestamp = validTimestamp(endAt) ? Number(endAt) : 0;
+  if (!(endTimestamp > startTimestamp)) {
+    const duration = Number(durationMinutes);
+    endTimestamp = Number.isFinite(duration) && duration > 0
+      ? startTimestamp + duration * 60 * 1000
+      : 0;
   }
-  if (/^time\d+$/.test(String(key || ''))) {
-    return `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
-  }
-  return timeText(timestamp);
+  const range = endTimestamp > startTimestamp ? `-${clockText(endTimestamp)}` : '';
+  if (/^date\d+$/.test(String(key || ''))) return `${dateText(startTimestamp)} ${clockText(startTimestamp)}${range}`;
+  if (/^time\d+$/.test(String(key || ''))) return `${clockText(startTimestamp)}${range}`;
+  return timeText(startTimestamp);
 }
 
 function moneyText(fen) {
@@ -53,9 +72,11 @@ function putTemplateValue(data, key, value) {
 }
 
 function templateData(eventName, template, order, settings) {
+  const checkIn = eventName === 'checkInSuccess';
   const common = {
     service: clipped(order.workSnapshot && order.workSnapshot.title || order.serviceSnapshot && order.serviceSnapshot.name, 20),
-    time: clipped(templateTimeText(eventName === 'checkInSuccess' ? Date.now() : order.startAt, template.timeKey), 20),
+    // date/time 关键字允许携带短时间段，不能用通用 clipped 截断完整预约时间。
+    time: templateTimeText(checkIn ? Date.now() : order.startAt, checkIn ? 0 : order.endAt, template.timeKey, checkIn ? 0 : order.durationMinutes),
     technician: clipped(order.technicianSnapshot && order.technicianSnapshot.name, 20),
     address: clipped(settings.store && settings.store.address, 20)
   };
@@ -176,12 +197,30 @@ async function notifyOrderEvent(eventName, order) {
       const subscriptions = { ...((user && user.subscriptions) || {}) };
       const subscription = subscriptions[template.templateId] || {};
       const quota = subscriptionQuota(subscription);
-      const usedCount = Math.max(0, quota.usedCount - 1);
-      subscriptions[template.templateId] = { ...subscription, acceptedCount: quota.acceptedCount, usedCount, availableCount: Math.max(0, quota.acceptedCount - usedCount), updatedAt: failedAt };
+      const errCode = String(error && (error.errCode || error.code) || 'SEND_FAILED');
+      const errMsg = String(error && (error.errMsg || error.message) || '订阅消息发送失败');
+      const subscriptionExpired = errCode === '43101';
+      const usedCount = subscriptionExpired ? quota.acceptedCount : Math.max(0, quota.usedCount - 1);
+      subscriptions[template.templateId] = {
+        ...subscription,
+        status: subscriptionExpired ? 'expired' : subscription.status,
+        acceptedCount: quota.acceptedCount,
+        usedCount,
+        availableCount: Math.max(0, quota.acceptedCount - usedCount),
+        usedAt: subscriptionExpired ? failedAt : subscription.usedAt,
+        updatedAt: failedAt
+      };
       await transaction.collection(COLLECTIONS.users).doc(order.userId).set({ data: { ...user, subscriptions, updatedAt: failedAt } });
-      await transaction.collection(COLLECTIONS.notifications).doc(recordId).set({ data: { ...record, status: 'FAILED', claimToken: '', leaseUntil: 0, lastError: String(error.errCode || error.code || error.message || 'SEND_FAILED'), updatedAt: failedAt } });
+      await transaction.collection(COLLECTIONS.notifications).doc(recordId).set({ data: {
+        ...record,
+        status: 'FAILED',
+        claimToken: '',
+        leaseUntil: 0,
+        lastError: { errCode, errMsg, templateId: template.templateId, orderId: order.id, eventName },
+        updatedAt: failedAt
+      } });
     });
-    console.error('订阅消息发送失败', { eventName, orderId: order.id, code: error.errCode || error.code || '' });
+    console.error('订阅消息发送失败', { eventName, orderId: order.id, templateId: template.templateId, errCode: error && (error.errCode || error.code) || '', errMsg: error && (error.errMsg || error.message) || '' });
     return { sent: false, reason: 'SEND_FAILED' };
   }
 }

@@ -10,7 +10,8 @@ Page({
     technician: {},
     technicians: [],
     selectedTechnicianId: '',
-    imageError: false
+    imageError: false,
+    imageFallbackAttempted: false
   },
 
   onLoad(options) {
@@ -34,6 +35,8 @@ Page({
       if (requestId !== this.requestId) return;
       const technicians = (technicianResult.technicians || []).map((item) => ({
         ...item,
+        avatarError: false,
+        avatarFallbackAttempted: false,
         initial: item.name ? item.name.slice(0, 1) : '师'
       }));
       const technician = technicians.find((item) => item.id === work.technicianId) || technicians[0] || {};
@@ -43,6 +46,7 @@ Page({
         loading: false,
         work,
         imageError: false,
+        imageFallbackAttempted: false,
         service: { ...service, priceText: formatMoney(service.priceFen, false), durationText: formatDuration(service.durationMinutes) },
         technicians,
         selectedTechnicianId: technician.id || '',
@@ -54,8 +58,28 @@ Page({
     }
   },
 
-  previewImage() { if(this.data.work.imageUrl && !this.data.imageError)wx.previewImage({urls:[this.data.work.imageUrl]}); },
-  handleImageError() { this.setData({ imageError: true }); },
+  previewImage() {
+    const url = this.data.imageFallbackAttempted ? this.data.work.imageRemoteUrl : this.data.work.imageUrl;
+    if (url && !this.data.imageError) wx.previewImage({ urls: [url] });
+  },
+  handleImageError() {
+    const remoteUrl = this.data.work.imageRemoteUrl;
+    if (!this.data.imageFallbackAttempted && remoteUrl && remoteUrl !== this.data.work.imageUrl) {
+      this.setData({ imageFallbackAttempted: true });
+      return;
+    }
+    this.setData({ imageError: true });
+  },
+  handleTechnicianAvatarError(event) {
+    const index = this.data.technicians.findIndex((item) => item.id === event.currentTarget.dataset.id);
+    if (index < 0) return;
+    const technician = this.data.technicians[index];
+    if (!technician.avatarFallbackAttempted && technician.avatarRemoteUrl && technician.avatarRemoteUrl !== technician.avatarUrl) {
+      this.setData({ [`technicians[${index}].avatarFallbackAttempted`]: true });
+      return;
+    }
+    this.setData({ [`technicians[${index}].avatarError`]: true });
+  },
   selectTechnician(event) {
     const technicianId = event.currentTarget.dataset.id;
     const technician = this.data.technicians.find((item) => item.id === technicianId);

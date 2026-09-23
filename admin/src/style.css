@@ -297,7 +297,7 @@ input:focus, select:focus, textarea:focus { border-color: #ca9497; box-shadow: 0
 .category-choice-card:hover, .project-choice-card:hover { border-color: #d4a5a4; transform: translateY(-1px); }
 .category-choice-card.selected, .project-choice-card.selected { border-color: #c98c91; background: #fff5f4; box-shadow: 0 0 0 3px #faeded; }
 .category-choice-card.disabled, .project-choice-card.disabled { opacity: .68; }
-.category-choice { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 86px; padding: 14px 44px 14px 14px; border: 0; background: transparent; color: #66514b; text-align: left; }
+.category-choice { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 86px; padding: 14px 44px 14px 14px; box-sizing: border-box; border: 0; background: transparent; color: #66514b; text-align: left; }
 .category-choice-icon { display: grid; flex: 0 0 38px; width: 38px; height: 38px; place-items: center; border-radius: 12px; color: #9c6c70; font-size: 21px; }
 .category-choice-copy, .project-choice-copy { display: grid; min-width: 0; gap: 5px; }
 .category-choice-copy strong, .project-choice-copy strong { overflow: hidden; color: #66514b; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -314,7 +314,7 @@ input:focus, select:focus, textarea:focus { border-color: #ca9497; box-shadow: 0
 .choice-add-card > span { font-size: 24px; font-weight: 200; }
 .choice-add-card strong { font-size: 12px; font-weight: 500; }
 .project-choice-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-.project-choice { display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; align-items: center; gap: 13px; width: 100%; min-height: 118px; padding: 12px 13px; border: 0; background: transparent; color: #66514b; text-align: left; }
+.project-choice { display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; align-items: center; gap: 13px; width: 100%; min-height: 118px; padding: 12px 13px; box-sizing: border-box; border: 0; background: transparent; color: #66514b; text-align: left; }
 .project-choice > img, .project-choice-cover { display: grid; width: 78px; height: 78px; place-items: center; border-radius: 13px; object-fit: cover; background: linear-gradient(135deg, #ead4d0, #f4e9df); color: #a27d76; font-size: 12px; }
 .project-choice > .pill { align-self: start; margin-top: 2px; }
 .project-edit { right: 14px; bottom: 10px; }
@@ -547,7 +547,9 @@ input:focus, select:focus, textarea:focus { border-color: #ca9497; box-shadow: 0
 .catalog-sort-dragging{opacity:.5;transform:scale(.985)!important}
 .catalog-sort-target{outline:2px dashed #b87880;outline-offset:3px}
 .catalog-order-field small{color:#9b827a;font-size:11px;line-height:1.5}
+.project-choice{position:relative}
+.project-choice .catalog-order-number{position:absolute;z-index:2;top:16px;left:16px;box-shadow:0 2px 8px #3a201b22}
 .portfolio-tile{position:relative}
 .portfolio-sort-handle{position:absolute;z-index:4;top:10px;right:10px;width:27px;height:27px;font-size:17px}
 .portfolio-tile .tile-actions{gap:6px}
-@media(max-width:700px){.catalog-order-number{width:23px;height:23px;font-size:11px}.portfolio-sort-handle{width:25px;height:25px}.portfolio-tile .tile-actions{gap:3px}.portfolio-tile .feature-toggle{padding:6px 7px;font-size:10px}}
+@media(max-width:700px){.catalog-order-number{width:23px;height:23px;font-size:11px}.project-choice .catalog-order-number{top:12px;left:12px}.portfolio-sort-handle{width:25px;height:25px}.portfolio-tile .tile-actions{gap:3px}.portfolio-tile .feature-toggle{padding:6px 7px;font-size:10px}}

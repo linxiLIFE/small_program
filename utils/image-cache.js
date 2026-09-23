@@ -4,6 +4,16 @@ const MAX_CACHED_BYTES = 12 * 1024 * 1024;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_PREFETCH_PER_RESPONSE = 12;
 const MAX_CONCURRENT_DOWNLOADS = 2;
+const IMAGE_FILE_FIELDS = {
+  imageUrl: 'imageFileID',
+  coverUrl: 'coverFileID',
+  avatarUrl: 'avatarFileID'
+};
+const IMAGE_REMOTE_FIELDS = {
+  imageUrl: 'imageRemoteUrl',
+  coverUrl: 'coverRemoteUrl',
+  avatarUrl: 'avatarRemoteUrl'
+};
 
 const queue = [];
 const queuedIds = new Set();
@@ -11,6 +21,7 @@ const activeIds = new Set();
 let activeDownloads = 0;
 let pumpTimer = null;
 let saveQueue = Promise.resolve();
+let savedFilesRequest = null;
 
 function wxApi() {
   return typeof wx === 'undefined' ? null : wx;
@@ -35,12 +46,17 @@ function writeIndex(index) {
 
 function getSavedFiles(api) {
   if (typeof api.getSavedFileList !== 'function') return Promise.reject(new Error('本地文件清单不可用'));
-  return new Promise((resolve, reject) => {
+  if (savedFilesRequest) return savedFilesRequest;
+  const request = new Promise((resolve, reject) => {
     api.getSavedFileList({
       success: (result) => resolve(Array.isArray(result.fileList) ? result.fileList : []),
       fail: reject
     });
+  }).finally(() => {
+    if (savedFilesRequest === request) savedFilesRequest = null;
   });
+  savedFilesRequest = request;
+  return request;
 }
 
 function getFileInfo(api, filePath) {
@@ -133,8 +149,80 @@ function enqueue(fileID, imageUrl) {
   }
 }
 
-function withCachedImagePaths(value) {
+function collectImageEntries(value, entries = []) {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectImageEntries(item, entries));
+  } else if (value && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      if (Object.prototype.hasOwnProperty.call(IMAGE_FILE_FIELDS, key) && typeof child === 'string') {
+        entries.push({ item: value, key, fileID: value[IMAGE_FILE_FIELDS[key]], url: child });
+      } else if (child && typeof child === 'object') {
+        collectImageEntries(child, entries);
+      }
+    }
+  }
+  return entries;
+}
+
+async function recoverTemporaryUrls(api, fileIDs) {
+  const urls = new Map();
+  if (!api || !api.cloud || typeof api.cloud.getTempFileURL !== 'function') return urls;
+  for (let offset = 0; offset < fileIDs.length; offset += 50) {
+    const fileList = fileIDs.slice(offset, offset + 50);
+    try {
+      const result = await new Promise((resolve, reject) => {
+        api.cloud.getTempFileURL({ fileList, success: resolve, fail: reject });
+      });
+      (Array.isArray(result && result.fileList) ? result.fileList : []).forEach((file) => {
+        if (file && file.fileID && file.tempFileURL && (!file.status || Number(file.status) === 0)) {
+          urls.set(file.fileID, file.tempFileURL);
+        }
+      });
+    } catch (error) {
+      // Keep the image placeholder if CloudBase cannot resolve the file now.
+    }
+  }
+  return urls;
+}
+
+async function withCachedImagePaths(value) {
   const index = readIndex();
+  const api = wxApi();
+  const entries = collectImageEntries(value);
+  const cachedEntries = entries.filter((entry) => typeof entry.fileID === 'string' && index[entry.fileID] && index[entry.fileID].path);
+  let savedPaths = null;
+  if (cachedEntries.length && api) {
+    try {
+      const files = await getSavedFiles(api);
+      savedPaths = new Set(files.map((file) => file && file.filePath).filter(Boolean));
+    } catch (error) {
+      // A local path is used only after it has been confirmed to still exist.
+    }
+  }
+
+  let staleIndexChanged = false;
+  if (savedPaths) {
+    for (const entry of cachedEntries) {
+      const cached = index[entry.fileID];
+      if (cached && cached.path && !savedPaths.has(cached.path)) {
+        // Remove stale metadata only. Saved files are left untouched.
+        delete index[entry.fileID];
+        staleIndexChanged = true;
+      }
+    }
+  }
+  if (staleIndexChanged) writeIndex(index);
+
+  const recoverIDs = [...new Set(entries
+    .filter((entry) => typeof entry.fileID === 'string' && entry.fileID.startsWith('cloud://'))
+    .filter((entry) => {
+      const hasRemoteUrl = typeof entry.url === 'string' && /^https:\/\//.test(entry.url);
+      const hasRemoteFallback = typeof entry.item[IMAGE_REMOTE_FIELDS[entry.key]] === 'string'
+        && /^https:\/\//.test(entry.item[IMAGE_REMOTE_FIELDS[entry.key]]);
+      return !hasRemoteUrl && !hasRemoteFallback;
+    })
+    .map((entry) => entry.fileID))];
+  const recoveredUrls = await recoverTemporaryUrls(api, recoverIDs);
   let changed = false;
   let scheduled = 0;
   const usedAt = Date.now();
@@ -143,16 +231,24 @@ function withCachedImagePaths(value) {
     if (!item || typeof item !== 'object') return item;
     const output = {};
     for (const [key, child] of Object.entries(item)) {
-      if (['imageUrl', 'coverUrl', 'avatarUrl'].includes(key) && typeof child === 'string') {
-        const fileID = item[key.replace('Url', 'FileID')];
+      if (Object.prototype.hasOwnProperty.call(IMAGE_FILE_FIELDS, key) && typeof child === 'string') {
+        const fileID = item[IMAGE_FILE_FIELDS[key]];
         const cached = typeof fileID === 'string' && index[fileID];
-        if (cached && cached.path) {
+        const remoteField = IMAGE_REMOTE_FIELDS[key];
+        const recoveredUrl = typeof fileID === 'string' ? recoveredUrls.get(fileID) : '';
+        const priorRemoteUrl = typeof item[remoteField] === 'string' ? item[remoteField] : '';
+        const remoteUrl = /^https:\/\//.test(child) ? child
+          : /^https:\/\//.test(recoveredUrl) ? recoveredUrl
+            : /^https:\/\//.test(priorRemoteUrl) ? priorRemoteUrl : '';
+        const cacheIsValid = !!(cached && cached.path && savedPaths && savedPaths.has(cached.path));
+        if (remoteUrl) output[remoteField] = remoteUrl;
+        if (cacheIsValid) {
           output[key] = cached.path;
           if (cached.usedAt !== usedAt) { cached.usedAt = usedAt; changed = true; }
         } else {
-          output[key] = child;
-          if (typeof fileID === 'string' && fileID.startsWith('cloud://') && child.startsWith('https://') && scheduled < MAX_PREFETCH_PER_RESPONSE) {
-            enqueue(fileID, child);
+          output[key] = remoteUrl || (child.startsWith('cloud://') ? '' : child);
+          if (typeof fileID === 'string' && fileID.startsWith('cloud://') && remoteUrl && scheduled < MAX_PREFETCH_PER_RESPONSE) {
+            enqueue(fileID, remoteUrl);
             scheduled += 1;
           }
         }

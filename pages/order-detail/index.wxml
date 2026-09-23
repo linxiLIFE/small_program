@@ -34,7 +34,7 @@
       <view class="detail-card-heading"><text class="section-title">服务内容</text></view>
       <view class="service-summary">
         <view class="service-summary-image">
-          <image wx:if="{{order.work && order.work.imageUrl && !workImageError}}" src="{{order.work.imageUrl}}" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" binderror="handleWorkImageError" />
+          <image wx:if="{{order.work && order.work.imageUrl && !workImageError}}" src="{{workImageFallbackAttempted ? order.work.imageRemoteUrl : order.work.imageUrl}}" mode="aspectFill" lazy-load="{{true}}" webp="{{true}}" binderror="handleWorkImageError" />
           <view wx:else class="service-summary-fallback">预约</view>
         </view>
         <view class="service-summary-copy">

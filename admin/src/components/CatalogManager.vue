@@ -28,12 +28,14 @@ const dropTarget = ref<{ kind: SortKind; id: string } | null>(null);
 let sortPress: { kind: SortKind; id: string; pointerId: number; startX: number; startY: number; started: boolean } | null = null;
 let sortPressTimer: number | null = null;
 
-function compareOrder(left: { sort?: number; id: string }, right: { sort?: number; id: string }): number {
+function compareOrder(left: { sort?: number; createdAt?: number; id: string }, right: { sort?: number; createdAt?: number; id: string }): number {
   const leftSort = Number(left.sort);
   const rightSort = Number(right.sort);
   const leftRank = Number.isSafeInteger(leftSort) && leftSort > 0 ? leftSort : Number.MAX_SAFE_INTEGER;
   const rightRank = Number.isSafeInteger(rightSort) && rightSort > 0 ? rightSort : Number.MAX_SAFE_INTEGER;
-  return leftRank - rightRank || left.id.localeCompare(right.id);
+  return leftRank - rightRank
+    || Number(left.createdAt || 0) - Number(right.createdAt || 0)
+    || left.id.localeCompare(right.id);
 }
 
 const categories = computed(() => [...(props.catalog.categories || [])].sort(compareOrder));
@@ -266,9 +268,22 @@ function finishSortPointer(event: PointerEvent) {
   const targetIndex = list.findIndex((item) => item.id === targetId);
   let nextSort = 0;
   if (sourceIndex >= 0 && targetIndex >= 0 && sourceIndex !== targetIndex) {
-    const targetElement = Array.from(document.querySelectorAll<HTMLElement>('[data-catalog-sort-kind][data-catalog-sort-id]'))
-      .find((item) => item.dataset.catalogSortKind === current.kind && item.dataset.catalogSortId === targetId);
-    const after = targetElement ? event.clientY >= targetElement.getBoundingClientRect().top + targetElement.getBoundingClientRect().height / 2 : false;
+    const sortElements = Array.from(document.querySelectorAll<HTMLElement>('[data-catalog-sort-kind][data-catalog-sort-id]'))
+      .filter((item) => item.dataset.catalogSortKind === current.kind);
+    const targetElement = sortElements.find((item) => item.dataset.catalogSortId === targetId);
+    const sourceElement = sortElements.find((item) => item.dataset.catalogSortId === current.id);
+    const sourceRect = sourceElement?.getBoundingClientRect();
+    const targetRect = targetElement?.getBoundingClientRect();
+    const verticalOverlap = sourceRect && targetRect
+      ? Math.max(0, Math.min(sourceRect.bottom, targetRect.bottom) - Math.max(sourceRect.top, targetRect.top))
+      : 0;
+    const sameGridRow = !!(sourceRect && targetRect
+      && verticalOverlap >= Math.min(sourceRect.height, targetRect.height) * 0.5);
+    const after = targetRect
+      ? sameGridRow
+        ? event.clientX >= targetRect.left + targetRect.width / 2
+        : event.clientY >= targetRect.top + targetRect.height / 2
+      : false;
     let nextIndex = targetIndex + (after ? 1 : 0);
     if (sourceIndex < nextIndex) nextIndex -= 1;
     nextSort = nextIndex + 1;
