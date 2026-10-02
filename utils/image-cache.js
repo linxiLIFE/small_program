@@ -7,12 +7,14 @@ const MAX_CONCURRENT_DOWNLOADS = 2;
 const IMAGE_FILE_FIELDS = {
   imageUrl: 'imageFileID',
   coverUrl: 'coverFileID',
-  avatarUrl: 'avatarFileID'
+  avatarUrl: 'avatarFileID',
+  wechatQrUrl: 'wechatQrFileID'
 };
 const IMAGE_REMOTE_FIELDS = {
   imageUrl: 'imageRemoteUrl',
   coverUrl: 'coverRemoteUrl',
-  avatarUrl: 'avatarRemoteUrl'
+  avatarUrl: 'avatarRemoteUrl',
+  wechatQrUrl: 'wechatQrRemoteUrl'
 };
 
 const queue = [];
@@ -263,4 +265,23 @@ async function withCachedImagePaths(value) {
   return result;
 }
 
-module.exports = { withCachedImagePaths };
+// Recover only the failed visible image; do not delay page data for downloads.
+const recoveryRequests = new Map();
+function recoverImage(fileID) {
+  if (!fileID || !fileID.startsWith('cloud://')) return Promise.resolve(null);
+  if (recoveryRequests.has(fileID)) return recoveryRequests.get(fileID);
+  const request = (async () => {
+    const api = wxApi();
+    if (!api) return null;
+    try {
+      const result = await download(api, fileID);
+      if (result && result.tempFilePath) return { path: result.tempFilePath };
+    } catch (error) { /* Refresh the signed URL if the native download fails. */ }
+    const urls = await recoverTemporaryUrls(api, [fileID]);
+    const url = urls.get(fileID);
+    return url ? { path: url, remoteUrl: url } : null;
+  })().finally(() => recoveryRequests.delete(fileID));
+  recoveryRequests.set(fileID, request);
+  return request;
+}
+module.exports = { withCachedImagePaths, recoverImage };

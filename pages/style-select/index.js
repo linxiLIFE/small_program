@@ -63,6 +63,7 @@ Page({
     if (!workId) return;
     const state = getApp().globalData;
     state.catalogSelection = { ...(state.catalogSelection || {}), categoryId: this.data.service.categoryId || this.categoryId, serviceId: this.serviceId, workId };
+    state.workDetailPreview = { work, service: this.data.service };
     this.setData({ activeWorkId: workId });
     wx.navigateTo({ url: `/pages/work-detail/index?workId=${encodeURIComponent(workId)}` });
   }

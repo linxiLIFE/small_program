@@ -4,7 +4,7 @@ const { db, cloud, getOptional, find } = require('./db');
 const { AppError, assert } = require('./errors');
 const { requireOpenId, ensureUser, getUser, requireRole, safeUser } = require('./auth');
 const { getCurrentSettings, publicSettings } = require('./settings');
-const { getService, listServices, listWorks, listCategories, listTechnicians, getWork, addonPriceFen, serviceBookableStandalone, supportsFootTipAddon, FOOT_TIP_ADDON_ID, FOOT_TIP_UNIT_PRICE_FEN, FOOT_TIP_MAX_QUANTITY } = require('./catalog');
+const { getService, listServices, listWorks, listCategories, listTechnicians, getWork, isHandNailCategory, bookingAddonMatches, boostAddonOption, addonPriceFen, serviceBookableStandalone, supportsFootTipAddon, FOOT_TIP_ADDON_ID, FOOT_TIP_UNIT_PRICE_FEN, FOOT_TIP_MAX_QUANTITY } = require('./catalog');
 const { dateToTimestamp, weekday, minutesOfDay, addMinutes, isWithinDateWindow, assertValidStart, overlaps, toDateString, formatParts } = require('./time');
 const { calculatePointsDiscount, earnPoints, rebalancePoints, awardPoints } = require('./money');
 const { encryptPhone, maskPhone } = require('./contact-crypto');
@@ -132,7 +132,7 @@ function footTipAddonSnapshot(service, quantity) {
 async function resolveBookingAddons(service, payload = {}, reader = db) {
   const serviceAddonType = addonTypeOf(service);
   const standaloneRemoval = serviceAddonType === 'REMOVAL' && service.bookableStandalone !== false && service.bookableStandalone !== 0;
-  const requiresChoice = service.categoryId === 'nail' && !standaloneRemoval;
+  const requiresChoice = isHandNailCategory(service.categoryId) && !standaloneRemoval;
   const builderIncluded = requiresChoice && (serviceAddonType === 'BUILDER' || serviceIncludesBuilder(service));
   if (requiresChoice && Object.prototype.hasOwnProperty.call(payload, 'addonSelectionConfirmed')) {
     assert(payload.addonSelectionConfirmed === true, 'ADDON_SELECTION_REQUIRED', builderIncluded ? '请先选择是否需要卸甲' : '请先选择是否需要卸甲和建构');
@@ -148,12 +148,23 @@ async function resolveBookingAddons(service, payload = {}, reader = db) {
     { id: String(payload.builderServiceId || ''), type: 'BUILDER' }
   ].filter((item) => item.id);
   assert(new Set(requested.map((item) => item.id)).size === requested.length, 'INVALID_ADDON', '卸甲和建构选项不能重复');
+  let boostAddon = null;
+  const boostCount = Number(payload.boostCount || 0);
+  assert(Number.isSafeInteger(boostCount) && boostCount >= 0, 'INVALID_ADDON', '加油包数量须为非负整数');
+  if (boostCount) {
+    const boost = await boostAddonOption(service, reader);
+    assert(boost && Number.isSafeInteger(boost.unitPriceFen) && boost.unitPriceFen >= 0 && Number.isSafeInteger(boost.durationMinutes) && boost.durationMinutes >= 0, 'INVALID_ADDON', '当前项目不可添加加油包');
+    const priceFen = boost.unitPriceFen * boostCount;
+    const durationMinutes = boost.durationMinutes * boostCount;
+    assert(Number.isSafeInteger(priceFen) && Number.isSafeInteger(durationMinutes), 'INVALID_ADDON', '加油包金额或时长超出有效范围');
+    boostAddon = { id: boost.id, name: `加油包 ×${boostCount}`, type: 'BOOST', quantity: boostCount, unitPriceFen: boost.unitPriceFen, priceFen, originalPriceFen: boost.unitPriceFen, durationMinutes };
+  }
   const addons = [];
   for (const selection of requested) {
     const record = await getOptional(COLLECTIONS.services, selection.id, reader);
     assert(record && !record.archived && record.enabled !== false, 'ADDON_NOT_FOUND', '所选叠加服务已下架，请重新选择', 409);
-    assert(record.categoryId === service.categoryId && addonTypeOf(record) === selection.type, 'INVALID_ADDON', '叠加服务与当前项目不匹配', 409);
-    const priceFen = addonPriceFen(record, selection.type, service);
+    assert(bookingAddonMatches(service, record) && addonTypeOf(record) === selection.type, 'INVALID_ADDON', '叠加服务与当前项目不匹配', 409);
+    const priceFen = addonPriceFen(record, selection.type, service, boostAddon?.priceFen || 0);
     const durationMinutes = Number(record.durationMinutes || 0);
     assert(Number.isSafeInteger(priceFen) && priceFen >= 0 && Number.isSafeInteger(durationMinutes) && durationMinutes > 0, 'INVALID_ADDON', '叠加服务价格或时长不正确', 409);
     addons.push({
@@ -165,10 +176,12 @@ async function resolveBookingAddons(service, payload = {}, reader = db) {
       durationMinutes
     });
   }
+  if (boostAddon) addons.push(boostAddon);
   const footTipAddon = footTipAddonSnapshot(service, payload.footTipCount);
   if (footTipAddon) addons.push(footTipAddon);
   const durationMinutes = Number(service.durationMinutes) + addons.reduce((sum, item) => sum + item.durationMinutes, 0);
   const totalFen = Number(service.priceFen) + addons.reduce((sum, item) => sum + item.priceFen, 0);
+  assert(Number.isSafeInteger(durationMinutes) && Number.isSafeInteger(totalFen), 'INVALID_ADDON', '项目金额或时长超出有效范围');
   return {
     addons,
     durationMinutes,
@@ -238,13 +251,15 @@ function getSlotFromPlan(plan, startAt, service, settings) {
   return { startAt, endAt, durationMinutes: Number(service.durationMinutes), stepMinutes: settings.booking.slotStepMinutes };
 }
 
-async function validateBookingSlot(payload = {}) {
+async function validateBookingSlot(payload = {}, internal = {}) {
   const { serviceId, technicianId, date, startAt, now = Date.now(), reader = db } = payload;
-  const settings = await getCurrentSettings();
-  const service = await getService(serviceId);
+  const [settings, service, technician] = await Promise.all([
+    internal.settings || getCurrentSettings(),
+    getService(serviceId, { includeStyleCount: false }),
+    getTechnician(technicianId)
+  ]);
   assert(serviceBookableStandalone(service), 'SERVICE_NOT_BOOKABLE', '该脚部加项不能作为小项目单独预约', 409);
   const addonSelection = await resolveBookingAddons(service, payload, reader);
-  const technician = await getTechnician(technicianId);
   assert(technicianCanServe(technician, service), 'SKILL_MISMATCH', '该技师暂不提供此大项');
   assertValidStart(date, Number(startAt), settings.booking.minAdvanceMinutes, settings.booking.openDays, now);
   const step = Number(settings.booking.slotStepMinutes || 15);
@@ -256,11 +271,11 @@ async function validateBookingSlot(payload = {}) {
 }
 
 async function getAvailableSlots(payload) {
-  const settings = await getCurrentSettings();
-  const service = await getService(payload.serviceId);
+  const [settings, service, technician] = await Promise.all([
+    getCurrentSettings(), getService(payload.serviceId, { includeStyleCount: false }), getTechnician(payload.technicianId)
+  ]);
   const addonSelection = await resolveBookingAddons(service, payload);
   const effectiveService = addonSelection.effectiveService;
-  const technician = await getTechnician(payload.technicianId);
   assert(technicianCanServe(technician, service), 'SKILL_MISMATCH', '该技师暂不提供此大项');
   if (!isWithinDateWindow(payload.date, settings.booking.openDays, 0)) {
     return { date: payload.date, serviceId: service.id, technicianId: technician.id, slots: [], durationMinutes: effectiveService.durationMinutes, addons: addonSelection.addons, timeline: { date: payload.date, startAt: null, endAt: null, totalMinutes: 0, durationMinutes: Number(effectiveService.durationMinutes), stepMinutes: Number(settings.booking.slotStepMinutes || 15), segments: [] } };
@@ -298,13 +313,13 @@ async function getAvailableSlots(payload) {
   return { date: payload.date, serviceId: service.id, technicianId: technician.id, durationMinutes: effectiveService.durationMinutes, addons: addonSelection.addons, stepMinutes: step, slots, timeline };
 }
 
-async function createQuote(payload) {
-  const validation = await validateBookingSlot(payload);
+async function createQuote(payload, internal = {}) {
+  const validation = await validateBookingSlot(payload, internal);
   assert(payload.workId, 'STYLE_REQUIRED', '请选择款式后再预约');
-  const work = await getWork(payload.workId);
+  const work = await getWork(payload.workId, validation.baseService);
   assert(work.serviceId === validation.service.id, 'WORK_SERVICE_MISMATCH', '款式与小项目不匹配');
   const openid = requireOpenId().openid;
-  const account = await getPointsAccount(openid);
+  const account = internal.account || await getPointsAccount(openid);
   const rule = {
     unit: validation.settings.points.unit,
     discountFen: validation.settings.points.discountFen,
@@ -312,7 +327,7 @@ async function createQuote(payload) {
   };
   const price = calculatePointsDiscount({ totalFen: validation.totalFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
   const expiresAt = Date.now() + 10 * 60 * 1000;
-  const quoteId = createQuoteId({ workId: work.id, serviceId: validation.service.id, removalServiceId: String(payload.removalServiceId || ''), builderServiceId: String(payload.builderServiceId || ''), footTipCount: Number(payload.footTipCount || 0), technicianId: validation.technician.id, date: payload.date, startAt: Number(payload.startAt), durationMinutes: Number(validation.service.durationMinutes), pointsToUse: price.pointsToUse, totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen, settingsVersion: validation.settings.version, expiresAt });
+  const quoteId = createQuoteId({ workId: work.id, serviceId: validation.service.id, removalServiceId: String(payload.removalServiceId || ''), builderServiceId: String(payload.builderServiceId || ''), footTipCount: Number(payload.footTipCount || 0), boostCount: Number(payload.boostCount || 0), technicianId: validation.technician.id, date: payload.date, startAt: Number(payload.startAt), durationMinutes: Number(validation.service.durationMinutes), pointsToUse: price.pointsToUse, totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen, settingsVersion: validation.settings.version, expiresAt });
   return {
     quoteId,
     expiresAt,
@@ -344,6 +359,9 @@ function publicOrder(order) {
   return {
     id: order.id || order._id,
     status: order.status,
+    paymentGroupId: order.paymentGroupId || '',
+    paymentGroupPaidFen: Number(order.paymentGroupPaidFen || 0),
+    paymentGroupCount: Number(order.paymentGroupCount || 0),
     statusLabel: ({ PENDING_PAYMENT: '待付款', RESERVED: '待到店', ARRIVED: '已到店', IN_SERVICE: '服务中', COMPLETED: '已完成', NO_SHOW_REVIEW: '未到店待复核', CANCEL_PENDING_REFUND: '退款待处理', REFUNDED: '已退款', CANCELLED: '已取消', CANCELLED_BY_USER: '已取消', CANCELLED_NO_SHOW: '未到店已取消' })[order.status] || '处理中',
     work: order.workSnapshot || null,
     serviceName: order.serviceSnapshot && order.serviceSnapshot.name,
@@ -483,21 +501,23 @@ async function returnConsumedPoints(reader, order, description, pointsToReturn) 
   return { ...order, pointsReturnedAt: now, pointsReturned: points };
 }
 
-async function createOrder(payload) {
+async function createOrder(payload, internal = {}) {
+  const runTransaction = internal.transaction ? callback => callback(internal.transaction) : callback => db.runTransaction(callback);
   const context = requireOpenId();
-  const user = await ensureUser(context.openid, context);
+  const user = internal.user || await ensureUser(context.openid, context);
   assert(user.phoneCipher, 'PHONE_REQUIRED', '预约前请先授权并绑定手机号');
-  const validation = await validateBookingSlot(payload);
+  const validation = await validateBookingSlot({ ...payload, reader: internal.transaction || db });
   assert(payload.workId, 'STYLE_REQUIRED', '请选择款式后再预约');
   const work = await getWork(payload.workId);
   assert(work.serviceId === validation.service.id, 'WORK_SERVICE_MISMATCH', '款式与小项目不匹配');
-  const account = await getPointsAccount(context.openid);
+  const account = await getPointsAccount(context.openid, internal.transaction || db);
   const rule = { unit: validation.settings.points.unit, discountFen: validation.settings.points.discountFen, maxPercent: validation.settings.points.maxPercent };
   const price = calculatePointsDiscount({ totalFen: validation.totalFen, availablePoints: account.available, requestedPoints: Number(payload.pointsToUse || 0), rule });
   const claims = readQuoteId(payload.quoteId);
   assert(claims.workId === work.id && claims.serviceId === validation.service.id
     && String(claims.removalServiceId || '') === String(payload.removalServiceId || '')
     && String(claims.builderServiceId || '') === String(payload.builderServiceId || '')
+    && Number(claims.boostCount || 0) === Number(payload.boostCount || 0)
     && Number(claims.footTipCount || 0) === Number(payload.footTipCount || 0)
     && claims.technicianId === validation.technician.id && claims.date === payload.date && Number(claims.startAt) === Number(payload.startAt), 'QUOTE_MISMATCH', '预约信息发生变化，请重新报价');
   assert(Number(claims.pointsToUse) === price.pointsToUse
@@ -516,9 +536,10 @@ async function createOrder(payload) {
   const id = orderId();
   const merchantNo = merchantOrderNo(id);
   const paymentId = `pay_${id}`;
-  const status = price.paidFen > 0 ? ORDER_STATUS.PENDING_PAYMENT : ORDER_STATUS.RESERVED;
+  const pendingPayment = price.paidFen > 0 || internal.forcePending === true;
+  const status = pendingPayment ? ORDER_STATUS.PENDING_PAYMENT : ORDER_STATUS.RESERVED;
   const order = {
-    _id: id, id, userId: context.openid, appid: context.appid,
+    _id: id, id, ...(internal.groupId ? { paymentGroupId: internal.groupId } : {}), userId: context.openid, appid: context.appid,
     customerSnapshot: { nickname: user.nickname || '拾光顾客', phoneMasked: user.phoneMasked || '' },
     technicianId: validation.technician.id,
     technicianSnapshot: { id: validation.technician.id, name: validation.technician.name, title: validation.technician.title || '' },
@@ -529,17 +550,17 @@ async function createOrder(payload) {
     date: payload.date, startAt: validation.slot.startAt, endAt: validation.slot.endAt,
     totalFen: price.totalFen, discountFen: price.discountFen, paidFen: price.paidFen,
     pointsUsed: price.pointsToUse,
-    pointsFrozen: price.paidFen > 0 ? price.pointsToUse : 0,
-    pointsConsumed: price.paidFen === 0 ? price.pointsToUse : 0,
+    pointsFrozen: pendingPayment ? price.pointsToUse : 0,
+    pointsConsumed: !pendingPayment ? price.pointsToUse : 0,
     pointsEarned: 0,
     pointRuleSnapshot: { ...validation.settings.points }, bookingRuleSnapshot: { ...validation.settings.booking }, notificationRuleSnapshot: { arrivalLeadMinutes: Number(validation.settings.notifications && validation.settings.notifications.arrivalLeadMinutes || 120) }, settingsVersion: validation.settings.version,
-    status, paymentStatus: price.paidFen > 0 ? PAYMENT_STATUS.NOT_STARTED : PAYMENT_STATUS.SUCCESS,
-    paymentDeadline: price.paidFen > 0 ? deadline : 0, refundStatus: REFUND_STATUS.NOT_REQUIRED,
+    status, paymentStatus: pendingPayment ? PAYMENT_STATUS.NOT_STARTED : PAYMENT_STATUS.SUCCESS,
+    paymentDeadline: pendingPayment ? deadline : 0, refundStatus: REFUND_STATUS.NOT_REQUIRED,
     checkInNonce: crypto.randomBytes(18).toString('base64url'),
     createdAt: now, updatedAt: now
   };
 
-  const result = await db.runTransaction(async (transaction) => {
+  const result = await runTransaction(async (transaction) => {
     const existingIdem = await getOptional(COLLECTIONS.idempotency, idem, transaction);
     if (existingIdem && existingIdem.orderId && Number(existingIdem.expiresAt || 0) > now) {
       assert(existingIdem.requestHash === requestHash, 'IDEMPOTENCY_CONFLICT', '预约内容已变化，请重新提交', 409);
@@ -557,6 +578,11 @@ async function createOrder(payload) {
       && currentWork && currentWork.published !== false && !currentWork.archived
       && currentWork.serviceId === validation.service.id, 'QUOTE_CHANGED', '项目或款式刚刚变更，请重新选择并报价', 409);
     for (const addon of validation.addons) {
+      if (addon.type === 'BOOST') {
+        const currentBoost = await boostAddonOption({ ...currentService, categoryName: currentCategory.name }, transaction);
+        assert(currentBoost && currentBoost.id === addon.id && currentBoost.unitPriceFen === addon.unitPriceFen && Number(addon.quantity) === Number(payload.boostCount) && currentBoost.durationMinutes * addon.quantity === addon.durationMinutes, 'QUOTE_CHANGED', '加油包已变更，请重新报价', 409);
+        continue;
+      }
       if (addon.type === 'TIP') {
         assert(supportsFootTipAddon(currentService)
           && Number(addon.quantity) === Number(payload.footTipCount || 0)
@@ -567,9 +593,9 @@ async function createOrder(payload) {
       }
       const currentAddon = await getOptional(COLLECTIONS.services, addon.id, transaction);
       assert(currentAddon && !currentAddon.archived && currentAddon.enabled !== false
-        && currentAddon.categoryId === validation.service.categoryId && addonTypeOf(currentAddon) === addon.type
+        && bookingAddonMatches(validation.service, currentAddon) && addonTypeOf(currentAddon) === addon.type
         && Number(currentAddon.durationMinutes) === Number(addon.durationMinutes)
-        && addonPriceFen(currentAddon, addon.type, currentService) === Number(addon.priceFen), 'QUOTE_CHANGED', '卸甲或建构选项刚刚变更，请重新报价', 409);
+        && addonPriceFen(currentAddon, addon.type, currentService, validation.addons.find(item => item.type === 'BOOST')?.priceFen || 0) === Number(addon.priceFen), 'QUOTE_CHANGED', '卸甲或建构选项刚刚变更，请重新报价', 409);
     }
     await getOptional(COLLECTIONS.users, context.openid, transaction);
     const scheduleRevision = Number(validation.settings.scheduleRevision || 1);
@@ -600,11 +626,11 @@ async function createOrder(payload) {
     assert(Number(currentAccount.available || 0) >= price.pointsToUse, 'POINTS_NOT_ENOUGH', '积分余额刚刚发生变化，请重新报价');
     // The user/account rows serialize creates for the same customer before the
     // unpaid-order check, so concurrent requests cannot both pass it.
-    const activeUnpaid = await find(COLLECTIONS.orders, { userId: context.openid, status: ORDER_STATUS.PENDING_PAYMENT }, { limit: 1 }, transaction);
-    assert(!activeUnpaid.length, 'UNPAID_ORDER_EXISTS', '你已有待付款订单，请先处理后再预约');
+    const activeUnpaid = await find(COLLECTIONS.orders, { userId: context.openid, status: ORDER_STATUS.PENDING_PAYMENT }, { limit: 201 }, transaction);
+    assert(!activeUnpaid.some(item => !internal.groupId || item.paymentGroupId !== internal.groupId), 'UNPAID_ORDER_EXISTS', '你已有待付款订单，请先处理后再预约');
     const activeOrders = await find(COLLECTIONS.orders, { userId: context.openid, status: db.command.in(ACTIVE_ORDER_STATUSES) }, { orderBy: { field: 'startAt', direction: 'asc' }, limit: 201 }, transaction);
     assert(activeOrders.length <= 200, 'ACTIVE_ORDER_LIMIT', '有效预约过多，请联系门店处理后再下单', 409);
-    const userConflict = activeOrders.find((item) => item.status !== ORDER_STATUS.PENDING_PAYMENT && overlaps(order.startAt, order.endAt, item.startAt, item.endAt));
+    const userConflict = activeOrders.find((item) => (item.status !== ORDER_STATUS.PENDING_PAYMENT || internal.groupId) && overlaps(order.startAt, order.endAt, item.startAt, item.endAt));
     assert(!userConflict, 'CUSTOMER_SLOT_TAKEN', '你在这个时间段已有其他预约', 409);
     const occupancy = { orderId: id, startAt: order.startAt, endAt: order.endAt, status, createdAt: now };
     const nextDay = { ...day, _id: day._id || dayId(validation.technician.id, payload.date), occupancies: [...(day.occupancies || []), occupancy], version: Number(day.version || 0) + 1, updatedAt: now };
@@ -614,16 +640,16 @@ async function createOrder(payload) {
     await transaction.collection(COLLECTIONS.payments).doc(paymentId).set({ data: payment });
     if (price.pointsToUse > 0) {
       const available = Number(currentAccount.available || 0) - price.pointsToUse;
-      const frozen = Number(currentAccount.frozen || 0) + (price.paidFen > 0 ? price.pointsToUse : 0);
+      const frozen = Number(currentAccount.frozen || 0) + (pendingPayment ? price.pointsToUse : 0);
       await transaction.collection(COLLECTIONS.pointsAccounts).doc(context.openid).set({ data: { ...currentAccount, available, frozen, version: Number(currentAccount.version || 0) + 1, updatedAt: now } });
-      if (price.paidFen > 0) {
+      if (pendingPayment) {
         await addLedger(transaction, `freeze_${id}`, { userId: context.openid, orderId: id, type: 'FREEZE', amount: 0, balanceAfter: available, description: '预约下单冻结积分' });
       } else {
         await addLedger(transaction, `consume_${id}`, { userId: context.openid, orderId: id, type: 'CONSUME', amount: -price.pointsToUse, balanceAfter: available, description: '全积分预约，支付确认时消耗积分' });
       }
     }
     await transaction.collection(COLLECTIONS.idempotency).doc(idem).set({ data: { _id: idem, id: idem, userId: context.openid, key, requestHash, orderId: id, createdAt: now, expiresAt: addMinutes(now, 24 * 60) } });
-    if (price.paidFen > 0) {
+    if (pendingPayment) {
       const jobId = `job_payment_expire_${id}`;
       await transaction.collection(COLLECTIONS.jobs).doc(jobId).set({ data: { _id: jobId, type: 'PAYMENT_EXPIRE', businessId: id, status: 'PENDING', nextRunAt: deadline, retryCount: 0, createdAt: now, updatedAt: now } });
     }
@@ -637,8 +663,8 @@ async function createOrder(payload) {
     }
     return { orderId: id, replay: false };
   });
-  const storedOrder = await getOptional(COLLECTIONS.orders, result.orderId);
-  if (storedOrder && storedOrder.status === ORDER_STATUS.RESERVED && !result.replay) {
+  const storedOrder = await getOptional(COLLECTIONS.orders, result.orderId, internal.transaction || db);
+  if (storedOrder && storedOrder.status === ORDER_STATUS.RESERVED && !result.replay && !internal.transaction) {
     await require('./notification-service').notifyOrderEvent('appointmentSuccess', storedOrder);
   }
   return { order: publicOrder(storedOrder), paymentRequired: storedOrder.paymentStatus !== PAYMENT_STATUS.SUCCESS, holdUntil: storedOrder.paymentDeadline || 0, replay: !!result.replay };
@@ -724,6 +750,11 @@ async function listPoints() {
 
 async function cancelOrder(orderIdValue) {
   const { openid } = requireOpenId();
+  const initial = await getOwnedOrder(orderIdValue, openid);
+  if (initial.paymentGroupId && initial.status === ORDER_STATUS.PENDING_PAYMENT) {
+    const groupResult = await require('./cart-payment').closeGroup(initial.paymentGroupId);
+    if (groupResult.status !== PAYMENT_STATUS.SUCCESS) return { order: publicOrder(await getOwnedOrder(orderIdValue, openid)), refundRequested: false };
+  }
   const result = await db.runTransaction(async (transaction) => {
     const order = await getOwnedOrder(orderIdValue, openid, transaction);
     assert([ORDER_STATUS.PENDING_PAYMENT, ORDER_STATUS.RESERVED].includes(order.status), 'ORDER_NOT_CANCELLABLE', '当前订单状态不支持取消');
@@ -797,8 +828,9 @@ async function deleteOrder(orderIdValue) {
   return { deleted: true, orderId: orderIdValue };
 }
 
-async function markPaymentSuccess(orderIdValue, paymentPayload = {}) {
-  const result = await db.runTransaction(async (transaction) => {
+async function markPaymentSuccess(orderIdValue, paymentPayload = {}, internal = {}) {
+  const runTransaction = internal.transaction ? callback => callback(internal.transaction) : callback => db.runTransaction(callback);
+  const result = await runTransaction(async (transaction) => {
     const order = await getOptional(COLLECTIONS.orders, orderIdValue, transaction);
     assert(order, 'ORDER_NOT_FOUND', '订单不存在', 404);
     const payment = await getOptional(COLLECTIONS.payments, `pay_${orderIdValue}`, transaction);
@@ -812,7 +844,7 @@ async function markPaymentSuccess(orderIdValue, paymentPayload = {}) {
     if (payment.transactionId && incomingTransactionId) assert(payment.transactionId === incomingTransactionId, 'PAYMENT_TRANSACTION_MISMATCH', '微信支付交易号不一致');
     const duplicate = payment.status === PAYMENT_STATUS.SUCCESS && order.paymentStatus === PAYMENT_STATUS.SUCCESS;
     const now = Date.now();
-    const successPayment = { ...payment, status: PAYMENT_STATUS.SUCCESS, transactionId: incomingTransactionId || payment.transactionId || '', paidAt: paymentPayload.paidAt || payment.paidAt || now, providerState: 'SUCCESS', updatedAt: now };
+    const successPayment = { ...payment, status: PAYMENT_STATUS.SUCCESS, ...(internal.group ? { groupTransactionId: incomingTransactionId || payment.groupTransactionId || '' } : { transactionId: incomingTransactionId || payment.transactionId || '' }), paidAt: paymentPayload.paidAt || payment.paidAt || now, providerState: 'SUCCESS', updatedAt: now };
     await transaction.collection(COLLECTIONS.payments).doc(payment._id || payment.id).set({ data: successPayment });
     if ([ORDER_STATUS.PENDING_PAYMENT].includes(order.status)) {
       const nextOrder = { ...order, status: ORDER_STATUS.RESERVED, paymentStatus: PAYMENT_STATUS.SUCCESS, paidAt: successPayment.paidAt, pointsFrozen: 0, pointsConsumed: Number(order.pointsUsed || 0), updatedAt: now };
@@ -842,14 +874,15 @@ async function markPaymentSuccess(orderIdValue, paymentPayload = {}) {
     await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: nextOrder });
     return { order: nextOrder, duplicate, shouldRefund };
   });
-  if (result.order && result.order.status === ORDER_STATUS.RESERVED && !result.duplicate) {
+  if (result.order && result.order.status === ORDER_STATUS.RESERVED && !result.duplicate && !internal.transaction) {
     await require('./notification-service').notifyOrderEvent('appointmentSuccess', result.order);
   }
   return { order: publicOrder(result.order), duplicate: result.duplicate, shouldRefund: result.shouldRefund };
 }
 
-async function markPaymentClosed(orderIdValue, providerState = 'CLOSED') {
-  const result = await db.runTransaction(async (transaction) => {
+async function markPaymentClosed(orderIdValue, providerState = 'CLOSED', internal = {}) {
+  const runTransaction = internal.transaction ? callback => callback(internal.transaction) : callback => db.runTransaction(callback);
+  const result = await runTransaction(async (transaction) => {
     const order = await getOptional(COLLECTIONS.orders, orderIdValue, transaction);
     if (!order || order.status !== ORDER_STATUS.PENDING_PAYMENT) return order;
     const payment = await getOptional(COLLECTIONS.payments, `pay_${orderIdValue}`, transaction);
@@ -1177,7 +1210,8 @@ async function preparePaymentRecord(orderIdValue) {
   return { order, payment };
 }
 
-module.exports = {
+module.exports = { readQuoteId,
+  getPointsAccount,
   getAvailableSlots,
   createQuote,
   createOrder,

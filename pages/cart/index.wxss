@@ -1,0 +1,29 @@
+.cart-header { margin: 8rpx 0 30rpx; }
+.cart-caption { display: block; margin-top: 10rpx; color: #9a8581; font-size: 25rpx; }
+.cart-item { padding: 28rpx; margin-bottom: 24rpx; }
+.cart-item.chosen { border-color: #e5c0c5; }
+.cart-item-top { display: flex; align-items: center; gap: 20rpx; }
+.cart-check { flex-shrink: 0; width: 40rpx; height: 40rpx; border: 2rpx solid #d7c6c0; border-radius: 50%; display: flex; justify-content: center; align-items: center; color: #fff; font-size: 26rpx; }
+.cart-check.checked { background: #bb6f79; border-color: #bb6f79; }
+.cart-image { width: 124rpx; height: 142rpx; border-radius: 18rpx; flex-shrink: 0; background: #f6ede7; }
+.cart-copy { min-width: 0; flex: 1; }
+.cart-title { display: block; font-size: 29rpx; font-weight: 600; line-height: 1.5; }
+.cart-subtitle { display: block; color: #9a8581; font-size: 23rpx; margin-top: 4rpx; }
+.cart-price { display: block; margin-top: 12rpx; color: #ac606c; font-weight: 600; }
+.cart-appointment { margin-top: 24rpx; padding: 20rpx; border-radius: 16rpx; background: #faf3ef; }
+.cart-appointment text { display: block; line-height: 1.7; font-size: 24rpx; }
+.cart-addon { color: #9a8581; }
+.cart-actions { display: flex; justify-content: flex-end; gap: 28rpx; margin-top: 16rpx; }
+button.cart-action { margin: 0; padding: 0; background: transparent; color: #ac606c; font-size: 24rpx; line-height: 52rpx; }
+button.cart-action.muted { color: #9a8581; }
+.cart-checkout { padding: 30rpx; margin: 28rpx 0; }
+.points-row { display: flex; justify-content: space-between; align-items: center; }
+.points-caption { display: block; font-size: 22rpx; margin-top: 8rpx; }
+.cart-note { display: block; font-size: 23rpx; color: #9a8581; line-height: 1.6; margin: 24rpx 0; }
+.cart-error { display: block; color: #b35763; line-height: 1.6; font-size: 25rpx; margin-bottom: 24rpx; }
+.cart-totals > view { display: flex; justify-content: space-between; margin-bottom: 18rpx; font-size: 25rpx; }
+.cart-totals .cart-total { border-top: 1rpx solid #efdfda; padding-top: 22rpx; margin: 22rpx 0 28rpx; font-size: 30rpx; font-weight: 600; color: #ac606c; }
+.cart-empty { padding: 70rpx 30rpx; text-align: center; }
+.cart-empty text { display: block; font-size: 25rpx; line-height: 1.8; }
+.cart-empty .empty-title { font-size: 32rpx; font-weight: 600; margin-bottom: 20rpx; }
+.cart-empty button { margin-top: 36rpx; }

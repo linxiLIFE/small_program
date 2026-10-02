@@ -38,7 +38,7 @@ Page({
         timeLabel: item.startAt ? formatDateTimeRange(item.startAt, item.endAt, item.durationMinutes) : item.startAtLabel || '待确定',
         addons: (item.addons || []).map((addon) => ({
           ...addon,
-          typeLabel: addon.type === 'REMOVAL' ? '卸甲' : addon.type === 'TIP' ? '加甲片' : '建构',
+          typeLabel: addon.type === 'REMOVAL' ? '卸甲' : addon.type === 'TIP' ? '加甲片' : addon.type === 'BOOST' ? '加油包' : '建构',
           durationLabel: addon.type === 'TIP' ? `${Number(addon.quantity || 0)} 个 · 不增加时长` : `+${formatDuration(addon.durationMinutes)}`,
           priceLabel: Number(addon.priceFen || 0) > 0 ? formatMoney(addon.priceFen) : '免费'
         }))

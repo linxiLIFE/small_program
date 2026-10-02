@@ -3,6 +3,24 @@ const { cloud } = require('./db');
 const { requireRole } = require('./auth');
 const { assert } = require('./errors');
 const imageCache=new Map();
+const imageFields = ['imageUrl', 'coverUrl', 'avatarUrl', 'wechatQrUrl'];
+function imageFileID(item, key, value) {
+  const stored = item[key.replace('Url', 'FileID')];
+  return typeof stored === 'string' && stored.startsWith('cloud://') ? stored
+    : typeof value === 'string' && value.startsWith('cloud://') ? value : '';
+}
+
+function imageCacheExpiry(item) {
+  const now = Date.now();
+  let expires = now + Math.min(600, Number(item.maxAge) > 60 ? Number(item.maxAge) - 60 : 300) * 1000;
+  // COS may issue a shorter signature than the requested maxAge.
+  const match = /[?&]q-sign-time=([^&]+)/.exec(item.tempFileURL || '');
+  if (match) {
+    const end = Number(decodeURIComponent(match[1]).split(';')[1]);
+    expires = Number.isFinite(end) ? Math.min(expires, end * 1000 - 30000) : now;
+  }
+  return expires;
+}
 
 function decodeImage(payload = {}) {
   const encoded = String(payload.base64 || '');
@@ -23,13 +41,13 @@ async function uploadImage(payload) {
   const resolved = await resolveImages({ imageUrl: result.fileID });
   return { fileID: result.fileID, url: resolved.imageUrl };
 }
-async function resolveImages(value) {
+async function resolveImages(value, storage = cloud) {
   const refs = new Set();
   const visit = item => {
     if (Array.isArray(item)) return item.forEach(visit);
     if (!item || typeof item !== 'object') return;
     Object.entries(item).forEach(([key, val]) => {
-      if (['imageUrl','coverUrl','avatarUrl'].includes(key) && typeof val === 'string' && val.startsWith('cloud://')) refs.add(val);
+      if (imageFields.includes(key) && imageFileID(item, key, val)) refs.add(imageFileID(item, key, val));
       else if (typeof val === 'object') visit(val);
     });
   };
@@ -42,11 +60,13 @@ async function resolveImages(value) {
     let lastError = null;
     for (let attempt = 0; attempt < 2 && unresolved.length; attempt += 1) {
       try {
-        const result = await cloud.getTempFileURL({ fileList: unresolved });
+        const result = await storage.getTempFileURL({ fileList: attempt === 0
+          ? unresolved.map(fileID => ({ fileID, maxAge: 3600, urlType: 'COS_URL' }))
+          : unresolved });
         (result.fileList || []).forEach(item => {
-          if (item.tempFileURL && (!item.status || Number(item.status) === 0)) {
+          if (item.tempFileURL && (!item.status || Number(item.status) === 0) && (!item.code || item.code === 'SUCCESS')) {
             urls.set(item.fileID, item.tempFileURL);
-            imageCache.set(item.fileID, { url: item.tempFileURL, expires: Date.now() + 600000 });
+            imageCache.set(item.fileID, { url: item.tempFileURL, expires: imageCacheExpiry(item) });
           }
         });
         unresolved = unresolved.filter(id => !urls.has(id));
@@ -63,8 +83,9 @@ async function resolveImages(value) {
     if (!item || typeof item !== 'object') return item;
     const out = {};
     Object.entries(item).forEach(([key, val]) => {
-      if (['imageUrl','coverUrl','avatarUrl'].includes(key) && typeof val === 'string' && val.startsWith('cloud://')) {
-        out[key.replace('Url','FileID')] = val; out[key] = urls.get(val) || '';
+      if (imageFields.includes(key) && imageFileID(item, key, val)) {
+        const fileID = imageFileID(item, key, val);
+        out[key.replace('Url','FileID')] = fileID; out[key] = urls.get(fileID) || '';
       } else out[key] = typeof val === 'object' ? transform(val) : val;
     });
     return out;

@@ -16,7 +16,7 @@ function validateCredentials(payload) {
   const username=String(payload.username || '').trim(); const password=String(payload.password || '');
   assert(/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$/.test(username),'INVALID_USERNAME','账号需为 3 到 32 位字母、数字、点、横线或下划线');
   const complexity=[/[a-z]/,/[A-Z]/,/[0-9]/,/[()!@#$%^&*|?><_-]/].filter(rule=>rule.test(password)).length;
-  assert(password.length>=8&&password.length<=32&&/^[a-zA-Z0-9]/.test(password)&&complexity>=3,'INVALID_PASSWORD','密码需为 8 到 32 位，以字母或数字开头，包含大小写字母、数字、符号中的至少三类');
+  assert(password.length>=8&&password.length<=32&&/^[a-zA-Z0-9][a-zA-Z0-9()!@#$%^&*|?><_-]*$/.test(password)&&complexity>=3,'INVALID_PASSWORD','密码需为 8 到 32 位，以字母或数字开头，包含大小写字母、数字、符号中的至少三类，不能包含空格、中文或其他符号');
   return {username,password};
 }
 
@@ -30,7 +30,10 @@ function accountProviderError(error, action) {
   if (/credential|secret|unauthorized|forbidden|permission|invalid.*(token|key)/i.test(`${code} ${message}`)) {
     return new AppError('ACCOUNT_PROVIDER_CONFIG', '技师账号服务配置异常，请联系管理员', 503);
   }
-  return new AppError('ACCOUNT_PROVIDER_UNAVAILABLE', '技师账号服务暂时不可用，请稍后重试', 503);
+  if (code === 'LIMITEXCEEDED' || code.startsWith('LIMITEXCEEDED.')) return new AppError('ACCOUNT_PROVIDER_QUOTA', '云端账号额度已用完，请联系管理员处理', 409);
+  if (/PASSWORD/.test(code) || /password|密码/i.test(message)) return new AppError('INVALID_PASSWORD', '密码不符合账号服务要求，请使用大小写字母、数字和允许的符号');
+  if (/DUPLICATE|ALREADYEXIST/.test(code) || /already exist|duplicate|已存在|重复/i.test(message)) return new AppError('ACCOUNT_CONFLICT', '账号名称已被使用，请更换账号名称');
+  return new AppError('ACCOUNT_PROVIDER_UNAVAILABLE', `技师账号服务暂时不可用（${code.replace(/[^A-Z0-9_.-]/g, '').slice(0,100) || 'UNKNOWN'}），请稍后重试`, 503);
 }
 
 async function createTechnicianLogin(payload) {
@@ -55,20 +58,27 @@ async function createTechnicianLogin(payload) {
   assert(envId, 'ACCOUNT_PROVIDER_CONFIG', '技师账号服务环境未配置', 503);
   // Read the deterministic UID first so a retry after a database/network failure
   // cannot create another account or change an existing account's credentials.
+  async function providerFailure(error, action) {
+    const diagnostic = { action, code: String(error && error.code || 'UNKNOWN').slice(0,100), requestId: String(error && error.requestId || '').slice(0,100), occurredAt: Date.now() };
+    try { await db.collection(COLLECTIONS.staff).doc(bindingId).update({ data: { provisioningError: diagnostic } }); } catch (recordError) { console.error('保存账号服务诊断失败', { code: recordError.code }); }
+    return accountProviderError(error, action);
+  }
   let existing;
   try {
     existing=await client.DescribeUserList({EnvId:envId,UidList:[uid],PageSize:1});
   } catch (error) {
-    throw accountProviderError(error, 'DescribeUserList');
+    throw await providerFailure(error, 'DescribeUserList');
   }
   const user=existing.Data?.UserList?.find(item=>item.Uid===uid);
-  if(user) assert(user.Name===username,'ACCOUNT_CONFLICT','该技师账号名称已固定，请使用原账号名称');
+  if(user) assert(String(user.Name || '').toLowerCase()===username.toLowerCase(),'ACCOUNT_CONFLICT','该技师账号名称已固定，请使用原账号名称');
   else {
+    // App roles come from staff_accounts. CloudBase internal users are reserved
+    // for its own console/workspace and consume the plan's member quota.
     let result;
     try {
-      result=await client.CreateUser({EnvId:envId,Name:username,Uid:uid,Password:password,Type:'internalUser',UserStatus:'ACTIVE',NickName:technician.name.length>=2?technician.name:'技师'+technician.name});
+      result=await client.CreateUser({EnvId:envId,Name:username,Uid:uid,Password:password,Type:'externalUser',UserStatus:'ACTIVE',NickName:technician.name.length>=2?technician.name:'技师'+technician.name});
     } catch (error) {
-      throw accountProviderError(error, 'CreateUser');
+      throw await providerFailure(error, 'CreateUser');
     }
     assert(result.Data?.Uid===uid,'CREATE_ACCOUNT_FAILED','登录账号未创建成功');
   }

@@ -5,6 +5,10 @@ const { AppError } = require('./errors');
 
 const LIMITS = Object.freeze({
   getAvailableSlots: { max: 60, windowMs: 60 * 1000 },
+  createCartQuote: { max: 10, windowMs: 60 * 1000 },
+  createCartOrder: { max: 10, windowMs: 60 * 1000 },
+  prepareCartPayment: { max: 10, windowMs: 60 * 1000 },
+  queryCartPayment: { max: 30, windowMs: 60 * 1000 },
   createQuote: { max: 30, windowMs: 60 * 1000 },
   queryPayment: { max: 30, windowMs: 60 * 1000 },
   preparePayment: { max: 10, windowMs: 60 * 1000 },

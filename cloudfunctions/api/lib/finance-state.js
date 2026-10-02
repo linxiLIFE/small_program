@@ -103,6 +103,7 @@ function bookingRequestHash(payload = {}) {
     removalServiceId: String(payload.removalServiceId || ''),
     builderServiceId: String(payload.builderServiceId || ''),
     footTipCount: Number(payload.footTipCount || 0),
+    boostCount: Number(payload.boostCount || 0),
     footTipSelectionConfirmed: payload.footTipSelectionConfirmed === true,
     addonSelectionConfirmed: payload.addonSelectionConfirmed === true,
     technicianId: String(payload.technicianId || ''),

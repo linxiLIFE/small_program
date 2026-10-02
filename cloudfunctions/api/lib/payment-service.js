@@ -92,6 +92,10 @@ async function recordPaymentState(orderId, status, providerState) {
 }
 
 async function reconcilePaymentBeforeCancellation(order, payment) {
+  if (order.paymentGroupId) {
+    const result = await require('./cart-payment').closeGroup(order.paymentGroupId);
+    return { ...payment, status: result.status };
+  }
   if (!payment || Number(order.paidFen || 0) === 0 || payment.status === PAYMENT_STATUS.SUCCESS) return payment;
   if (!wechat.isConfigured()) {
     assert(payment.status === PAYMENT_STATUS.NOT_STARTED, 'PAYMENT_CHECK_REQUIRED', '已创建支付单但微信支付配置不可用，请稍后再取消');
@@ -155,6 +159,11 @@ async function reconcilePaymentBeforeCancellation(order, payment) {
 }
 
 async function preparePayment(orderId) {
+  const group = await require('./cart-payment').groupForOrder(orderId);
+  if (group) {
+    assert(group.userId === requireOpenId().openid, 'FORBIDDEN', '无权操作该支付单', 403);
+    return require('./cart-payment').prepareGroupPayment(group.id);
+  }
   const { openid, appid } = requireOpenId();
   const { order, payment } = await preparePaymentRecord(orderId);
   if (!wechat.isConfigured()) {
@@ -222,6 +231,11 @@ async function preparePayment(orderId) {
 }
 
 async function queryPayment(orderId) {
+  const group = await require('./cart-payment').groupForOrder(orderId);
+  if (group) {
+    const result = await require('./cart-payment').queryGroupPayment(group.id);
+    return { ...result, order: publicOrder(await getOptional(COLLECTIONS.orders, orderId)) };
+  }
   const { openid } = requireOpenId();
   const { order, payment } = await preparePaymentRecord(orderId).catch(async (error) => {
     if (error.code === 'ORDER_NOT_PAYABLE') {
@@ -373,9 +387,10 @@ async function requestRefund(orderId, reason = '预约取消退款', options = {
   const claim = await claimRefundSubmission(orderId, refundId);
   if (!claim.acquired) return claim.refund;
   context = { ...context, refund: claim.refund };
+  const group = await require('./cart-payment').groupForOrder(orderId);
   let result;
   try {
-    result = await wechat.createRefund({ outTradeNo: context.payment.merchantOrderNo, outRefundNo: context.refund.refundNo, amountFen: context.refund.amountFen, totalFen: context.payment.amountFen, reason });
+    result = await wechat.createRefund({ outTradeNo: group ? group.merchantOrderNo : context.payment.merchantOrderNo, outRefundNo: context.refund.refundNo, amountFen: context.refund.amountFen, totalFen: group ? group.amountFen : context.payment.amountFen, reason });
   } catch (error) {
     const disposition = refundFailureDisposition(error);
     if (disposition.retry) {
@@ -456,9 +471,10 @@ async function handleNotify(event) {
       const refund = refunds.data && refunds.data[0];
       assert(refund, 'REFUND_NOT_FOUND', '退款回调对应记录不存在', 404);
       const payment = await getOptional(COLLECTIONS.payments, `pay_${refund.orderId}`);
-      assert(payment && payment.merchantOrderNo === resource.out_trade_no, 'REFUND_ORDER_MISMATCH', '退款回调原支付单号校验失败');
+      const group = await require('./cart-payment').groupForOrder(refund.orderId);
+      assert(payment && (group ? group.merchantOrderNo : payment.merchantOrderNo) === resource.out_trade_no, 'REFUND_ORDER_MISMATCH', '退款回调原支付单号校验失败');
       assert(Number(resource.amount && resource.amount.refund) === Number(refund.amountFen), 'REFUND_AMOUNT_MISMATCH', '退款金额校验失败');
-      assert(Number(resource.amount && resource.amount.total) === Number(payment.amountFen), 'REFUND_TOTAL_MISMATCH', '退款原订单金额校验失败');
+      assert(Number(resource.amount && resource.amount.total) === Number(group ? group.amountFen : payment.amountFen), 'REFUND_TOTAL_MISMATCH', '退款原订单金额校验失败');
       if (resource.amount && resource.amount.currency) assert(resource.amount.currency === 'CNY', 'REFUND_CURRENCY_MISMATCH', '退款币种校验失败');
       const marked = notification.event_type === 'REFUND.SUCCESS'
         ? await markRefundSuccess(refund.id || refund._id, { refundId: resource.refund_id, successAt: parseProviderTime(resource.success_time) })
@@ -470,7 +486,8 @@ async function handleNotify(event) {
       const payments = await db.collection(COLLECTIONS.payments).where({ merchantOrderNo: resource.out_trade_no }).limit(1).get();
       const payment = payments.data && payments.data[0];
       assert(payment, 'PAYMENT_NOT_FOUND', '支付回调对应订单不存在', 404);
-      const marked = await markPaymentSuccess(payment.orderId, { amountFen: resource.amount && resource.amount.total, currency: resource.amount && resource.amount.currency, payerOpenid: resource.payer && resource.payer.openid, transactionId: resource.transaction_id, paidAt: parseProviderTime(resource.success_time) });
+      const markSuccess = Array.isArray(payment.orderIds) ? (id, payload) => require('./cart-payment').markGroupSuccess(id, payload) : markPaymentSuccess;
+      const marked = await markSuccess(Array.isArray(payment.orderIds) ? payment.id : payment.orderId, { amountFen: resource.amount && resource.amount.total, currency: resource.amount && resource.amount.currency, payerOpenid: resource.payer && resource.payer.openid, transactionId: resource.transaction_id, paidAt: parseProviderTime(resource.success_time) });
       result = { ok: true, orderId: payment.orderId, duplicate: marked.duplicate, refundQueued: marked.shouldRefund };
     }
     await finishNotification(claim.id, claim.claimToken, 'DONE', result);

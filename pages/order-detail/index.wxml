@@ -64,6 +64,8 @@
       <view class="detail-row"><text class="row-label">积分抵扣</text><text class="row-value discount">- {{order.discountText}}</text></view>
       <view class="divider"></view>
       <view class="detail-row total-row"><text class="row-label">{{order.paidLabel}}</text><text class="row-value total">{{order.paidText}}</text></view>
+      <view wx:if="{{order.paymentGroupId && order.status === 'PENDING_PAYMENT'}}" class="detail-row total-row"><text class="row-label">合并支付（{{order.paymentGroupCount}}项）</text><text class="row-value total">{{order.groupPaidText}}</text></view>
+      <view wx:if="{{order.paymentGroupId && order.status === 'PENDING_PAYMENT'}}" class="detail-row"><text class="row-label">继续付款将一起支付本次结算的所有预约。</text></view>
       <view wx:if="{{order.refundStatus}}" class="refund-row" bindtap="showRefundStatus">
         <view class="refund-copy">
           <text class="refund-title">退款状态</text>

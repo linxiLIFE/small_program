@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import DashboardPanel from './components/DashboardPanel.vue';
-import HomeManager from './components/HomeManager.vue';
-import CatalogManager from './components/CatalogManager.vue';
-import FeaturedManager from './components/FeaturedManager.vue';
-import TeamManager from './components/TeamManager.vue';
-import MySchedulePanel from './components/MySchedulePanel.vue';
-import AdminOrdersPanel from './components/AdminOrdersPanel.vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+const DashboardPanel = defineAsyncComponent(() => import('./components/DashboardPanel.vue'));
+const HomeManager = defineAsyncComponent(() => import('./components/HomeManager.vue'));
+const CatalogManager = defineAsyncComponent(() => import('./components/CatalogManager.vue'));
+const FeaturedManager = defineAsyncComponent(() => import('./components/FeaturedManager.vue'));
+const TeamManager = defineAsyncComponent(() => import('./components/TeamManager.vue'));
+const MySchedulePanel = defineAsyncComponent(() => import('./components/MySchedulePanel.vue'));
+const AdminOrdersPanel = defineAsyncComponent(() => import('./components/AdminOrdersPanel.vue'));
 import type { SessionInfo } from './types';
 import { adminApi, isDemoMode } from './api';
 import { getCurrentUser, signIn as cloudSignIn, signOut as cloudSignOut, type AuthUser } from './cloudbase';
@@ -91,7 +91,7 @@ function selectTechnician(technicianId: string) {
 const navItems: Array<{ id: PageKey; label: string; icon: string }> = [
   { id: 'dashboard', label: '经营概览', icon: '◒' },
   { id: 'orders', label: '预约订单', icon: '◷' },
-  { id: 'home', label: '首页宣传', icon: '▧' },
+  { id: 'home', label: '首页设置', icon: '▧' },
   { id: 'services', label: '项目与款式', icon: '✦' },
   { id: 'featured', label: '精选管理', icon: '★' },
   { id: 'team', label: '技师管理', icon: '♧' },
@@ -188,6 +188,34 @@ async function loadCatalog(force=false) {
   catalogLoading.value=true;
   catalogRequest=(async()=>{try{catalog.value=await adminApi.catalog();catalogLoaded.value=true;}catch(err){error.value=err instanceof Error?err.message:'目录加载失败';}})().finally(()=>{catalogLoading.value=false;catalogRequest=null;});
   return catalogRequest;
+}
+
+// Refresh only display URLs: keep catalog edits, ordering and selection intact.
+let imageRefreshTimer:ReturnType<typeof setTimeout>|undefined;
+let imageRefreshRequest:Promise<void>|null=null;
+let lastImageRefresh=0;
+function refreshCatalogImages() {
+  if(imageRefreshTimer||imageRefreshRequest||Date.now()-lastImageRefresh<5000)return;
+  imageRefreshTimer=setTimeout(()=>{
+    imageRefreshTimer=undefined;
+    lastImageRefresh=Date.now();
+    imageRefreshRequest=(async()=>{
+      try {
+        const fresh=await adminApi.catalog();
+        for(const key of ['services','works','technicians'] as const) {
+          const urls=new Map(fresh[key].map(item=>[item.id,item]));
+          for(const item of catalog.value[key]) {
+            const source=urls.get(item.id);
+            if(!source)continue;
+            for(const field of ['coverUrl','imageUrl','avatarUrl']) {
+              const next=source as unknown as Record<string,unknown>;
+              if(typeof next[field]==='string') (item as unknown as Record<string,unknown>)[field]=next[field];
+            }
+          }
+        }
+      } catch { /* Preserve the existing page if the refresh fails. */ }
+    })().finally(()=>{imageRefreshRequest=null;});
+  },100);
 }
 
 let settingsRequest:Promise<void>|null=null;
@@ -354,6 +382,7 @@ watch(page, (nextPage) => {
 
 onMounted(restoreSession);
 onMounted(() => window.addEventListener('message', handleMapMessage));
+onBeforeUnmount(() => { if(imageRefreshTimer)clearTimeout(imageRefreshTimer); });
 onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
 </script>
 
@@ -376,7 +405,7 @@ onBeforeUnmount(() => window.removeEventListener('message', handleMapMessage));
     </div>
   </section>
 
-  <div v-else class="admin-app">
+  <div v-else class="admin-app" @catalog-image-expired="refreshCatalogImages">
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">✦</span><div><strong>四个小姐姐的店</strong></div></div>
       <div v-if="demo" class="demo-chip">演示模式</div>

@@ -538,18 +538,15 @@ input:focus, select:focus, textarea:focus { border-color: #ca9497; box-shadow: 0
 
 .catalog-order-number,.catalog-order-badge{display:grid;place-items:center;flex:0 0 auto;width:26px;height:26px;border:1px solid #ead7d2;border-radius:50%;background:#fffaf5;color:#9d626b;font-size:12px;font-weight:700;line-height:1}
 .catalog-order-badge{position:absolute;z-index:2;top:auto;right:10px;bottom:10px;box-shadow:0 2px 8px #3a201b22}
-.catalog-sort-handle{display:grid;place-items:center;flex:0 0 auto;width:30px;height:30px;padding:0;border:1px solid #ead8d2;border-radius:9px;background:#fffaf6;color:#a46d74;font-size:19px;line-height:1;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
-.catalog-sort-handle:active{cursor:grabbing;background:#f2e1de;transform:scale(.96)}
-.catalog-sort-handle:disabled{cursor:not-allowed}
 .category-choice-card,.project-choice-card{position:relative}
 .choice-card-actions{align-items:center}
-.choice-card-actions .catalog-sort-handle{padding:0;border:1px solid #ead8d2;background:#fffaf6;color:#a46d74;font-size:19px}
-.catalog-sort-dragging{opacity:.5;transform:scale(.985)!important}
-.catalog-sort-target{outline:2px dashed #b87880;outline-offset:3px}
 .catalog-order-field small{color:#9b827a;font-size:11px;line-height:1.5}
 .project-choice{position:relative}
 .project-choice .catalog-order-number{position:absolute;z-index:2;top:16px;left:16px;box-shadow:0 2px 8px #3a201b22}
 .portfolio-tile{position:relative}
-.portfolio-sort-handle{position:absolute;z-index:4;top:10px;right:10px;width:27px;height:27px;font-size:17px}
 .portfolio-tile .tile-actions{gap:6px}
-@media(max-width:700px){.catalog-order-number{width:23px;height:23px;font-size:11px}.project-choice .catalog-order-number{top:12px;left:12px}.portfolio-sort-handle{width:25px;height:25px}.portfolio-tile .tile-actions{gap:3px}.portfolio-tile .feature-toggle{padding:6px 7px;font-size:10px}}
+@media(max-width:700px){.catalog-order-number{width:23px;height:23px;font-size:11px}.project-choice .catalog-order-number{top:12px;left:12px}.portfolio-tile .tile-actions{gap:3px}.portfolio-tile .feature-toggle{padding:6px 7px;font-size:10px}}
+
+.wechat-qr-editor{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,280px) auto;align-items:center;gap:24px;padding:24px;margin-bottom:28px}
+.wechat-qr-editor h2{font-size:18px;margin:0 0 12px}.wechat-qr-editor p{font-size:13px;line-height:1.8;color:#a0847e;margin:6px 0}.wechat-qr-editor .image-upload{width:100%;max-width:280px}
+@media(max-width:900px){.wechat-qr-editor{grid-template-columns:1fr}.wechat-qr-editor .primary-button{justify-self:start}}

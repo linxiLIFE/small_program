@@ -1,11 +1,12 @@
 const api = require('../../utils/api');
+const { recoverImage } = require('../../utils/image-cache');
 const { formatMoney, formatDuration } = require('../../utils/format');
 
 Page({
   data: {
     loading: true, error: '',
     isDemo: false,
-    store: {},
+    store: {}, showWechatQr: false, wechatQrError: false, wechatQrRecoveryAttempted: false,
     categories: [],
     services: [],
     works: [],
@@ -41,8 +42,8 @@ Page({
       return { ...category, serviceCount, styleCount, serviceCountText: `${serviceCount} 个小项目`, styleCountText: `${styleCount} 款式` };
     });
     const banners = (result.banners || [])
-      .filter((item) => item && item.imageUrl)
-      .map((item, index) => ({ ...item, lazy: index > 0, imageError: false, imageFallbackAttempted: false }));
+      .filter((item) => item && (item.imageUrl || item.imageFileID))
+      .map((item, index) => ({ ...item, lazy: index > 0, imageError: false, imageFallbackAttempted: false, imageRecoveryAttempted: false }));
     const works = (result.works || []).map((work) => ({
       ...work,
       serviceName: work.serviceName || services.find((service) => service.id === work.serviceId)?.name || ''
@@ -51,6 +52,7 @@ Page({
       loading: false,
       isDemo: !!getApp().globalData.isDemo,
       store: result.store || {},
+      wechatQrError: false, wechatQrRecoveryAttempted: false,
       banners,
       categories,
       services,
@@ -63,13 +65,28 @@ Page({
     const urls = this.data.banners.map(item => item.imageFallbackAttempted ? item.imageRemoteUrl : item.imageUrl).filter(Boolean);
     if (urls.length) wx.previewImage({urls, current: urls[event.currentTarget.dataset.index]});
   },
-  handleBannerImageError(event) {
+  async handleBannerImageError(event) {
     const index = Number(event.currentTarget.dataset.index);
     const banner = this.data.banners[index];
     if (!banner) return;
     if (!banner.imageFallbackAttempted && banner.imageRemoteUrl && banner.imageRemoteUrl !== banner.imageUrl) {
       this.setData({ [`banners[${index}].imageFallbackAttempted`]: true });
       return;
+    }
+    if (!banner.imageRecoveryAttempted && banner.imageFileID) {
+      this.setData({ [`banners[${index}].imageRecoveryAttempted`]: true });
+      const requestId = this.requestId;
+      const recovered = await recoverImage(banner.imageFileID);
+      if (requestId !== this.requestId || this.data.banners[index]?.id !== banner.id) return;
+      if (recovered && recovered.path) {
+        this.setData({
+          [`banners[${index}].imageUrl`]: recovered.path,
+          [`banners[${index}].imageRemoteUrl`]: recovered.remoteUrl || banner.imageRemoteUrl || '',
+          [`banners[${index}].imageFallbackAttempted`]: false,
+          [`banners[${index}].imageError`]: false
+        });
+        return;
+      }
     }
     this.setData({ [`banners[${index}].imageError`]: true });
   },
@@ -78,6 +95,25 @@ Page({
     if(store.latitude!==null && store.latitude!==undefined && store.longitude!==null && store.longitude!==undefined && Number.isFinite(Number(store.latitude)) && Number.isFinite(Number(store.longitude))) {
       wx.openLocation({latitude:Number(store.latitude),longitude:Number(store.longitude),name:store.storeName,address:store.address,scale:17,fail:()=>wx.showToast({title:'地图暂时无法打开',icon:'none'})});
     } else if(store.address) wx.setClipboardData({data:store.address});
+  },
+  contactForStyles() {
+    this.setData({ showWechatQr: true });
+  },
+  closeWechatQr() { this.setData({ showWechatQr: false }); },
+  stopQrTap() {},
+  previewWechatQr() {
+    const url=this.data.store.wechatQrUrl;
+    if(url && !this.data.wechatQrError) wx.previewImage({ current:url, urls:[url] });
+  },
+  async handleWechatQrError() {
+    const store=this.data.store;
+    if(!this.data.wechatQrRecoveryAttempted && store.wechatQrFileID) {
+      this.setData({ wechatQrRecoveryAttempted: true });
+      const recovered=await recoverImage(store.wechatQrFileID);
+      if(this.data.store.wechatQrFileID!==store.wechatQrFileID) return;
+      if(recovered?.path) { this.setData({ 'store.wechatQrUrl':recovered.path, wechatQrError:false }); return; }
+    }
+    this.setData({ wechatQrError:true });
   },
   openProject(event) {
     getApp().globalData.pendingServiceId = event.currentTarget.dataset.id;

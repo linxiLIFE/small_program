@@ -36,14 +36,16 @@ function getRequestContext() {
 async function getBookingContext(payload = {}) {
   const serviceId = payload.serviceId || '';
   const workId = payload.workId || '';
-  const [settings, service, technicians, profile, work] = await Promise.all([
+  const [settings, service, profile] = await Promise.all([
     getCurrentSettings(),
     catalog.getService(serviceId),
-    catalog.listTechnicians(serviceId),
-    booking.getProfile(),
-    catalog.getWork(workId)
+    booking.getProfile()
   ]);
-  const addons = await catalog.listBookingAddons(service.categoryId, service);
+  const [addons, work, technicians] = await Promise.all([
+    catalog.listBookingAddons(service.categoryId, service),
+    catalog.getWork(workId, service),
+    catalog.listTechnicians(serviceId, service)
+  ]);
   return { settings: publicSettings(settings), service, technicians, profile, work, addons };
 }
 
@@ -63,12 +65,21 @@ async function route(action, payload) {
     case 'getBookingContext': return getBookingContext(payload || {});
     case 'getService': return catalog.getService(payload && payload.serviceId);
     case 'getWork': return catalog.getWork(payload && payload.workId);
+    case 'getWorkDetail': {
+      const work = await catalog.getWork(payload && payload.workId);
+      const [service, technicians] = await Promise.all([catalog.getService(work.serviceId), catalog.listTechnicians(work.serviceId)]);
+      return { work, service, technicians };
+    }
     case 'listTechnicians': return { technicians: await catalog.listTechnicians(payload && payload.serviceId) };
     case 'getSettings': return publicSettings(await getCurrentSettings());
     case 'getAvailableSlots': return booking.getAvailableSlots(payload || {});
     case 'getProfile': return booking.getProfile();
     case 'updateProfile': return booking.updateProfile(payload || {});
     case 'bindPhone': return booking.bindPhone(payload || {});
+    case 'createCartQuote': return require('./lib/cart').createCartQuote(payload || {});
+    case 'createCartOrder': return require('./lib/cart').createCartOrder(payload || {});
+    case 'prepareCartPayment': return require('./lib/cart-payment').prepareGroupPayment(payload && payload.groupId);
+    case 'queryCartPayment': return require('./lib/cart-payment').queryGroupPayment(payload && payload.groupId);
     case 'createQuote': return booking.createQuote(payload || {});
     case 'createOrder': return booking.createOrder(payload || {});
     case 'listOrders': return booking.listOrders(payload || {});
@@ -117,7 +128,7 @@ exports.main = async (event = {}) => {
   const id = requestId();
   try {
     const data = await withRequestContext(getRequestContext(), () => route(event.action, event.payload || {}));
-    return { ok: true, requestId: id, data: await require('./lib/media').resolveImages(data) };
+    return { ok: true, requestId: id, data: await require('./lib/media').resolveImages(data, serverApp) };
   } catch (error) {
     const safe = publicError(error);
     console.error('api request failed', { requestId: id, code: safe.code });

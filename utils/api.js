@@ -11,8 +11,10 @@ const CACHE_TTL = {
   listServiceStyles: 45 * 1000,
   listBookingAddons: 30 * 1000,
   getBookingContext: 30 * 1000,
+  getSettings: 30 * 1000,
   getService: 60 * 1000,
   getWork: 60 * 1000,
+  getWorkDetail: 60 * 1000,
   listTechnicians: 60 * 1000,
   getSettings: 60 * 1000,
   getProfile: 15 * 1000,
@@ -203,6 +205,11 @@ function getBookingContext(serviceId, workId) {
       work,
       addons: fallbackBookingAddons(service && service.categoryId)
     };
+  }).then(value => {
+    for (const [action, data] of [['getProfile', value.profile], ['getSettings', value.settings]]) {
+      if (data) responseCache.set(cacheKey(action, {}), { value: data, expiresAt: Date.now() + CACHE_TTL[action] });
+    }
+    return value;
   }).catch((error) => {
     if (error && error.code === 'UNKNOWN_ACTION') {
       legacyActions.add('getBookingContext');
@@ -218,6 +225,22 @@ function getService(serviceId) {
 
 function getWork(workId) {
   return cachedCall('getWork', { workId }, () => mock.works.find((item) => item.id === workId) || mock.works[0]);
+}
+
+function getWorkDetail(workId) {
+  const legacy = async () => {
+    const work = await getWork(workId);
+    const [service, result] = await Promise.all([getService(work.serviceId), listTechnicians(work.serviceId)]);
+    return { work, service, technicians: result.technicians || [] };
+  };
+  if (legacyActions.has('getWorkDetail')) return legacy();
+  return cachedCall('getWorkDetail', { workId }, legacy).catch(error => {
+    if (error && error.code === 'UNKNOWN_ACTION') {
+      legacyActions.add('getWorkDetail');
+      return legacy();
+    }
+    throw error;
+  });
 }
 
 function listTechnicians(serviceId = '') {
@@ -241,6 +264,15 @@ function getAvailableSlots(payload) {
 
 function getProfile() {
   return cachedCall('getProfile', {}, () => mock.profile);
+}
+
+function getCachedProfile() {
+  const cached = responseCache.get(cacheKey('getProfile', {}));
+  return cached && cached.expiresAt > Date.now() ? cached.value : null;
+}
+
+function getSettings() {
+  return cachedCall('getSettings', {}, () => ({ store: { ...mock.settings }, booking: { openDays: mock.settings.openDays, minAdvanceMinutes: mock.settings.minAdvanceMinutes }, points: { maxPercent: mock.settings.pointMaxPercent } }));
 }
 
 async function updateProfile(nickname) {
@@ -444,19 +476,36 @@ async function staffTransition(orderId, action) {
   return result;
 }
 
+function cartCall(action, payload) {
+  return call(action, payload, () => { throw new Error('购物车结算需要连接门店服务'); });
+}
+
+async function createCartOrder(payload) {
+  const result = await cartCall('createCartOrder', payload);
+  for (const action of ['getProfile', 'getBookingContext', 'listOrders', 'getOrder', 'listPoints']) clearCache(action);
+  return result;
+}
+
 module.exports = {
+  createCartQuote: payload => cartCall('createCartQuote', payload),
+  createCartOrder,
+  prepareCartPayment: groupId => cartCall('prepareCartPayment', { groupId }),
+  queryCartPayment: groupId => cartCall('queryCartPayment', { groupId }),
   call,
   clearCache,
   getHome,
-  getSettings: () => cachedCall('getSettings', {}, () => ({ store: { ...mock.settings }, booking: { openDays: mock.settings.openDays, minAdvanceMinutes: mock.settings.minAdvanceMinutes }, points: { maxPercent: mock.settings.pointMaxPercent } })),
+  getSettings,
   listServices,
   listServiceStyles,
   listBookingAddons,
   getService,
   getWork,
+  getWorkDetail,
+  getBookingContext,
   listTechnicians,
   getAvailableSlots,
   getProfile,
+  getCachedProfile,
   updateProfile,
   bindPhone,
   createQuote,

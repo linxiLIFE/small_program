@@ -75,6 +75,19 @@ function publicService(item) {
   };
 }
 
+const HAND_NAIL_CATEGORY_IDS = new Set(['nail', '514aa7c9-1cf3-4fe1-ba92-fcc2de47694e']);
+function isHandNailCategory(categoryId) { return HAND_NAIL_CATEGORY_IDS.has(String(categoryId || '')); }
+const NAIL_CARE_CATEGORY_ID = 'nail-care';
+function bookingAddonCategory(categoryId) { return isHandNailCategory(categoryId) ? NAIL_CARE_CATEGORY_ID : String(categoryId || ''); }
+function bookingAddonMatches(service, addon) {
+  return !!addon && (addon.categoryId === bookingAddonCategory(service.categoryId)
+    || isHandNailCategory(service.categoryId) && addon.categoryId === 'nail');
+}
+function supportsBoostAddon(service) {
+  return !!service && (isHandNailCategory(service.categoryId) || service.categoryId === 'foot-nail')
+    && !['REMOVAL', 'BUILDER'].includes(inferredAddonType(service)) && !/^(?:单独)?(?:卸|[Vv]?建构$)|^单独.*建构/.test(String(service.name || '')) && !/加油包/.test(String(service.name || ''));
+}
+
 const FOOT_TIP_ADDON_ID = 'svc-foot-nail-addon-single-tip';
 const FOOT_TIP_UNIT_PRICE_FEN = 500;
 const FOOT_TIP_MAX_QUANTITY = 10;
@@ -213,9 +226,10 @@ function isFreeRemovalAddon(item) {
     || item.freeAsAddon === true || item.freeAsAddon === 1 || item.freeAsAddon === '1';
 }
 
-function isRemovalFreeForService(item, service) {
+function isRemovalFreeForService(item, service, boostPriceFen = 0) {
   if (!service) return isFreeRemovalAddon(item);
-  if (String(service.categoryId || '') === 'nail') {
+  if (boostPriceFen > 0 && supportsBoostAddon(service) && Number(service.priceFen || 0) + boostPriceFen >= 4000) return true;
+  if (isHandNailCategory(service.categoryId)) {
     const servicePriceFen = Number(service.priceFen || 0);
     if (servicePriceFen > 3000) return true;
     if (servicePriceFen < 3000) return false;
@@ -223,25 +237,37 @@ function isRemovalFreeForService(item, service) {
   return isFreeRemovalAddon(item);
 }
 
-function addonPriceFen(item, addonType = inferredAddonType(item), service = null) {
-  return addonType === 'REMOVAL' && isRemovalFreeForService(item, service) ? 0 : Number(item && item.priceFen || 0);
+function addonPriceFen(item, addonType = inferredAddonType(item), service = null, boostPriceFen = 0) {
+  return addonType === 'REMOVAL' && isRemovalFreeForService(item, service, boostPriceFen) ? 0 : Number(item && item.priceFen || 0);
 }
 
 async function listBookingAddons(categoryId = '', service = null) {
-  if (!['nail', 'foot-nail'].includes(String(categoryId || ''))) return { removals: [], builders: [] };
+  if (!isHandNailCategory(categoryId) && categoryId !== 'foot-nail') return { removals: [], builders: [] };
   assert(!service || String(service.categoryId || '') === String(categoryId), 'INVALID_SERVICE', '叠加项与当前项目不匹配');
   // 迁移脚本写入 MySQL JSON 时，布尔值可能被保存为 1/0。这里不在 SQL
   // 条件中用严格布尔值过滤，避免有效叠加项在查询后被内存层二次过滤掉。
-  const records = await loadAll(COLLECTIONS.services, { categoryId }, { orderBy: { field: 'sort', direction: 'asc' } });
+  const [records, boost] = await Promise.all([
+    loadAll(COLLECTIONS.services, { categoryId: isHandNailCategory(categoryId) ? db.command.in([NAIL_CARE_CATEGORY_ID, 'nail']) : categoryId }, { orderBy: { field: 'sort', direction: 'asc' } }),
+    boostAddonOption(service)
+  ]);
   const options = records
     .filter((item) => !item.archived && item.enabled !== false && item.enabled !== 0)
     .map((item) => ({ ...publicService(item), addonType: inferredAddonType(item) }))
     .filter((item) => item.addonType);
   return {
-    removals: options.filter((item) => item.addonType === 'REMOVAL').map((item) => ({ ...item, priceFen: addonPriceFen(item, 'REMOVAL', service) })),
+    removals: options.filter((item) => item.addonType === 'REMOVAL').map((item) => ({ ...item, basePriceFen: addonPriceFen(item, 'REMOVAL', service), priceFen: addonPriceFen(item, 'REMOVAL', service) })),
     builders: options.filter((item) => item.addonType === 'BUILDER'),
-    footTip: footTipAddonOption(service)
+    footTip: footTipAddonOption(service),
+    boost
   };
+}
+
+async function boostAddonOption(service, reader = db) {
+  if (!supportsBoostAddon(service)) return null;
+  const records = await loadAll(COLLECTIONS.services, { categoryId: 'nail' }, { limit: 200 }, reader);
+  const item = records.filter(x => !x.archived && x.enabled !== false && x.enabled !== 0 && String(x.name || '').trim() === '加油包').sort(compareDisplayOrder)[0];
+  if (!item) return null;
+  return { ...publicService(item), type: 'BOOST', unitPriceFen: Number(item.priceFen) };
 }
 
 async function listServiceCatalog(categoryId = '') {
@@ -279,10 +305,13 @@ async function listWorks(categoryId = '') {
   return decorateWorks(styles, services, counts);
 }
 
-async function listTechnicians(serviceId = '') {
-  const records = (await find(COLLECTIONS.technicians, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } })).filter(item => !item.archived);
+async function listTechnicians(serviceId = '', knownService = null) {
+  const [rows, service] = await Promise.all([
+    find(COLLECTIONS.technicians, { enabled: true }, { orderBy: { field: 'sort', direction: 'asc' } }),
+    knownService || (serviceId ? getOptional(COLLECTIONS.services, serviceId) : null)
+  ]);
+  const records = rows.filter(item => !item.archived);
   if (serviceId) {
-    const service = await getOptional(COLLECTIONS.services, serviceId);
     const categoryId = service && service.categoryId;
     return records.filter((item) => {
       const categoryIds = Array.isArray(item.categoryIds) ? item.categoryIds : [];
@@ -293,13 +322,13 @@ async function listTechnicians(serviceId = '') {
   return records.map(publicTechnician);
 }
 
-async function getService(serviceId) {
+async function getService(serviceId, { includeStyleCount = true } = {}) {
   assert(serviceId, 'INVALID_SERVICE', '缺少项目 ID');
   const record = await getOptional(COLLECTIONS.services, serviceId);
   assert(record && !record.archived && record.enabled !== false, 'SERVICE_NOT_FOUND', '项目不存在或已下架', 404);
   const [category, styles] = await Promise.all([
     getOptional(COLLECTIONS.categories, record.categoryId),
-    loadAll(COLLECTIONS.works, { serviceId: record.id || record._id }, { orderBy: { field: 'sort', direction: 'asc' } })
+    includeStyleCount ? loadAll(COLLECTIONS.works, { serviceId: record.id || record._id }, { orderBy: { field: 'sort', direction: 'asc' } }) : []
   ]);
   assert(category && !category.archived && category.enabled !== false, 'SERVICE_NOT_FOUND', '所属大类已停用', 404);
   return { ...publicService(record), styleCount: styles.filter(item => !item.archived && item.published !== false).length, categoryName: category.name };
@@ -328,11 +357,11 @@ async function listServiceStyles(serviceId) {
   return { service, works: decorateWorks(styles, [service], {}, { includeBookingCount: false }) };
 }
 
-async function getWork(workId) {
+async function getWork(workId, knownService = null) {
   assert(workId, 'INVALID_WORK', '缺少作品 ID');
   const record = await getOptional(COLLECTIONS.works, workId);
   assert(record && !record.archived && record.published !== false, 'WORK_NOT_FOUND', '作品不存在或已下架', 404);
-  const service = await getService(record.serviceId);
+  const service = knownService && knownService.id === record.serviceId ? knownService : await getService(record.serviceId, { includeStyleCount: false });
   return {
     ...publicWork(record),
     categoryId: service.categoryId,
@@ -361,4 +390,4 @@ async function getHome(settings) {
   };
 }
 
-module.exports = { publicCategory, publicService, publicWork, publicTechnician, serviceBookableStandalone, supportsFootTipAddon, footTipAddonOption, isFreeRemovalAddon, addonPriceFen, listCategories, listServiceCatalog, listServices, listBookingAddons, listServiceStyles, listWorks, listTechnicians, getService, getWork, getHome, FOOT_TIP_ADDON_ID, FOOT_TIP_UNIT_PRICE_FEN, FOOT_TIP_MAX_QUANTITY };
+module.exports = { NAIL_CARE_CATEGORY_ID, bookingAddonMatches, isHandNailCategory, bookingAddonCategory, supportsBoostAddon, boostAddonOption, publicCategory, publicService, publicWork, publicTechnician, serviceBookableStandalone, supportsFootTipAddon, footTipAddonOption, isFreeRemovalAddon, addonPriceFen, listCategories, listServiceCatalog, listServices, listBookingAddons, listServiceStyles, listWorks, listTechnicians, getService, getWork, getHome, FOOT_TIP_ADDON_ID, FOOT_TIP_UNIT_PRICE_FEN, FOOT_TIP_MAX_QUANTITY };

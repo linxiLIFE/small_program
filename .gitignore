@@ -13,3 +13,4 @@ cloudfunctions/admin-api/api.js
 
 # Environment variables
 .env.local
+/.release/

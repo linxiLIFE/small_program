@@ -1,4 +1,6 @@
-import cloudbase from '@cloudbase/js-sdk';
+import cloudbase from '@cloudbase/js-sdk/app';
+import '@cloudbase/js-sdk/auth';
+import '@cloudbase/js-sdk/functions';
 
 const env = import.meta.env.VITE_CLOUDBASE_ENV_ID || 'cloud1-d9g5pfect2ece00fa';
 

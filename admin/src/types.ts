@@ -41,7 +41,7 @@ export interface AdminOrder {
   remainingRefundableFen?: number;
   refundInProgress?: boolean;
   partiallyRefunded?: boolean;
-  addons?: Array<{ id:string; name:string; type:'REMOVAL'|'BUILDER'|'TIP'; priceFen:number; durationMinutes:number; quantity?:number; unitPriceFen?:number }>;
+  addons?: Array<{ id:string; name:string; type:'REMOVAL'|'BUILDER'|'TIP'|'BOOST'; priceFen:number; durationMinutes:number; quantity?:number; unitPriceFen?:number }>;
 }
 
 export interface Service {
@@ -122,7 +122,7 @@ export interface ScheduleResponse {
 
 export interface Settings {
   version: number;
-  store: { storeName: string; address: string; phone: string; notice: string; latitude?:number|null; longitude?:number|null };
+  store: { storeName: string; address: string; phone: string; notice: string; latitude?:number|null; longitude?:number|null; wechatQrUrl?:string; wechatQrFileID?:string };
   home?: {banners:Array<{id:string;imageUrl:string;imageFileID?:string}>};
   booking: { openDays: number; minAdvanceMinutes: number; slotStepMinutes: number; unpaidHoldMinutes: number; refundCutoffMinutes: number; noShowGraceMinutes: number; noShowPenaltyFen: number; noShowPolicy: 'AUTO_PARTIAL_REFUND' };
   points: { pointRateFen: number; unit: number; discountFen: number; maxPercent: number; inviteRewardPoints: number };

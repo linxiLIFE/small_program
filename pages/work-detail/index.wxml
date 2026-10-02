@@ -18,13 +18,13 @@
           </view>
         </view>
       </view>
-      <view wx:else class="artist-empty card">暂无可预约技师</view>
+      <view wx:elif="{{!detailPending}}" class="artist-empty card">暂无可预约技师</view>
       <view class="related-service card">
         <view class="related-copy">
           <text class="related-name">{{service.name}}</text>
           <view class="related-meta"><text>{{service.durationText}}</text><text class="related-meta-dot">·</text><text class="related-price">¥{{service.priceText}}</text></view>
         </view>
-        <button class="small-book-button" bindtap="startBooking">预约</button>
+        <button class="small-book-button" disabled="{{detailPending}}" bindtap="startBooking">预约</button>
       </view>
     </view>
   </block>

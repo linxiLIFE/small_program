@@ -6,6 +6,7 @@
     "pages/service-detail/index",
     "pages/work-detail/index",
     "pages/booking/index",
+    "pages/cart/index",
     "pages/orders/index",
     "pages/order-detail/index",
     "pages/profile/index",
@@ -42,6 +43,12 @@
         "text": "预约",
         "iconPath": "assets/tabbar/booking.png",
         "selectedIconPath": "assets/tabbar/booking-active.png"
+      },
+      {
+        "pagePath": "pages/cart/index",
+        "text": "购物车",
+        "iconPath": "assets/tabbar/cart.png",
+        "selectedIconPath": "assets/tabbar/cart-active.png"
       },
       {
         "pagePath": "pages/profile/index",

@@ -107,7 +107,8 @@ Page({
           totalText: formatMoney(order.totalFen),
           discountText: formatMoney(order.discountFen || 0),
           paidText: pointsOnly ? (order.refundStatus === 'SUCCESS' ? '已退回积分' : '积分支付') : formatMoney(order.paidFen),
-          paidLabel: pointsOnly ? '支付方式' : order.status === 'PENDING_PAYMENT' ? '待支付金额' : '实付金额',
+          groupPaidText: formatMoney(order.paymentGroupPaidFen || 0),
+          paidLabel: pointsOnly ? '支付方式' : order.status === 'PENDING_PAYMENT' ? (order.paymentGroupId ? '本项待支付' : '待支付金额') : '实付金额',
           refundedText: formatMoney(order.refundedFen || order.refundAmountFen || 0),
           remainingRefundText: formatMoney(order.remainingRefundableFen || 0),
           createdAtText: formatDateTime(order.createdAt),
@@ -132,7 +133,7 @@ Page({
           durationText: formatDuration(order.durationMinutes),
           addons: (order.addons || []).map((item) => ({
             ...item,
-            typeLabel: item.type === 'REMOVAL' ? '卸甲' : item.type === 'TIP' ? '加甲片' : '建构',
+            typeLabel: item.type === 'REMOVAL' ? '卸甲' : item.type === 'TIP' ? '加甲片' : item.type === 'BOOST' ? '加油包' : '建构',
             priceText: item.priceFen ? formatMoney(item.priceFen) : '免费',
             durationText: item.type === 'TIP' ? `${Number(item.quantity || 0)} 个 · 不增加时长` : `+${formatDuration(item.durationMinutes)}`
           })),
@@ -301,7 +302,7 @@ Page({
     const paid = Number(this.data.order.paidFen || 0) > 0 && this.data.order.status !== 'PENDING_PAYMENT';
     wx.showModal({
       title: paid ? '确认取消并退款？' : '确认取消订单？',
-      content: paid ? '仅在退款截止时间前可取消；退款结果以微信回调为准。' : '取消后，当前预约占位会释放。',
+      content: paid ? '仅在退款截止时间前可取消；退款结果以微信回调为准。' : this.data.order.paymentGroupId ? '取消未付款的合并订单，将释放同一购物车结算的所有预约时段。' : '取消后，当前预约占位会释放。',
       confirmText: '确认取消',
       success: async (result) => {
         if (!result.confirm) return;

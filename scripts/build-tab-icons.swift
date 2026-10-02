@@ -1,6 +1,6 @@
 import AppKit
 let output = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "assets/tabbar")
-for name in ["home", "styles", "booking", "profile"] {
+for name in ["home", "styles", "booking", "cart", "profile"] {
   for active in [false,true] {
     let image = NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:81,pixelsHigh:81,bitsPerSample:8,samplesPerPixel:4,hasAlpha:true,isPlanar:false,colorSpaceName:.deviceRGB,bytesPerRow:0,bitsPerPixel:0)!
     NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current=NSGraphicsContext(bitmapImageRep:image)
@@ -15,6 +15,8 @@ for name in ["home", "styles", "booking", "profile"] {
       line([p(4,13),p(13.5,22),p(23,13)]);line([p(6.5,14),p(6.5,5),p(20.5,5),p(20.5,14)]);line([p(11,5),p(11,11),p(16,11),p(16,5)])
     case "booking":
       c.stroke(CGRect(x:5,y:4,width:17,height:17));line([p(5,16),p(22,16)]);line([p(9,19),p(9,23)]);line([p(18,19),p(18,23)]);line([p(9,10),p(12,7),p(18,13)])
+    case "cart":
+      line([p(3,23),p(6,23),p(9,10),p(21,10),p(24,19),p(7,19)]);c.strokeEllipse(in:CGRect(x:9,y:4,width:3,height:3));c.strokeEllipse(in:CGRect(x:19,y:4,width:3,height:3))
     case "profile":
       c.strokeEllipse(in:CGRect(x:9,y:14,width:9,height:9));c.beginPath();c.move(to:p(5,4));c.addCurve(to:p(22,4),control1:p(5,16),control2:p(22,16));c.strokePath()
     default:

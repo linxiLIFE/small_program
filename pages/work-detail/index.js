@@ -4,6 +4,7 @@ const { formatMoney, formatDuration } = require('../../utils/format');
 Page({
   data: {
     loading: true,
+    detailPending: true,
     error: '',
     work: {},
     service: {},
@@ -18,22 +19,22 @@ Page({
     this.workId = options.workId || '';
     const state = getApp().globalData;
     state.catalogSelection = { ...(state.catalogSelection || {}), workId: this.workId };
-    this.loadDetail();
+    const preview = state.workDetailPreview;
+    if (preview?.work?.id === this.workId && preview.service?.id === preview.work.serviceId) {
+      this.setData({ loading: false, work: preview.work, service: preview.service });
+    }
+    return this.loadDetail();
   },
 
   async loadDetail() {
     const hasData = !!this.data.work.id;
-    this.setData({ loading: !hasData, error: '' });
+    this.setData({ loading: !hasData, detailPending: true, error: '' });
     const requestId = (this.requestId || 0) + 1;
     this.requestId = requestId;
     try {
-      const work = await api.getWork(this.workId);
-      const [service, technicianResult] = await Promise.all([
-        api.getService(work.serviceId),
-        api.listTechnicians(work.serviceId)
-      ]);
+      const { work, service, technicians: technicianRecords } = await api.getWorkDetail(this.workId);
       if (requestId !== this.requestId) return;
-      const technicians = (technicianResult.technicians || []).map((item) => ({
+      const technicians = (technicianRecords || []).map((item) => ({
         ...item,
         avatarError: false,
         avatarFallbackAttempted: false,
@@ -44,6 +45,7 @@ Page({
       state.catalogSelection = { ...(state.catalogSelection || {}), categoryId: service.categoryId, serviceId: service.id, workId: work.id };
       this.setData({
         loading: false,
+        detailPending: false,
         work,
         imageError: false,
         imageFallbackAttempted: false,
@@ -52,9 +54,12 @@ Page({
         selectedTechnicianId: technician.id || '',
         technician
       });
+      if (typeof api.getBookingContext === 'function') {
+        api.getBookingContext(service.id, work.id).catch(() => {});
+      }
     } catch(error) {
       if (requestId !== this.requestId) return;
-      this.setData({ loading: false, error: hasData ? '' : (error.message || '加载失败') });
+      this.setData({ loading: false, detailPending: true, error: error.message || '加载失败' });
     }
   },
 
@@ -87,6 +92,7 @@ Page({
     this.setData({ selectedTechnicianId: technicianId, technician });
   },
   startBooking() {
+    if (this.data.detailPending) return;
     const state = getApp().globalData;
     state.catalogSelection = { ...(state.catalogSelection || {}), categoryId: this.data.service.categoryId, serviceId: this.data.service.id, workId: this.data.work.id };
     const selectedTechnician = this.data.technicians.find((item) => item.id === this.data.selectedTechnicianId) || this.data.technician || {};

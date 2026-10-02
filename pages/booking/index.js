@@ -1,4 +1,5 @@
 const api = require('../../utils/api');
+const cart = require('../../utils/cart');
 const mock = require('../../utils/mock-data');
 const { formatMoney, formatDuration, formatDateLabel, maskPhone } = require('../../utils/format');
 const { showPhoneAuthFailure, phoneBindFailureMessage } = require('../../utils/phone-auth');
@@ -12,13 +13,27 @@ function wait(milliseconds) {
 }
 
 function decorateSelectedAddon(item) {
-  const typeLabel = item.type === 'REMOVAL' ? '卸甲' : item.type === 'TIP' ? '加甲片' : '建构';
+  const typeLabel = item.type === 'REMOVAL' ? '卸甲' : item.type === 'TIP' ? '加甲片' : item.type === 'BOOST' ? '加油包' : '建构';
   return {
     ...item,
     typeLabel,
     detailText: item.type === 'TIP' ? `${Number(item.quantity || 0)} 个 · 不增加时长` : `+${Number(item.durationMinutes || 0)} 分钟`,
     priceText: formatMoney(item.priceFen || 0, false)
   };
+}
+
+function priceRemovalOptions(options, service, boost, count) {
+  const boostTotalFen = Number(boost?.unitPriceFen || 0) * Number(count || 0);
+  const free = boostTotalFen > 0 && Number(service.priceFen || 0) + boostTotalFen >= 4000;
+  return options.map(item => {
+    const basePriceFen = Number(item.basePriceFen ?? item.priceFen ?? 0);
+    const priceFen = free ? 0 : basePriceFen;
+    return { ...item, basePriceFen, priceFen, priceText: priceFen ? `¥${formatMoney(priceFen, false)}` : '免费' };
+  });
+}
+function removalBadge(options) {
+  if (options.length && options.every(item => Number(item.priceFen) === 0)) return '三种卸甲均免费';
+  return options.some(item => Number(item.priceFen) === 0) ? '仅卸本甲免费' : '卸甲按所选方式收费';
 }
 
 function loadBookingContext(serviceId, workId) {
@@ -65,6 +80,7 @@ Page({
     quote: {},
     submitting: false,
     canSubmit: false,
+    quoteError: '',
     pointHint: '',
     emptyImage: '',
     emptyImageRemoteUrl: '',
@@ -84,6 +100,11 @@ Page({
     selectedBuilderId: '',
     supportsFootTipAddon: false,
     footTipOption: null,
+    boostOption: null,
+    boostCount: 0,
+    boostPriceText: '',
+    boostDurationText: '',
+    editingCart: false,
     selectedFootTipChoice: '',
     selectedFootTipCount: 0,
     footTipTotalText: '0.00',
@@ -109,6 +130,9 @@ Page({
     const pending = state.pendingBooking;
     if (pending) {
       delete state.pendingBooking;
+      this.cartEditItemId = pending.cartItemId || '';
+      this.cartEditDraft = pending.cartDraft || null;
+      this.setData({ editingCart: !!this.cartEditItemId });
       const changed = this.serviceId !== pending.serviceId
         || this.workId !== (pending.workId || '')
         || this.initialTechnicianId !== (pending.technicianId || '');
@@ -116,7 +140,7 @@ Page({
       this.workId = pending.workId || '';
       this.initialTechnicianId = pending.technicianId || '';
       this.idempotencyKey = `booking-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      if (changed || !this.hasLoaded) this.loadBooking({ force: changed });
+      if (changed || !this.hasLoaded || pending.cartItemId) this.loadBooking({ force: changed || !!pending.cartItemId });
     } else if (this.serviceId && this.workId) {
       if (!this.hasLoaded && !this.loadingPromise) this.loadBooking();
     } else if (!this.serviceId || !this.workId) {
@@ -194,10 +218,10 @@ Page({
     this.slotRequestId = (this.slotRequestId || 0) + 1;
     this.quoteRequestId = (this.quoteRequestId || 0) + 1;
     const bookingKey = `${this.serviceId}:${this.workId}:${this.initialTechnicianId}`;
-    const preserveSelections = this.loadedKey === bookingKey;
+    const preserveSelections = this.loadedKey === bookingKey && !this.cartEditDraft;
     const hasData = !!this.data.service.id;
     this.setData({ loading: !hasData, canSubmit: false, quote: preserveSelections ? this.data.quote : {} });
-    const previousDate = this.data.selectedDate;
+    const previousDate = this.cartEditDraft ? this.cartEditDraft.date : this.data.selectedDate;
     const previousSlotId = this.data.selectedSlotId;
     const previousTechnicianId = this.data.selectedTechnicianId;
     const request = (async () => {
@@ -234,9 +258,12 @@ Page({
       const expectsFootTipAddon = service.categoryId === 'foot-nail'
         && !service.isAddon
         && /本甲/.test([service.name, ...(Array.isArray(service.tags) ? service.tags : [])].join(''));
-      const isNailBooking = ['nail', 'foot-nail'].includes(service.categoryId);
-      const showsRemovalChoice = service.categoryId === 'nail' && addonType !== 'REMOVAL';
+      const isHandNail = ['nail', '514aa7c9-1cf3-4fe1-ba92-fcc2de47694e'].includes(service.categoryId);
+      const isNailBooking = isHandNail || service.categoryId === 'foot-nail';
+      const showsRemovalChoice = isHandNail && addonType !== 'REMOVAL';
       const requiresBuilderChoice = showsRemovalChoice && addonType !== 'BUILDER' && !/建构/.test(String(service.name || ''));
+      const expectsBoostAddon = isNailBooking && !['REMOVAL', 'BUILDER'].includes(addonType)
+        && !/^(?:单独)?(?:卸|[Vv]?建构$)|^单独.*建构|加油包/.test(String(service.name || ''));
       const expectsAddonStep = showsRemovalChoice || expectsFootTipAddon;
       const decorateAddon = (item) => ({
         ...item,
@@ -250,28 +277,36 @@ Page({
       if (expectsAddonStep && addonsIncomplete && typeof api.listBookingAddons === 'function') {
         addonContext = await api.listBookingAddons(service.categoryId, service.id);
       }
-      const removalOptions = showsRemovalChoice ? (addonContext.removals || []).map((item) => decorateAddon(item)) : [];
+      // Older booking-context responses omit boost. Read the existing catalog
+      // record for display; the quote below must confirm it before submission.
+      if (expectsBoostAddon && !addonContext.boost) {
+        const catalog = await api.listServices('nail');
+        const boost = (catalog.services || []).find(item => String(item.name || '').trim() === '加油包');
+        if (boost) addonContext = { ...addonContext, boost: { ...boost, type: 'BOOST', unitPriceFen: Number(boost.priceFen) } };
+      }
+      if (requestId !== this.requestId) return;
+      let removalOptions = showsRemovalChoice ? (addonContext.removals || []).map((item) => decorateAddon(item)) : [];
       const builderOptions = requiresBuilderChoice ? (addonContext.builders || []).map((item) => decorateAddon(item)) : [];
       const footTipOption = expectsFootTipAddon ? addonContext.footTip : null;
       if (showsRemovalChoice && (!removalOptions.length || (requiresBuilderChoice && !builderOptions.length)) || (expectsFootTipAddon && !footTipOption)) {
         throw new Error('预约加项未加载完整，请刷新后重试');
       }
-      const selectedRemovalId = showsRemovalChoice ? (preserveSelections ? this.data.selectedRemovalId : '') : 'none';
+      const selectedRemovalId = showsRemovalChoice ? (this.cartEditDraft ? this.cartEditDraft.removalServiceId || 'none' : preserveSelections ? this.data.selectedRemovalId : '') : 'none';
       const selectedBuilderId = requiresBuilderChoice
-        ? (preserveSelections ? this.data.selectedBuilderId : '')
+        ? (this.cartEditDraft ? this.cartEditDraft.builderServiceId || 'none' : preserveSelections ? this.data.selectedBuilderId : '')
         : 'none';
       const supportsFootTipAddon = !!footTipOption;
       const showsAddonStep = showsRemovalChoice || supportsFootTipAddon;
-      const removalBadgeText = Number(service.priceFen || 0) > 3000
-        ? '三种卸甲均免费'
-        : Number(service.priceFen || 0) === 3000
-          ? '仅卸本甲免费'
-          : '卸甲按所选方式收费';
-      const selectedFootTipChoice = supportsFootTipAddon ? (preserveSelections ? this.data.selectedFootTipChoice : '') : 'none';
+      const selectedFootTipChoice = supportsFootTipAddon ? (this.cartEditDraft ? this.cartEditDraft.footTipCount > 0 ? 'add' : 'none' : preserveSelections ? this.data.selectedFootTipChoice : '') : 'none';
       const selectedFootTipCount = selectedFootTipChoice === 'add'
-        ? Math.min(Number(footTipOption.maxQuantity || 10), Math.max(1, Number(this.data.selectedFootTipCount || 1)))
+        ? Math.min(Number(footTipOption.maxQuantity || 10), Math.max(1, Number(this.cartEditDraft ? this.cartEditDraft.footTipCount || 1 : this.data.selectedFootTipCount || 1)))
         : 0;
+      const boostOption = expectsBoostAddon ? addonContext.boost || null : null;
+      const boostCount = boostOption ? Number(this.cartEditDraft ? this.cartEditDraft.boostCount || 0 : preserveSelections ? this.data.boostCount : 0) : 0;
+      removalOptions = priceRemovalOptions(removalOptions, service, boostOption, boostCount);
+      const removalBadgeText = removalBadge(removalOptions);
       const selectedAddons = [
+        boostCount ? { ...boostOption, name: `加油包 ×${boostCount}`, quantity: boostCount, priceFen: boostOption.unitPriceFen * boostCount, durationMinutes: boostOption.durationMinutes * boostCount } : null,
         removalOptions.find((item) => item.id === selectedRemovalId),
         builderOptions.find((item) => item.id === selectedBuilderId),
         selectedFootTipChoice === 'add' ? decorateSelectedAddon({ ...footTipOption, quantity: selectedFootTipCount, priceFen: Number(footTipOption.unitPriceFen || 500) * selectedFootTipCount }) : null
@@ -288,7 +323,7 @@ Page({
         work,
         workImageError: false,
         workImageFallbackAttempted: false,
-        service: { ...service, baseDurationMinutes: service.durationMinutes, priceText: formatMoney(service.priceFen, false), durationText: formatDuration(service.durationMinutes) },
+        service: { ...service, baseDurationMinutes: service.durationMinutes, durationMinutes: service.durationMinutes + selectedAddons.reduce((sum, x) => sum + x.durationMinutes, 0), priceText: formatMoney(service.priceFen, false), durationText: formatDuration(service.durationMinutes + selectedAddons.reduce((sum, x) => sum + x.durationMinutes, 0)) },
         technicians,
         dates,
         selectedDate,
@@ -305,6 +340,10 @@ Page({
         selectedBuilderId,
         supportsFootTipAddon,
         footTipOption,
+        boostOption,
+        boostCount,
+        boostPriceText: formatMoney(addonContext.boost && addonContext.boost.unitPriceFen || 0),
+        boostDurationText: formatDuration(addonContext.boost && addonContext.boost.durationMinutes || 0),
         selectedFootTipChoice,
         selectedFootTipCount,
         footTipTotalText: formatMoney(Number(footTipOption && footTipOption.unitPriceFen || 0) * selectedFootTipCount, false),
@@ -318,6 +357,7 @@ Page({
       this.loadedKey = bookingKey;
       this.hasLoaded = true;
       if (addonsReady) await this.loadSlots({ preserve: true, force: !preserveSelections, slotId: previousSlotId });
+      this.cartEditDraft = null;
     } catch (error) {
       if (requestId !== this.requestId) return;
       this.hasLoaded = false;
@@ -381,7 +421,7 @@ Page({
       const timePeriods = buildTimePeriods(slots, result.stepMinutes || this.bookingSettings?.booking?.slotStepMinutes, this.data.service.durationMinutes);
       const normalizedSlots = timePeriods.reduce((all, period) => all.concat(period.slots), []);
       const timeline = decorateBookingTimeline(result.timeline, normalizedSlots, this.data.service.durationMinutes, result.stepMinutes || this.bookingSettings?.booking?.slotStepMinutes);
-      const selectedSlot = normalizedSlots.find((item) => item.id === previousSlotId && item.available !== false) || {};
+      const selectedSlot = normalizedSlots.find((item) => (item.id === previousSlotId || this.cartEditDraft && item.startAt === this.cartEditDraft.startAt) && item.available !== false) || {};
       const selectedPeriod = timePeriods.find((period) => period.slots.some((item) => item.id === selectedSlot.id));
       const previousExpandedPeriodId = preserve ? this.data.expandedPeriodId : '';
       const expandedPeriodId = timePeriods.some((period) => period.id === previousExpandedPeriodId)
@@ -414,12 +454,14 @@ Page({
   },
 
   async selectTechnician(event) {
+    clearTimeout(this.addonRefreshTimer);
     this.setData({ selectedTechnicianId: event.currentTarget.dataset.id });
     await this.loadSlots({ preserve: false, force: true });
   },
 
   addonPayload() {
     const payload = {
+      boostCount: this.data.boostOption ? this.data.boostCount : 0,
       addonSelectionConfirmed: !this.data.showsRemovalChoice || this.data.addonsReady,
       removalServiceId: this.data.showsRemovalChoice && this.data.selectedRemovalId && this.data.selectedRemovalId !== 'none' ? this.data.selectedRemovalId : '',
       builderServiceId: this.data.requiresBuilderChoice && this.data.selectedBuilderId && this.data.selectedBuilderId !== 'none' ? this.data.selectedBuilderId : ''
@@ -429,6 +471,15 @@ Page({
       payload.footTipCount = this.data.selectedFootTipChoice === 'add' ? Number(this.data.selectedFootTipCount || 0) : 0;
     }
     return payload;
+  },
+
+  async changeBoostCount(event) {
+    if (!this.data.boostOption || this.data.submitting) return;
+    const delta = Number(event.currentTarget.dataset.delta);
+    if (![1, -1].includes(delta)) return;
+    const count = Math.max(0, Number(this.data.boostCount || 0) + delta);
+    if (!Number.isSafeInteger(count) || count === this.data.boostCount) return;
+    await this.applyAddonSelection({ boostCount: count }, { debounce: true });
   },
 
   async selectAddon(event) {
@@ -449,10 +500,13 @@ Page({
     const maxQuantity = Number(this.data.footTipOption && this.data.footTipOption.maxQuantity || 10);
     const count = Math.min(maxQuantity, Math.max(1, Number(this.data.selectedFootTipCount || 1) + delta));
     if (count === this.data.selectedFootTipCount) return;
-    await this.applyAddonSelection({ selectedFootTipCount: count });
+    await this.applyAddonSelection({ selectedFootTipCount: count }, { debounce: true });
   },
 
-  async applyAddonSelection(changes = {}) {
+  async applyAddonSelection(changes = {}, { debounce = false } = {}) {
+    clearTimeout(this.addonRefreshTimer);
+    this.slotRequestId = (this.slotRequestId || 0) + 1;
+    this.quoteRequestId = (this.quoteRequestId || 0) + 1;
     const selectedRemovalId = changes.selectedRemovalId !== undefined ? changes.selectedRemovalId : this.data.selectedRemovalId;
     const selectedBuilderId = changes.selectedBuilderId !== undefined ? changes.selectedBuilderId : this.data.selectedBuilderId;
     const selectedFootTipChoice = changes.selectedFootTipChoice !== undefined ? changes.selectedFootTipChoice : this.data.selectedFootTipChoice;
@@ -464,8 +518,13 @@ Page({
         priceFen: Number(this.data.footTipOption.unitPriceFen || 500) * selectedFootTipCount
       })
       : null;
+    const boostCount = changes.boostCount !== undefined ? changes.boostCount : this.data.boostCount;
+    const boost = this.data.boostOption;
+    const boostAddon = boost && boostCount ? { ...boost, name: `加油包 ×${boostCount}`, quantity: boostCount, priceFen: boost.unitPriceFen * boostCount, durationMinutes: boost.durationMinutes * boostCount } : null;
+    const removalOptions = priceRemovalOptions(this.data.removalOptions, this.data.service, boost, boostCount);
     const selectedAddons = [
-      this.data.removalOptions.find((item) => item.id === selectedRemovalId),
+      boostAddon,
+      removalOptions.find((item) => item.id === selectedRemovalId),
       this.data.builderOptions.find((item) => item.id === selectedBuilderId),
       footTipAddon
     ].filter(Boolean).map((item) => item.typeLabel ? item : decorateSelectedAddon(item));
@@ -476,17 +535,24 @@ Page({
       && (!this.data.supportsFootTipAddon || !!selectedFootTipChoice);
     this.setData({
       ...changes,
+      removalOptions,
+      removalBadgeText: removalBadge(removalOptions),
       addonsReady,
       selectedAddons,
       footTipTotalText: formatMoney(Number(this.data.footTipOption && this.data.footTipOption.unitPriceFen || 0) * (selectedFootTipChoice === 'add' ? selectedFootTipCount : 0), false),
       service: { ...this.data.service, durationMinutes: totalDuration, durationText: formatDuration(totalDuration) },
       slots: [], timePeriods: [], timeline: {}, timelineHasOptions: false,
-      selectedSlotId: '', selectedSlot: {}, quote: {}, canSubmit: false
+      selectedSlotId: '', selectedSlot: {}, quote: {}, quoteError: '', canSubmit: false
     });
-    if (addonsReady) await this.loadSlots({ preserve: false, force: true });
+    if (addonsReady && debounce) {
+      this.addonRefreshTimer = setTimeout(() => { this.addonRefreshTimer = null; this.loadSlots({ preserve: false, force: true }); }, 180);
+    } else if (addonsReady) await this.loadSlots({ preserve: false, force: true });
   },
 
+  onUnload() { clearTimeout(this.addonRefreshTimer); this.slotRequestId = (this.slotRequestId || 0) + 1; this.quoteRequestId = (this.quoteRequestId || 0) + 1; },
+
   async selectDate(event) {
+    clearTimeout(this.addonRefreshTimer);
     this.setData({ selectedDate: event.currentTarget.dataset.date });
     await this.loadSlots({ preserve: false, force: true });
   },
@@ -698,7 +764,7 @@ Page({
     if (!this.data.selectedSlotId) return;
     const requestId = (this.quoteRequestId || 0) + 1;
     this.quoteRequestId = requestId;
-    this.setData({ canSubmit: false });
+    this.setData({ canSubmit: false, quote: {}, quoteError: '' });
     try {
       const result = await api.createQuote({
         workId: this.workId,
@@ -710,6 +776,10 @@ Page({
         ...this.addonPayload()
       });
       if (requestId !== this.quoteRequestId) return;
+      const boostCount = Number(this.addonPayload().boostCount || 0);
+      if (boostCount && !(result.addons || []).some(item => item.type === 'BOOST' && Number(item.quantity) === boostCount)) {
+        throw new Error('加油包计费尚未启用，暂时无法提交。可选择不添加，或待服务更新后重试');
+      }
       this.setData({
         quote: {
           ...result,
@@ -723,7 +793,7 @@ Page({
       });
     } catch (error) {
       if (requestId !== this.quoteRequestId) return;
-      this.setData({ canSubmit: false, pointHint: error.message || '报价暂时不可用' });
+      this.setData({ canSubmit: false, quote: {}, quoteError: error.message || '报价暂时不可用，请重新选择时段后重试', pointHint: error.message || '报价暂时不可用' });
     }
   },
 
@@ -746,6 +816,23 @@ Page({
 
   handleAgreePrivacyAuthorization() {
     console.info('[phone-auth] privacy authorization agreed');
+  },
+
+  addToCart() {
+    if (!this.data.canSubmit || this.data.submitting) return;
+    const technician = this.data.technicians.find(x => x.id === this.data.selectedTechnicianId);
+    try {
+      cart.add(this.data.profile.id, {
+        id: this.cartEditItemId || '',
+        payload: { workId: this.workId, serviceId: this.serviceId, technicianId: this.data.selectedTechnicianId, date: this.data.selectedDate, startAt: this.data.selectedSlot.startAt, ...this.addonPayload() },
+        serviceName: this.data.service.name, workTitle: this.data.work.title, imageUrl: this.data.work.imageUrl, technicianName: technician && technician.name || '',
+        endAt: this.data.selectedSlot.endAt, durationMinutes: this.data.quote.durationMinutes, totalFen: this.data.quote.totalFen, addons: this.data.selectedAddons
+      });
+      this.cartEditItemId = '';
+      this.setData({ editingCart: false });
+      wx.showToast({ title: '已加入购物车', icon: 'success' });
+      wx.switchTab({ url: '/pages/cart/index' });
+    } catch (error) { wx.showToast({ title: error.message || '加入失败', icon: 'none' }); }
   },
 
   async submitBooking() {

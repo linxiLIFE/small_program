@@ -9,7 +9,7 @@ function page(file, api, state = {}) {
     Page: value => { definition = value; },
     require: name => name.endsWith('/api') ? api : require(path.resolve(path.dirname(path.join(__dirname, '..', file)), name)),
     getApp: () => ({ globalData: state }),
-    wx: { switchTab: value => calls.push(value), navigateTo: value => calls.push(value) }, console
+    wx: { switchTab: value => calls.push(value), navigateTo: value => calls.push(value) }, console, setTimeout, clearTimeout
   });
   const instance = { ...definition, data: { ...definition.data }, setData(value) { Object.assign(this.data, value); } };
   return { instance, calls };
@@ -38,6 +38,25 @@ function page(file, api, state = {}) {
   styles.handleWorkTap({ detail: { work: { id: 'work-001' } } });
   assert.equal(styleCalls[0].url, '/pages/work-detail/index?workId=work-001');
   assert.equal(styleState.catalogSelection.workId, 'work-001');
+  let detailRequests=0;
+  const {instance: loadedDetail}=page('pages/work-detail/index.js',{
+    getWorkDetail:async()=>{detailRequests++;return {work:mock.works[0],service:mock.services[0],technicians:mock.technicians};}
+  });
+  loadedDetail.workId=mock.works[0].id;
+  await loadedDetail.loadDetail();
+  assert.equal(detailRequests,1);assert.equal(loadedDetail.data.loading,false);
+  assert.equal(loadedDetail.data.work.id,mock.works[0].id);
+  let finishDetail;
+  const previewWork=mock.works[0];
+  const previewService=mock.services.find(item=>item.id===previewWork.serviceId);
+  const {instance: previewDetail,calls: previewCalls}=page('pages/work-detail/index.js',{
+    getWorkDetail:()=>new Promise(resolve=>{finishDetail=resolve;})
+  },{workDetailPreview:{work:previewWork,service:previewService}});
+  const pendingDetail=previewDetail.onLoad({workId:previewWork.id});
+  assert.equal(previewDetail.data.loading,false);assert.equal(previewDetail.data.detailPending,true);
+  previewDetail.startBooking();assert.equal(previewCalls.length,0);
+  finishDetail({work:previewWork,service:previewService,technicians:mock.technicians});
+  await pendingDetail;assert.equal(previewDetail.data.detailPending,false);
   const selected = {};
   const { instance: detail, calls } = page('pages/work-detail/index.js', {}, selected);
   detail.data = {
@@ -60,6 +79,7 @@ function page(file, api, state = {}) {
   const bookingService = { ...mock.services[0], id: 'svc-nail-natural-color-30', name: '本甲纯色｜30元色板', priceFen: 3000 };
   const bookingWork = { ...mock.works[0], id: 'work-nail-natural-color-30', serviceId: bookingService.id };
   const bookingApi = {
+    listServices: async () => ({ services: [{ id: 'boost-1', name: '加油包', priceFen: 1000, durationMinutes: 10 }] }),
     getBookingContext: async () => ({
       settings: { booking: { openDays: 14, slotStepMinutes: 15 }, points: { maxPercent: 10 } },
       service: bookingService,
@@ -90,8 +110,21 @@ function page(file, api, state = {}) {
   groupedBooking.onLoad({ serviceId: bookingService.id, workId: bookingWork.id });
   groupedBooking.data.selectedDate = bookingDate;
   await groupedBooking.loadBooking();
+  assert.equal(groupedBooking.data.boostOption.id, 'boost-1');
   assert.deepStrictEqual(groupedBooking.data.removalOptions.map((item) => item.priceText), ['免费', '¥20.00', '¥20.00']);
   assert.equal(groupedBooking.data.removalBadgeText, '仅卸本甲免费');
+  await groupedBooking.selectAddon({ currentTarget: { dataset: { type:'removal',id:'removal-2' } } });
+  await groupedBooking.selectAddon({ currentTarget: { dataset: { type:'builder',id:'none' } } });
+  await groupedBooking.changeBoostCount({currentTarget:{dataset:{delta:1}}});
+  assert(groupedBooking.data.removalOptions.every(item=>item.priceFen===0));
+  assert.equal(groupedBooking.data.removalBadgeText,'三种卸甲均免费');
+  assert.equal(groupedBooking.data.selectedAddons.find(item=>item.type==='REMOVAL').priceFen,0);
+  await groupedBooking.loadBooking({force:true});
+  assert.equal(groupedBooking.data.boostCount,1);assert(groupedBooking.data.removalOptions.every(item=>item.priceFen===0),'restore selection with boost waiver');
+  await groupedBooking.changeBoostCount({currentTarget:{dataset:{delta:-1}}});
+  assert.deepStrictEqual(groupedBooking.data.removalOptions.map(item=>item.priceText),['免费','¥20.00','¥20.00']);
+  assert.equal(groupedBooking.data.removalBadgeText,'仅卸本甲免费');
+  assert.equal(groupedBooking.data.selectedAddons.find(item=>item.type==='REMOVAL').priceFen,2000);
   await groupedBooking.selectAddon({ currentTarget: { dataset: { type: 'removal', id: 'none' } } });
   await groupedBooking.selectAddon({ currentTarget: { dataset: { type: 'builder', id: 'none' } } });
   assert.deepStrictEqual(groupedBooking.data.timePeriods.map((period) => period.label), ['上午', '下午']);
@@ -121,6 +154,7 @@ function page(file, api, state = {}) {
   const footWork = { ...bookingWork, id: 'work-foot-natural-color-40', serviceId: footService.id };
   const slotPayloads = [];
   const footBookingApi = {
+    listServices: bookingApi.listServices,
     getBookingContext: async () => ({
       settings: { booking: { openDays: 14, slotStepMinutes: 15 }, points: { maxPercent: 10 } },
       service: footService,
@@ -153,6 +187,7 @@ function page(file, api, state = {}) {
   assert.equal(slotPayloads.at(-1).footTipCount, 1);
   assert.equal(footBooking.data.service.durationMinutes, 60);
   await footBooking.changeFootTipCount({ currentTarget: { dataset: { delta: 1 } } });
+  await new Promise(resolve => setTimeout(resolve, 220));
   assert.equal(slotPayloads.at(-1).footTipCount, 2);
   assert.equal(footBooking.data.selectedAddons.find((item) => item.type === 'TIP').priceFen, 1000);
   assert.equal(footBooking.data.service.durationMinutes, 60);

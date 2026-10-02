@@ -5,7 +5,7 @@ const { db, find, findAll, getOptional } = require('./db');
 const { requireRole } = require('./auth');
 const { assert } = require('./errors');
 const { integer } = require('./money');
-const { publicCategory, publicService, publicWork, publicTechnician, isFreeRemovalAddon } = require('./catalog');
+const { publicCategory, publicService, publicWork, publicTechnician, isFreeRemovalAddon, NAIL_CARE_CATEGORY_ID } = require('./catalog');
 const loadAll = findAll || find;
 const MAX_SERVICE_PRICE_FEN = 10_000_000;
 function sortable(payload) {
@@ -160,7 +160,7 @@ async function saveService(payload = {}) {
   const category = await getOptional(COLLECTIONS.categories, payload.categoryId);
   assert(category && !category.archived && category.enabled !== false, 'INVALID_CATEGORY', '请选择已启用的大类');
   const addonType = ['REMOVAL', 'BUILDER'].includes(String(payload.addonType || '').toUpperCase()) ? String(payload.addonType).toUpperCase() : '';
-  assert(!addonType || ['nail', 'foot-nail'].includes(category.id || category._id), 'INVALID_ADDON', '卸甲和建构只能设置在美甲或脚部美甲大项');
+  assert(!addonType || ['nail', 'foot-nail', NAIL_CARE_CATEGORY_ID, '514aa7c9-1cf3-4fe1-ba92-fcc2de47694e'].includes(category.id || category._id), 'INVALID_ADDON', '卸甲和建构只能设置在卸甲 / 建构、美甲或脚部美甲大项');
   const priceFen = integer(payload.priceFen, '价格'); const durationMinutes = integer(payload.durationMinutes, '时长');
   assert(priceFen >= 0 && priceFen <= MAX_SERVICE_PRICE_FEN && durationMinutes > 0 && durationMinutes <= 720, 'INVALID_SERVICE', '价格须在 0 元到 10 万元之间，时长须在 1 到 720 分钟之间');
   assert(priceFen > 0, 'INVALID_SERVICE', '单独预约价格必须大于 0');

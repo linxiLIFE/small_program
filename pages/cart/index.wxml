@@ -1,0 +1,25 @@
+<view class="page-shell cart-page">
+  <view class="cart-header"><text class="section-title">购物车</text><text class="cart-caption">挑好喜欢的，一起预约</text></view>
+  <view wx:if="{{loading}}" class="cart-empty card">正在加载</view>
+  <block wx:else>
+    <view wx:if="{{error && !items.length && !pendingCheckout}}" class="cart-error card"><text>{{error}}</text><button class="secondary-button" bindtap="onShow">重新加载</button></view>
+    <view wx:if="{{!items.length && !pendingCheckout}}" class="cart-empty card"><text class="empty-title">把喜欢的款式放进来</text><text class="muted">在预约页选好技师和时间，加入购物车</text><button class="primary-button" bindtap="chooseStyle">去选款</button></view>
+    <view wx:for="{{items}}" wx:key="id" class="cart-item card {{item.selected ? 'chosen' : ''}}">
+      <view class="cart-item-top">
+        <view class="cart-check {{item.selected ? 'checked' : ''}}" data-id="{{item.id}}" bindtap="toggleItem">{{item.selected ? '✓' : ''}}</view>
+        <image wx:if="{{item.imageUrl}}" class="cart-image" src="{{item.imageUrl}}" mode="aspectFill"></image>
+        <view class="cart-copy"><text class="cart-title">{{item.workTitle || item.serviceName}}</text><text class="cart-subtitle">{{item.serviceName}}</text><text class="cart-price">{{item.totalText}}</text></view>
+      </view>
+      <view class="cart-appointment"><text>{{item.timeText}}</text><text>{{item.technicianName}} · {{item.durationText}}</text><text wx:if="{{item.addonText}}" class="cart-addon">{{item.addonText}}</text></view>
+      <view class="cart-actions"><button disabled="{{submitting || pendingCheckout}}" class="cart-action" data-id="{{item.id}}" bindtap="editItem">调整预约</button><button disabled="{{submitting || pendingCheckout}}" class="cart-action muted" data-id="{{item.id}}" bindtap="removeItem">移出</button></view>
+    </view>
+    <view wx:if="{{items.length || pendingCheckout}}" class="cart-checkout card">
+      <view class="points-row"><view><text>使用积分抵扣</text><text class="muted points-caption">可用 {{profile.points || 0}} 积分</text></view><switch color="#bb6f79" checked="{{usePoints}}" disabled="{{submitting || pendingCheckout}}" bindchange="togglePoints"></switch></view>
+      <text class="cart-note">加入购物车不占用时段，结算时重新检查。</text>
+      <text wx:if="{{error}}" class="cart-error">{{error}}</text>
+      <view wx:if="{{quote}}" class="cart-totals"><view><text>项目金额</text><text>{{quote.totalText}}</text></view><view><text>积分抵扣（{{quote.pointsToUse}} 分）</text><text>- {{quote.discountText}}</text></view><view class="cart-total"><text>{{quote.preview ? '预估合计' : '合计'}}</text><text>{{quote.paidText}}</text></view></view>
+      <button class="primary-button" loading="{{submitting}}" disabled="{{submitting || !pendingCheckout && !quote}}" bindtap="checkout">{{pendingCheckout ? '继续确认结算' : '一起付款（' + selectedCount + '项）'}}</button>
+    </view>
+    <button wx:if="{{items.length}}" class="secondary-button" bindtap="chooseStyle">继续选款</button>
+  </block>
+</view>

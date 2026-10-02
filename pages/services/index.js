@@ -8,6 +8,7 @@ Page({
     filteredServices: [],
     works: [],
     activeCategoryId: '',
+    isHandNailCategory: false,
     activeServiceId: '',
     loading: true,
     error: ''
@@ -62,7 +63,7 @@ Page({
         };
       });
       const filteredServices = activeCategoryId ? services.filter((item) => item.categoryId === activeCategoryId) : [];
-      this.setData({ categories: categoryOptions, services, works, activeCategoryId, activeServiceId, filteredServices, loading: false });
+      this.setData({ categories: categoryOptions, services, works, activeCategoryId, activeServiceId, filteredServices, isHandNailCategory: ['nail', '514aa7c9-1cf3-4fe1-ba92-fcc2de47694e'].includes(activeCategoryId), loading: false });
     } catch (error) {
       if (requestId !== this.requestId) return;
       this.setData({ loading: false, error: hasData ? '' : '加载失败' });
@@ -80,7 +81,7 @@ Page({
     const activeCategoryId = event.currentTarget.dataset.id || '';
     const state = getApp().globalData;
     state.catalogSelection = { ...(state.catalogSelection || {}), categoryId: activeCategoryId, serviceId: '', workId: '' };
-    this.setData({ activeCategoryId, activeServiceId: '' });
+    this.setData({ activeCategoryId, isHandNailCategory: ['nail', '514aa7c9-1cf3-4fe1-ba92-fcc2de47694e'].includes(activeCategoryId), activeServiceId: '' });
     this.filterServices(activeCategoryId);
   },
 

@@ -32,6 +32,11 @@ function validateSettings(next) {
   next.notifications.templates=templates;
   for(const key of ['storeName','address','phone','notice'])next.store[key]=String(next.store[key]||'').trim().slice(0,key==='notice'?1000:200);
   assert(next.store.storeName,'INVALID_SETTINGS','请填写门店名称');
+  const wechatQrUrl=String(next.store.wechatQrFileID||next.store.wechatQrUrl||'').trim();
+  assert(!wechatQrUrl || (wechatQrUrl.length<=2048 && /^(cloud|https):\/\//.test(wechatQrUrl)), 'INVALID_IMAGE', '请上传微信二维码图片');
+  next.store.wechatQrUrl=wechatQrUrl;
+  delete next.store.wechatQrFileID;
+  delete next.store.wechatQrRemoteUrl;
   const {latitude,longitude}=next.store;
   const hasLat=latitude!==undefined&&latitude!==null&&latitude!==''; const hasLng=longitude!==undefined&&longitude!==null&&longitude!=='';
   assert(hasLat===hasLng,'INVALID_LOCATION','请同时填写地图经度和纬度');

@@ -58,6 +58,11 @@ async function finishJob(job, status = 'DONE', errorMessage = '') {
 async function processPaymentExpire(job) {
   const order = await getOptional(COLLECTIONS.orders, job.businessId);
   if (!order || order.status !== ORDER_STATUS.PENDING_PAYMENT) return;
+  if (order.paymentGroupId) {
+    const result = await require(`${sharedRoot}/cart-payment`).closeGroup(order.paymentGroupId);
+    if (![PAYMENT_STATUS.SUCCESS, PAYMENT_STATUS.CLOSED].includes(result.status)) return { deferred: true };
+    return;
+  }
   const payment = await getOptional(COLLECTIONS.payments, `pay_${order.id}`);
   if (!payment || payment.status === PAYMENT_STATUS.SUCCESS) return;
   if (!wechat.isConfigured()) {
