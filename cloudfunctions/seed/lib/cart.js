@@ -14,8 +14,11 @@ function cartItems(payload) {
 function cartHash(items) { return crypto.createHash('sha256').update(JSON.stringify(items.map(bookingRequestHash))).digest('hex'); }
 function assertNoOverlap(items) {
   const sorted = [...items].sort((a, b) => a.startAt - b.startAt);
-  for (let i = 1; i < sorted.length; i++) {
-    assert(Number(sorted[i].startAt) >= Number(sorted[i - 1].startAt) + Number(sorted[i - 1].durationMinutes) * 60000, 'CART_SLOT_CONFLICT', '购物车内的预约时间重叠，请调整后再付款', 409);
+  const endByTechnician = new Map();
+  for (const item of sorted) {
+    const previousEnd = endByTechnician.get(item.technicianId);
+    assert(previousEnd === undefined || Number(item.startAt) >= previousEnd, 'CART_SLOT_CONFLICT', '购物车内同一技师的预约时间重叠，请调整后再付款', 409);
+    endByTechnician.set(item.technicianId, Number(item.startAt) + Number(item.durationMinutes) * 60000);
   }
 }
 async function createCartQuote(payload) {

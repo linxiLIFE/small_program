@@ -22,6 +22,7 @@ function reset() {
   tables.services.builder = { id: 'builder', categoryId: 'nail-care', name: '单独塑形建构', enabled: true, addonType: 'BUILDER', priceFen: 3000, durationMinutes: 30 };
   tables.services.boost = { id: 'boost', categoryId: 'nail', name: '加油包', enabled: true, priceFen: 1000, durationMinutes: 10 };
   tables.technicians.tech = { id: 'tech', name: '技师', enabled: true, categoryIds: ['nail', secondCategory, 'foot-nail', 'lash', 'nail-care'] };
+  tables.technicians['tech-other'] = { ...clone(tables.technicians.tech), id: 'tech-other', name: '另一位技师' };
   providerState = 'NOTPAY'; providerCalls = []; failCommit = false; changeBoostInTransaction = false;
 }
 const matches = (row, where) => Object.entries(where).every(([key, value]) => value && value.op === 'in' ? value.value.includes(row[key]) : value && value.op === 'exists' ? (row[key] !== undefined) === value.value : row[key] === value);
@@ -86,6 +87,51 @@ async function checkout(items, key = 'checkout') {
   return { quote, request, result: await cart.createCartOrder(request) };
 }
 (async () => {
+  reset();
+  // One payer can book overlapping appointments for different people/technicians.
+  const simultaneous = [payload('hand', '10', { boostCount: 2 }), payload('tips', '10', { technicianId: 'tech-other' })];
+  const together = await checkout(simultaneous, 'different-technicians');
+  assert.equal(together.result.orders.length, 2);
+  assert.equal(together.result.paidFen, 11500);
+  assert.equal(together.quote.pointsToUse, 100);
+  assert.equal(tables.points_accounts.customer.frozen, 100);
+  assert.equal(tables.technician_days[`tech_${date}`].occupancies.length, 1);
+  assert.equal(tables.technician_days[`tech-other_${date}`].occupancies.length, 1);
+  assert((await cart.createCartOrder(together.request)).replay);
+  await payment.preparePayment(together.result.orders[0].id);
+  assert.equal(providerCalls.filter(x => x[0] === 'prepay').length, 1);
+  assert.equal(providerCalls[0][1].amountFen, 11500);
+  await groupPayment.markGroupSuccess(together.result.groupId, { amountFen: 11500, payerOpenid: 'customer', transactionId: 'simultaneous-payment' });
+  assert(Object.values(tables.orders).every(o => o.status === 'RESERVED' && o.userId === 'customer'));
+  assert.equal(tables.points_accounts.customer.frozen, 0);
+  // An existing paid appointment under this account also permits a new cart
+  // booking on another technician. Direct booking retains its customer check.
+  const next = payload('foot', '10', { technicianId: 'tech-other', startAt: simultaneous[1].startAt + 3600000 });
+  const nextQuote = await booking.createQuote(next);
+  await assert.rejects(booking.createOrder({ ...next, quoteId: nextQuote.quoteId, idempotencyKey: 'standalone-conflict' }), error => error.code === 'CUSTOMER_SLOT_TAKEN');
+  assert.equal(Object.keys(tables.orders).length, 2);
+  await checkout([next], 'cart-for-another-person');
+  assert.equal(Object.keys(tables.orders).length, 3);
+  await assert.rejects(cart.createCartQuote({ items: [simultaneous[0]] }), error => error.code === 'SLOT_TAKEN');
+  reset();
+  // Interleaving another technician must not hide a same-technician conflict;
+  // boost duration counts, while adjacent appointments at the boundary are valid.
+  await assert.rejects(cart.createCartQuote({ items: [simultaneous[0], simultaneous[1], payload('foot', '11')] }), error => error.code === 'CART_SLOT_CONFLICT');
+  await checkout([payload('hand', '10'), payload('tips', '11')], 'adjacent-appointments');
+  reset();
+  tables.services.hand.priceFen = 0; tables.services.tips.priceFen = 0;
+  const freeTogether = await checkout([payload('hand', '10'), payload('tips', '10', { technicianId: 'tech-other' })], 'free-simultaneous');
+  assert.equal(freeTogether.result.paymentRequired, false);
+  assert(freeTogether.result.orders.every(o => o.status === 'RESERVED'));
+  reset();
+  // A competing payer takes the second technician after quoting: checkout must
+  // roll back the first technician's occupancy and all points/order writes.
+  const raceItems = [payload('hand', '10'), payload('tips', '10', { technicianId: 'tech-other' })];
+  const raceQuote = await cart.createCartQuote({ items: raceItems, pointsToUse: 100 });
+  tables.technician_days = { [`tech-other_${date}`]: { id: `tech-other_${date}`, technicianId: 'tech-other', date, shifts: [{ start: '00:00', end: '23:45', breaks: [] }], occupancies: [{ orderId: 'other-payer', startAt: raceItems[1].startAt, endAt: raceItems[1].startAt + 3600000, status: 'RESERVED' }] } };
+  const beforeRace = clone(tables);
+  await assert.rejects(cart.createCartOrder({ items: raceItems.map((x, i) => ({ ...x, quoteId: raceQuote.quotes[i].quoteId, pointsToUse: raceQuote.quotes[i].pointsToUse })), idempotencyKey: 'different-technician-race' }), error => error.code === 'SLOT_TAKEN');
+  assert.deepEqual(tables, beforeRace);
   reset();
   // Fee threshold excludes removal itself and is evaluated before point discounts.
   for (const id of ['hand', 'tips']) {
@@ -194,5 +240,5 @@ async function checkout(items, key = 'checkout') {
   await page.refreshQuote(); assert.equal(page.data.canSubmit, false); assert.match(page.data.quoteError, /加油包计费尚未启用/); assert.equal(page.data.quote.quoteId, undefined);
   quoteApi.createQuote = async () => ({ quoteId: 'new', addons: [{ type: 'BOOST', quantity: 1, priceFen: 1000, durationMinutes: 10 }], totalFen: 6000, paidFen: 6000 });
   await page.refreshQuote(); assert.equal(page.data.canSubmit, true);
-  console.log('cart booking tests passed: shared nail rules, boost price/duration, cart overlap, atomic rollback, idempotency, points allocation, one provider payment, grouped confirmation, independent refunds, close/late payment, zero-cash items, customer-isolated drafts');
+  console.log('cart booking tests passed: shared nail rules, boost price/duration, per-technician overlap, simultaneous multi-person checkout, standalone customer check, atomic rollback, idempotency, points allocation, one provider payment, grouped confirmation, independent refunds, close/late payment, zero-cash items, customer-isolated drafts');
 })().catch(error => { console.error(error); process.exitCode = 1; });

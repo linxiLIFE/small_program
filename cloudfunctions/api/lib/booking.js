@@ -630,8 +630,13 @@ async function createOrder(payload, internal = {}) {
     assert(!activeUnpaid.some(item => !internal.groupId || item.paymentGroupId !== internal.groupId), 'UNPAID_ORDER_EXISTS', '你已有待付款订单，请先处理后再预约');
     const activeOrders = await find(COLLECTIONS.orders, { userId: context.openid, status: db.command.in(ACTIVE_ORDER_STATUSES) }, { orderBy: { field: 'startAt', direction: 'asc' }, limit: 201 }, transaction);
     assert(activeOrders.length <= 200, 'ACTIVE_ORDER_LIMIT', '有效预约过多，请联系门店处理后再下单', 409);
-    const userConflict = activeOrders.find((item) => (item.status !== ORDER_STATUS.PENDING_PAYMENT || internal.groupId) && overlaps(order.startAt, order.endAt, item.startAt, item.endAt));
-    assert(!userConflict, 'CUSTOMER_SLOT_TAKEN', '你在这个时间段已有其他预约', 409);
+    // A cart payer may book for several people at once. The locked technician-day
+    // check above excludes occupied slots; only standalone bookings need a
+    // customer-time check. groupId is supplied by the server-side cart flow.
+    if (!internal.groupId) {
+      const userConflict = activeOrders.find((item) => item.status !== ORDER_STATUS.PENDING_PAYMENT && overlaps(order.startAt, order.endAt, item.startAt, item.endAt));
+      assert(!userConflict, 'CUSTOMER_SLOT_TAKEN', '你在这个时间段已有其他预约', 409);
+    }
     const occupancy = { orderId: id, startAt: order.startAt, endAt: order.endAt, status, createdAt: now };
     const nextDay = { ...day, _id: day._id || dayId(validation.technician.id, payload.date), occupancies: [...(day.occupancies || []), occupancy], version: Number(day.version || 0) + 1, updatedAt: now };
     await transaction.collection(COLLECTIONS.technicianDays).doc(nextDay._id).set({ data: nextDay });
