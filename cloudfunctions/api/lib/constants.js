@@ -81,7 +81,7 @@ const DEFAULT_SETTINGS = {
   booking: {
     openDays: 14,
     minAdvanceMinutes: 60,
-    slotStepMinutes: 15,
+    slotStepMinutes: 5,
     unpaidHoldMinutes: 5,
     refundCutoffMinutes: 120,
     noShowGraceMinutes: 15,

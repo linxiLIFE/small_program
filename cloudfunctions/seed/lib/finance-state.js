@@ -118,14 +118,9 @@ function bookingRequestHash(payload = {}) {
 function assertServiceTransitionTime(order, action, now = Date.now()) {
   const startAt = Number(order && order.startAt || 0);
   const endAt = Number(order && order.endAt || 0);
-  const grace = Number(order && order.bookingRuleSnapshot && order.bookingRuleSnapshot.noShowGraceMinutes || 30);
   if (!Number.isFinite(startAt) || startAt <= 0) return { allowed: false, code: 'ORDER_TIME_INVALID' };
   if (action === 'checkIn') {
-    const earliest = startAt - 60 * 60 * 1000;
-    const latest = order.status === ORDER_STATUS.NO_SHOW_REVIEW && endAt > startAt
-      ? endAt + grace * 60 * 1000
-      : startAt + grace * 60 * 1000;
-    return { allowed: now >= earliest && now <= latest, code: now < earliest ? 'CHECK_IN_TOO_EARLY' : 'CHECK_IN_TOO_LATE' };
+    return { allowed: true };
   }
   if (action === 'start') {
     return { allowed: now >= startAt - 15 * 60 * 1000, code: 'SERVICE_TOO_EARLY' };

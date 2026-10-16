@@ -6,7 +6,7 @@ function validateSettings(next) {
     next[group][key]=value;
   };
   number('booking','openDays',1,14); number('booking','minAdvanceMinutes',1,10080);
-  number('booking','slotStepMinutes',1,120); assert(next.booking.slotStepMinutes===15,'INVALID_SETTINGS','预约时间点固定为 15 分钟'); number('booking','unpaidHoldMinutes',1,60); number('booking','refundCutoffMinutes',0,10080); number('booking','noShowGraceMinutes',1,1440); number('booking','noShowPenaltyFen',0,1000000);
+  number('booking','slotStepMinutes',1,120); assert(next.booking.slotStepMinutes===5,'INVALID_SETTINGS','预约时间点固定为 5 分钟'); number('booking','unpaidHoldMinutes',1,60); number('booking','refundCutoffMinutes',0,10080); number('booking','noShowGraceMinutes',1,1440); number('booking','noShowPenaltyFen',0,1000000);
   next.booking.noShowPolicy='AUTO_PARTIAL_REFUND';
   number('points','pointRateFen',1,100000); number('points','unit',1,100000); number('points','discountFen',1,100000); number('points','maxPercent',0,100); number('points','inviteRewardPoints',0,100000);
   next.notifications=next.notifications||{};

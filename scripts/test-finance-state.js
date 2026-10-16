@@ -55,8 +55,17 @@ test('booking request hash binds removal and builder choices', () => {
 test('booking request hash binds the foot-tip quantity', () => {
   assert.notStrictEqual(bookingRequestHash({ serviceId: 's', footTipCount: 1, footTipSelectionConfirmed: true }), bookingRequestHash({ serviceId: 's', footTipCount: 2, footTipSelectionConfirmed: true }));
 });
-test('future check-in is blocked', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000, bookingRuleSnapshot: { noShowGraceMinutes: 30 } }, 'checkIn', 1).allowed, false));
-test('check-in inside the window is allowed', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000, bookingRuleSnapshot: { noShowGraceMinutes: 30 } }, 'checkIn', 9_000_000).allowed, true));
+test('check-in has no appointment time window', () => {
+  const startAt = Date.parse('2026-10-20T12:00:00+08:00');
+  for (const status of [ORDER_STATUS.RESERVED, ORDER_STATUS.NO_SHOW_REVIEW]) {
+    const order = { status, startAt, endAt: startAt + 3600000, bookingRuleSnapshot: { noShowGraceMinutes: 15 } };
+    for (const offset of [-14 * 86400000, -3 * 86400000, -3600001, 0, 16 * 60000, 7 * 86400000]) {
+      assert.strictEqual(assertServiceTransitionTime(order, 'checkIn', startAt + offset).allowed, true);
+    }
+  }
+});
+test('invalid appointment data still blocks check-in', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 0 }, 'checkIn', 1).code, 'ORDER_TIME_INVALID'));
+test('early check-in does not allow an early service start', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000 }, 'start', 1).allowed, false));
 test('service cannot complete before its booked end', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000 }, 'complete', 10_500_000).allowed, false));
 test('service can complete at its booked end', () => assert.strictEqual(assertServiceTransitionTime({ startAt: 10_000_000, endAt: 11_000_000 }, 'complete', 11_000_000).allowed, true));
 test('refund-in-progress cancelled order cannot be hidden', () => assert.strictEqual(canDeleteCustomerOrder({ status: ORDER_STATUS.CANCELLED_BY_USER, refundStatus: REFUND_STATUS.PROCESSING }), false));

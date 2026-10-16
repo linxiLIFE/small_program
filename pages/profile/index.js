@@ -1,6 +1,7 @@
 const api = require('../../utils/api');
 const { maskPhone } = require('../../utils/format');
 const { showPhoneAuthFailure, phoneBindFailureMessage } = require('../../utils/phone-auth');
+const { resetAdminEntry, handleAdminAvatarTap } = require('../../utils/admin-entry');
 
 const ORDER_SUMMARY_ITEMS = [
   { id: 'PENDING_PAYMENT', label: '待付款', icon: '¥' },
@@ -29,8 +30,12 @@ Page({
   },
 
   onShow() {
+    resetAdminEntry.call(this);
     if (this.hasLoaded) this.loadProfile();
   },
+
+  onHide: resetAdminEntry,
+  handleAdminAvatarTap,
 
   async loadProfile() {
     try {

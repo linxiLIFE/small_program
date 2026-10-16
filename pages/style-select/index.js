@@ -1,5 +1,6 @@
 const api = require('../../utils/api');
 const { formatMoney, formatDuration } = require('../../utils/format');
+const { STORE_NAME, createShareCard } = require('../../utils/share');
 
 Page({
   data: {
@@ -19,6 +20,16 @@ Page({
     state.catalogSelection = { ...selection, categoryId: this.categoryId, serviceId: this.serviceId, workId: this.activeWorkId };
     this.setData({ activeWorkId: this.activeWorkId });
     return this.loadStyles();
+  },
+
+  onShareAppMessage() {
+    const service = this.data.service;
+    const serviceId = service.id || this.serviceId;
+    if (!serviceId) return createShareCard(`选款预约｜${STORE_NAME}`, '/pages/services/index');
+    const categoryId = service.categoryId || this.categoryId || '';
+    return createShareCard(`${service.name || '款式'}｜${STORE_NAME}`,
+      `/pages/style-select/index?serviceId=${encodeURIComponent(serviceId)}&categoryId=${encodeURIComponent(categoryId)}`,
+      service.coverUrl);
   },
 
   async loadStyles() {

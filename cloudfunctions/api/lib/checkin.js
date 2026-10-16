@@ -46,7 +46,8 @@ async function ensureNonce(orderId, userId) {
 async function getCheckInCode(orderId) {
   const { openid } = requireOpenId();
   const order = await ensureNonce(String(orderId || ''), openid);
-  const token = encodeToken({ v: 1, orderId: order.id, nonce: order.checkInNonce, expiresAt: Number(order.endAt || order.startAt) + 24 * 60 * 60 * 1000 });
+  const expiresAt = Math.max(Date.now(), Number(order.endAt || order.startAt) || 0) + 24 * 60 * 60 * 1000;
+  const token = encodeToken({ v: 1, orderId: order.id, nonce: order.checkInNonce, expiresAt });
   const dataUrl = await require('qrcode').toDataURL(token, { errorCorrectionLevel: 'M', margin: 2, width: 560, color: { dark: '#5f4548', light: '#fffaf5' } });
   return { orderId: order.id, token, dataUrl, status: order.status };
 }

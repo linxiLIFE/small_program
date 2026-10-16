@@ -13,6 +13,7 @@
     "pages/points/index",
     "pages/staff/index"
   ],
+  "subPackages": [{ "root": "pages/admin", "name": "admin", "pages": ["index"] }],
   "window": {
     "navigationBarTitleText": "四个小姐姐的店",
     "navigationBarBackgroundColor": "#fffaf7",

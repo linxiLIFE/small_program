@@ -54,20 +54,33 @@
 .invite-code-block { margin-top:26rpx; padding:24rpx; border:1rpx solid #efdeda; border-radius:22rpx; background:#fff; }
 .invite-field-label { color:#927872; font-size:21rpx; font-weight:600; }
 .invite-code-row { justify-content:space-between; gap:18rpx; margin-top:12rpx; }
-.invite-code { min-width:0; color:#8f5260; font-size:38rpx; font-weight:750; letter-spacing:6rpx; overflow-wrap:anywhere; }
-.invite-code-row button,.invite-bind-row button { flex:none; margin:0; border-radius:17rpx; background:#a96d76; color:#fff; font-size:22rpx; }
-.invite-code-row button { height:58rpx; padding:0 22rpx; line-height:58rpx; }
+.invite-code { flex:none; min-width:0; color:#8f5260; font-size:36rpx; font-weight:750; letter-spacing:2rpx; white-space:nowrap; word-break:normal; overflow-wrap:normal; }
+.invite-code-long { font-size:22rpx; letter-spacing:0; }
+.invite-code-row button,.invite-bind-row button { display:inline-flex; flex:none; align-items:center; justify-content:center; width:auto; min-width:0; margin:0; border-radius:14rpx; background:#a96d76; color:#fff; font-size:20rpx; white-space:nowrap; }
+.invite-code-row button { min-width:72rpx; height:50rpx; padding:0 14rpx; line-height:50rpx; }
 .invite-code-row button[disabled],.invite-bind-row button[disabled] { background:#d9c4c1; color:#fffaf7; }
 .invite-code-row button::after,.invite-bind-row button::after { border:0; }
 .invite-hint { margin-top:13rpx; color:#b19b94; font-size:19rpx; line-height:1.5; }
 .invite-divider { height:1rpx; margin:26rpx 0; background:#efe2de; }
 .invite-bind-row { gap:12rpx; margin-top:12rpx; }
 .invite-bind-row input { flex:1; min-width:0; height:72rpx; padding:0 20rpx; border:1rpx solid #eee0dc; border-radius:17rpx; background:#fff; color:#604b47; font-size:23rpx; letter-spacing:2rpx; box-sizing:border-box; }
-.invite-bind-row button { min-width:154rpx; height:72rpx; padding:0 20rpx; line-height:72rpx; }
+.invite-bind-row button { min-width:112rpx; height:60rpx; padding:0 14rpx; line-height:60rpx; }
 .invite-bound { gap:15rpx; padding:18rpx 20rpx; border-radius:18rpx; background:#f2f7f1; }
 .invite-bound-icon { display:flex; align-items:center; justify-content:center; width:44rpx; height:44rpx; border-radius:50%; background:#719177; color:#fff; font-size:24rpx; }
 .invite-bound text:first-child { color:#607763; font-size:23rpx; font-weight:650; }
 .invite-bound text:last-child { margin-top:4rpx; color:#95a397; font-size:19rpx; }
+.invite-records-toggle,.invite-records-more { display:inline-flex; flex:none; align-items:center; justify-content:center; width:auto; min-width:0; margin:0; padding:0 12rpx; height:44rpx; border:1rpx solid #ead4d0; border-radius:12rpx; background:#fffaf7; color:#9b626e; font-size:20rpx; line-height:42rpx; white-space:nowrap; }
+.invite-records-toggle::after,.invite-records-more::after { border:0; }
+.invite-records { margin-top:18rpx; padding:0 18rpx; border:1rpx solid #efdeda; border-radius:18rpx; background:#fff; }
+.invite-record { padding:20rpx 0; border-bottom:1rpx solid #f2e9e5; }
+.invite-record:last-child { border-bottom:0; }
+.invite-record-top { display:flex; align-items:center; justify-content:space-between; gap:12rpx; }
+.invite-record-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#765c58; font-size:23rpx; }
+.invite-record-status { flex:none; color:#a18780; font-size:21rpx; }
+.invite-record-status.granted { color:#69936f; }
+.invite-record-time { display:block; margin-top:8rpx; color:#a9948e; font-size:19rpx; line-height:1.5; }
+.invite-records-note { display:block; padding:22rpx 0; color:#a08c86; font-size:22rpx; text-align:center; }
+.invite-records-more { display:table; margin:16rpx auto; }
 
 .balance-label,
 .frozen text {

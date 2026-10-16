@@ -62,7 +62,7 @@ const bookingTimeline = buildBookingTimeline({
 assert.deepStrictEqual(bookingTimeline.segments.map(item => item.kind), ['available', 'closed', 'available', 'occupied', 'available', 'break', 'available']);
 assert.equal(bookingTimeline.segments.find(item => item.kind === 'occupied').startAt, dateToTimestamp(timelineDate, '14:00'));
 
-const slotSettings = { booking: { slotStepMinutes: 15 } };
+const slotSettings = { booking: { slotStepMinutes: 5 } };
 const slotService = { durationMinutes: 60 };
 const slotStart = dateToTimestamp(timelineDate, '14:00');
 assert.strictEqual(getSlotFromPlan({ leave: false, shifts: [{ start: '10:00', end: '20:00', breaks: [] }], occupancies: [] }, slotStart, slotService, slotSettings).endAt, dateToTimestamp(timelineDate, '15:00'));
@@ -70,6 +70,10 @@ assert.throws(
   () => getSlotFromPlan({ leave: false, shifts: [{ start: '10:00', end: '13:00', breaks: [] }], occupancies: [] }, slotStart, slotService, slotSettings),
   error => error && error.code === 'SLOT_UNAVAILABLE'
 );
+
+const fiveMinutePeriods = buildTimePeriods(['10:00', '10:05', '10:10'].map(clock => ({ startAt: dateToTimestamp(timelineDate, clock), available: true })));
+assert.equal(fiveMinutePeriods.length, 1);
+assert.equal(fiveMinutePeriods[0].slotCount, 3);
 
 const today = toDateString();
 const todayAtNoon = dateToTimestamp(today, '12:00');

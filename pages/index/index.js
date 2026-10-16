@@ -1,11 +1,14 @@
 const api = require('../../utils/api');
 const { recoverImage } = require('../../utils/image-cache');
 const { formatMoney, formatDuration } = require('../../utils/format');
+const { createShareCard } = require('../../utils/share');
+const { resetAdminEntry, handleAdminAvatarTap } = require('../../utils/admin-entry');
 
 Page({
   data: {
     loading: true, error: '',
     isDemo: false,
+    profile: {}, avatarError: false,
     store: {}, showWechatQr: false, wechatQrError: false, wechatQrRecoveryAttempted: false,
     categories: [],
     services: [],
@@ -14,7 +17,28 @@ Page({
   },
 
   onShow() {
+    resetAdminEntry.call(this);
+    this.loadAvatar();
     this.loadHome();
+  },
+
+  onHide: resetAdminEntry,
+  handleAdminAvatarTap,
+
+  async loadAvatar() {
+    const cached = getApp().globalData.user;
+    if (cached) this.setData({ profile: cached, avatarError: false });
+    try {
+      const profile = await api.getProfile();
+      getApp().setUser(profile);
+      this.setData({ profile, avatarError: false });
+    } catch (_) { /* The homepage remains usable if the profile cannot load. */ }
+  },
+
+  handleAvatarError() { this.setData({ avatarError: true }); },
+
+  onShareAppMessage() {
+    return createShareCard(this.data.store.storeName, '/pages/index/index');
   },
 
   async loadHome() {

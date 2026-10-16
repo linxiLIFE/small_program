@@ -12,7 +12,8 @@ function moduleOf(name,stubs={}) { const m={exports:{}};vm.runInNewContext(fs.re
  assert.equal(result.metrics.paidFen,200);assert.equal(result.metrics.refundFen,50);assert.equal(result.metrics.newCustomerCount,2);assert.equal(result.metrics.returningCustomerCount,1);assert.equal(result.metrics.completedCount,3);assert.equal(result.trend.length,7);assert.equal((await analytics.bookingCounts()).a,3);
  const settings=moduleOf('settings-validation');const clone=()=>JSON.parse(JSON.stringify(constants.DEFAULT_SETTINGS));
  const invalid=clone();invalid.booking.slotStepMinutes=0;assert.throws(()=>settings.validateSettings(invalid),/预约/);
- const nonQuarter=clone();nonQuarter.booking.slotStepMinutes=30;assert.throws(()=>settings.validateSettings(nonQuarter),/固定为 15 分钟/);
+ for (const step of [1, 10, 15, 30]) { const invalidStep=clone();invalidStep.booking.slotStepMinutes=step;assert.throws(()=>settings.validateSettings(invalidStep),/固定为 5 分钟/); }
+ assert.equal(settings.validateSettings(clone()).booking.slotStepMinutes,5);
  const banner=clone();banner.home={banners:[{id:'b',imageUrl:'https://expired.example/a',imageFileID:'cloud://file/a'}]};const saved=settings.validateSettings(banner);assert.equal(saved.home.banners[0].imageUrl,'cloud://file/a');assert(!saved.home.banners[0].imageFileID);
  const qrSettings=clone();qrSettings.store.wechatQrUrl='https://expired.example/qr';qrSettings.store.wechatQrFileID='cloud://file/wechat-qr';qrSettings.store.wechatQrRemoteUrl='https://old.example/qr';
  const savedQr=settings.validateSettings(qrSettings);assert.equal(savedQr.store.wechatQrUrl,'cloud://file/wechat-qr');assert(!savedQr.store.wechatQrFileID);assert(!savedQr.store.wechatQrRemoteUrl);

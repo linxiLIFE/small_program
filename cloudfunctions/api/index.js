@@ -58,6 +58,7 @@ async function getBookingAddons(payload = {}) {
 async function route(action, payload) {
   await require('./lib/rate-limit').enforceActionRateLimit(action);
   switch (action) {
+    case 'nativeAdmin': return require('./lib/native-admin').dispatch(payload || {}, route);
     case 'getHome': return catalog.getHome(await getCurrentSettings());
     case 'listServices': return catalog.listServiceCatalog(payload && payload.categoryId);
     case 'listBookingAddons': return getBookingAddons(payload || {});
@@ -92,6 +93,7 @@ async function route(action, payload) {
     case 'queryPayment': return payment.queryPayment(payload && payload.orderId);
     case 'listPoints': return booking.listPoints();
     case 'bindInviteCode': return require('./lib/invitation').bindInviteCode(payload || {});
+    case 'listInviteRecords': return require('./lib/invitation').listInviteRecords(payload || {});
     case 'saveSubscriptionPreferences': return require('./lib/notification-service').saveSubscriptionPreferences(payload && payload.statuses || {});
     case 'staffListOrders': return booking.staffListOrders(payload || {});
     case 'staffTransition': return booking.transitionStaff(payload && payload.orderId, payload && payload.action);

@@ -45,7 +45,7 @@ function buildBookingTimeline({
   now = Date.now(),
   minAdvanceMinutes = 0,
   serviceDurationMinutes = 60,
-  stepMinutes = 15,
+  stepMinutes = 5,
   isActive = item => !item.status || DEFAULT_ACTIVE_STATUSES.has(item.status)
 }) {
   const shifts = Array.isArray(plan.shifts) ? plan.shifts : [];
@@ -66,7 +66,7 @@ function buildBookingTimeline({
     endAt,
     totalMinutes: Math.max(0, endMinutes - startMinutes),
     durationMinutes: Math.max(1, Number(serviceDurationMinutes) || 60),
-    stepMinutes: Math.max(1, Number(stepMinutes) || 15),
+    stepMinutes: Math.max(1, Number(stepMinutes) || 5),
     segments: []
   };
   if (!parsedShifts.length || !startAt || !endAt) return base;

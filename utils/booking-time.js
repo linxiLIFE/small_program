@@ -19,8 +19,8 @@ function partFor(timestamp) {
   return PARTS.find((part) => minutes < part.end) || PARTS[PARTS.length - 1];
 }
 
-function buildTimePeriods(slots, stepMinutes = 15, defaultDurationMinutes = 60) {
-  const step = Math.max(1, Number(stepMinutes) || 15) * 60 * 1000;
+function buildTimePeriods(slots, stepMinutes = 5, defaultDurationMinutes = 60) {
+  const step = Math.max(1, Number(stepMinutes) || 5) * 60 * 1000;
   const duration = Math.max(1, Number(defaultDurationMinutes) || 60) * 60 * 1000;
   const available = (Array.isArray(slots) ? slots : [])
     .filter((slot) => slot && slot.available !== false && Number.isFinite(Number(slot.startAt)))
@@ -89,7 +89,7 @@ function buildFallbackTimeline(slots, durationMinutes) {
   };
 }
 
-function decorateBookingTimeline(rawTimeline, slots, durationMinutes = 60, stepMinutes = 15) {
+function decorateBookingTimeline(rawTimeline, slots, durationMinutes = 60, stepMinutes = 5) {
   const fallback = buildFallbackTimeline(slots, durationMinutes);
   const source = rawTimeline && Number(rawTimeline.startAt) < Number(rawTimeline.endAt)
     ? rawTimeline
@@ -138,7 +138,7 @@ function decorateBookingTimeline(rawTimeline, slots, durationMinutes = 60, stepM
     endAt,
     totalMinutes,
     durationMinutes: Number(source.durationMinutes) || Number(durationMinutes) || 60,
-    stepMinutes: Number(source.stepMinutes) || Number(stepMinutes) || 15,
+    stepMinutes: Number(source.stepMinutes) || Number(stepMinutes) || 5,
     segments,
     ticks,
     availableSlots

@@ -446,6 +446,10 @@ async function bindInviteCode(inviteCode) {
   return result;
 }
 
+function listInviteRecords(cursor = 0) {
+  return call('listInviteRecords', { cursor }, () => ({ records: [], nextCursor: null }));
+}
+
 function configuredTemplateIds(settings, events) {
   const templates = settings && settings.notifications && settings.notifications.templates || {};
   return Array.from(new Set((events || []).map((event) => templates[event] && templates[event].templateId).filter(Boolean))).slice(0, 3);
@@ -522,5 +526,6 @@ module.exports = {
   getCheckInCode,
   redeemCheckInCode,
   bindInviteCode,
+  listInviteRecords,
   requestSubscriptionEvents
 };

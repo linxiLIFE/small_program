@@ -5,7 +5,7 @@ const { formatMoney, formatDuration, formatDateLabel, maskPhone } = require('../
 const { showPhoneAuthFailure, phoneBindFailureMessage } = require('../../utils/phone-auth');
 const { buildTimePeriods, decorateBookingTimeline, timeLabel } = require('../../utils/booking-time');
 
-const TIMELINE_STEP_MINUTES = 15;
+const TIMELINE_STEP_MINUTES = 5;
 const TIMELINE_HANDLE_WIDTH_PX = 28;
 
 function wait(milliseconds) {

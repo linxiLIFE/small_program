@@ -4,6 +4,8 @@ const { db, getContext, getOptional } = require('./db');
 const { AppError } = require('./errors');
 
 const LIMITS = Object.freeze({
+  nativeAdmin: { max: 180, windowMs: 60 * 1000 },
+  nativeAdminLogin: { max: 5, windowMs: 10 * 60 * 1000 },
   getAvailableSlots: { max: 60, windowMs: 60 * 1000 },
   createCartQuote: { max: 10, windowMs: 60 * 1000 },
   createCartOrder: { max: 10, windowMs: 60 * 1000 },

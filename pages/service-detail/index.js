@@ -1,5 +1,6 @@
 const api = require('../../utils/api');
 const { formatMoney, formatDuration } = require('../../utils/format');
+const { STORE_NAME, createShareCard } = require('../../utils/share');
 
 Page({
   data: {
@@ -12,6 +13,15 @@ Page({
   onLoad(options) {
     this.serviceId = options.serviceId || '';
     this.loadDetail();
+  },
+
+  onShareAppMessage() {
+    const service = this.data.service;
+    const serviceId = service.id || this.serviceId;
+    if (!serviceId) return createShareCard(`选款预约｜${STORE_NAME}`, '/pages/services/index');
+    const imageUrl = this.data.coverImageError ? '' : this.data.coverFallbackAttempted ? service.coverRemoteUrl : service.coverUrl;
+    return createShareCard(`${service.name || '项目详情'}｜${STORE_NAME}`,
+      `/pages/service-detail/index?serviceId=${encodeURIComponent(serviceId)}`, imageUrl);
   },
 
   async loadDetail() {

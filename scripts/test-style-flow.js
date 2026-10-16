@@ -81,7 +81,7 @@ function page(file, api, state = {}) {
   const bookingApi = {
     listServices: async () => ({ services: [{ id: 'boost-1', name: '加油包', priceFen: 1000, durationMinutes: 10 }] }),
     getBookingContext: async () => ({
-      settings: { booking: { openDays: 14, slotStepMinutes: 15 }, points: { maxPercent: 10 } },
+      settings: { booking: { openDays: 14, slotStepMinutes: 5 }, points: { maxPercent: 10 } },
       service: bookingService,
       technicians: [mock.technicians[0]],
       profile: mock.profile,
@@ -97,9 +97,11 @@ function page(file, api, state = {}) {
       builders: [{ id: 'builder-1', name: 'V建构', type: 'BUILDER', priceFen: 1500, durationMinutes: 30 }]
     }),
     getAvailableSlots: async () => ({
-      stepMinutes: 15,
+      stepMinutes: 5,
       slots: [
         { id: 'booking-10', startAt: Date.parse(`${bookingDate}T10:00:00+08:00`), available: true },
+        { id: 'booking-1005', startAt: Date.parse(`${bookingDate}T10:05:00+08:00`), available: true },
+        { id: 'booking-1010', startAt: Date.parse(`${bookingDate}T10:10:00+08:00`), available: true },
         { id: 'booking-1015', startAt: Date.parse(`${bookingDate}T10:15:00+08:00`), available: true },
         { id: 'booking-12', startAt: Date.parse(`${bookingDate}T12:00:00+08:00`), available: true }
       ]
@@ -135,6 +137,10 @@ function page(file, api, state = {}) {
   const firstRange = groupedBooking.timelineRangeFromX('start', -14, true);
   const lastRange = groupedBooking.timelineRangeFromX('end', groupedBooking.data.timelineTrackWidth - 14, true);
   assert.equal(firstRange.startAt, groupedBooking.data.timeline.startAt);
+  const fiveMinuteX = (5 * 60000 / (groupedBooking.data.timeline.endAt - groupedBooking.data.timeline.startAt)) * groupedBooking.data.timelineTrackWidth - 14;
+  const fiveMinuteRange = groupedBooking.timelineRangeFromX('start', fiveMinuteX, true);
+  assert.equal(fiveMinuteRange.startAt, groupedBooking.data.timeline.startAt + 5 * 60000);
+  assert.equal(fiveMinuteRange.endAt - fiveMinuteRange.startAt, groupedBooking.data.service.durationMinutes * 60000);
   assert.equal(lastRange.endAt, groupedBooking.data.timeline.endAt);
   await groupedBooking.selectPeriod({ currentTarget: { dataset: { id: groupedBooking.data.timePeriods[1].id } } });
   assert.equal(groupedBooking.data.expandedPeriodId, groupedBooking.data.timePeriods[1].id);
@@ -156,7 +162,7 @@ function page(file, api, state = {}) {
   const footBookingApi = {
     listServices: bookingApi.listServices,
     getBookingContext: async () => ({
-      settings: { booking: { openDays: 14, slotStepMinutes: 15 }, points: { maxPercent: 10 } },
+      settings: { booking: { openDays: 14, slotStepMinutes: 5 }, points: { maxPercent: 10 } },
       service: footService,
       technicians: [mock.technicians[0]],
       profile: mock.profile,
@@ -169,7 +175,7 @@ function page(file, api, state = {}) {
     }),
     getAvailableSlots: async (payload) => {
       slotPayloads.push(payload);
-      return { stepMinutes: 15, slots: [{ id: 'foot-10', startAt: Date.parse(`${bookingDate}T10:00:00+08:00`), available: true }] };
+      return { stepMinutes: 5, slots: [{ id: 'foot-10', startAt: Date.parse(`${bookingDate}T10:00:00+08:00`), available: true }] };
     },
     createQuote: async (payload) => ({ quoteId: 'quote-foot', totalFen: 4000 + Number(payload.footTipCount || 0) * 500, discountFen: 0, paidFen: 4000 + Number(payload.footTipCount || 0) * 500, pointsToUse: 0 })
   };

@@ -16,7 +16,7 @@ function mergeSettings(base, override) {
     ...source,
     store: { ...base.store, ...(source.store || {}) },
     home: { banners: [], ...(base.home || {}), ...(source.home || {}) },
-    booking: { ...base.booking, ...(source.booking || {}), slotStepMinutes: 15 },
+    booking: { ...base.booking, ...(source.booking || {}), slotStepMinutes: 5 },
     points: { ...base.points, ...(source.points || {}) },
     notifications: {
       ...base.notifications,

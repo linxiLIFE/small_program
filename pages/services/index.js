@@ -1,5 +1,6 @@
 const api = require('../../utils/api');
 const { formatMoney, formatDuration } = require('../../utils/format');
+const { STORE_NAME, createShareCard } = require('../../utils/share');
 
 Page({
   data: {
@@ -12,6 +13,21 @@ Page({
     activeServiceId: '',
     loading: true,
     error: ''
+  },
+
+  onLoad(options = {}) {
+    if (options.categoryId) {
+      const state = getApp().globalData;
+      state.pendingServiceCategoryId = options.categoryId;
+      delete state.pendingServiceId;
+    }
+  },
+
+  onShareAppMessage() {
+    const category = this.data.categories.find(item => item.id === this.data.activeCategoryId);
+    const title = category ? `${category.name}选款｜${STORE_NAME}` : `选款预约｜${STORE_NAME}`;
+    const query = category ? `?categoryId=${encodeURIComponent(category.id)}` : '';
+    return createShareCard(title, `/pages/services/index${query}`);
   },
 
   onShow() {

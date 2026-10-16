@@ -88,6 +88,25 @@ async function checkout(items, key = 'checkout') {
 }
 (async () => {
   reset();
+  const fiveMinuteSlots = await booking.getAvailableSlots(payload('hand', '10'));
+  assert.equal(fiveMinuteSlots.stepMinutes, 5);
+  assert.equal(fiveMinuteSlots.timeline.stepMinutes, 5);
+  for (const minute of ['00', '05', '10', '15']) {
+    const startAt = realTime.dateToTimestamp(date, `10:${minute}`);
+    const slot = fiveMinuteSlots.slots.find(item => item.startAt === startAt);
+    assert(slot, `10:${minute} must be available`);
+    assert.equal(slot.endAt - slot.startAt, 60 * 60000);
+    await booking.createQuote({ ...payload('hand', '10'), startAt });
+  }
+  await assert.rejects(booking.createQuote({ ...payload('hand', '10'), startAt: realTime.dateToTimestamp(date, '10:06') }), error => error.code === 'INVALID_SLOT');
+  const fiveMinuteBooking = payload('hand', '10', { startAt: realTime.dateToTimestamp(date, '10:05') });
+  await checkout([fiveMinuteBooking], 'five-minute-checkout');
+  await assert.rejects(booking.createQuote(payload('hand', '10', { startAt: realTime.dateToTimestamp(date, '10:10') })), error => error.code === 'SLOT_TAKEN');
+  await booking.createQuote(payload('hand', '11', { startAt: realTime.dateToTimestamp(date, '11:05') }));
+  const occupiedSlots = await booking.getAvailableSlots(payload('hand', '10'));
+  assert(!occupiedSlots.slots.some(item => item.startAt === realTime.dateToTimestamp(date, '10:10')));
+  assert(occupiedSlots.slots.some(item => item.startAt === realTime.dateToTimestamp(date, '11:05')));
+  reset();
   // One payer can book overlapping appointments for different people/technicians.
   const simultaneous = [payload('hand', '10', { boostCount: 2 }), payload('tips', '10', { technicianId: 'tech-other' })];
   const together = await checkout(simultaneous, 'different-technicians');

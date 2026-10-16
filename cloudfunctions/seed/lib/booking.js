@@ -262,9 +262,9 @@ async function validateBookingSlot(payload = {}, internal = {}) {
   const addonSelection = await resolveBookingAddons(service, payload, reader);
   assert(technicianCanServe(technician, service), 'SKILL_MISMATCH', '该技师暂不提供此大项');
   assertValidStart(date, Number(startAt), settings.booking.minAdvanceMinutes, settings.booking.openDays, now);
-  const step = Number(settings.booking.slotStepMinutes || 15);
+  const step = Number(settings.booking.slotStepMinutes || 5);
   const dateStart = dateToTimestamp(date);
-  assert((Number(startAt) - dateStart) % (step * 60 * 1000) === 0, 'INVALID_SLOT', '预约时段必须按 15 分钟步长选择');
+  assert((Number(startAt) - dateStart) % (step * 60 * 1000) === 0, 'INVALID_SLOT', '预约时段必须按 5 分钟步长选择');
   const plan = await getDayPlan(technicianId, date, settings, reader);
   const slot = getSlotFromPlan(plan, Number(startAt), addonSelection.effectiveService, settings);
   return { settings, service: addonSelection.effectiveService, baseService: service, addons: addonSelection.addons, totalFen: addonSelection.totalFen, technician, plan, slot };
@@ -278,12 +278,12 @@ async function getAvailableSlots(payload) {
   const effectiveService = addonSelection.effectiveService;
   assert(technicianCanServe(technician, service), 'SKILL_MISMATCH', '该技师暂不提供此大项');
   if (!isWithinDateWindow(payload.date, settings.booking.openDays, 0)) {
-    return { date: payload.date, serviceId: service.id, technicianId: technician.id, slots: [], durationMinutes: effectiveService.durationMinutes, addons: addonSelection.addons, timeline: { date: payload.date, startAt: null, endAt: null, totalMinutes: 0, durationMinutes: Number(effectiveService.durationMinutes), stepMinutes: Number(settings.booking.slotStepMinutes || 15), segments: [] } };
+    return { date: payload.date, serviceId: service.id, technicianId: technician.id, slots: [], durationMinutes: effectiveService.durationMinutes, addons: addonSelection.addons, timeline: { date: payload.date, startAt: null, endAt: null, totalMinutes: 0, durationMinutes: Number(effectiveService.durationMinutes), stepMinutes: Number(settings.booking.slotStepMinutes || 5), segments: [] } };
   }
   const plan = await getDayPlan(payload.technicianId, payload.date, settings);
   const slots = [];
   const now = Date.now();
-  const step = Number(settings.booking.slotStepMinutes || 15);
+  const step = Number(settings.booking.slotStepMinutes || 5);
   for (const shift of plan.shifts) {
     const shiftStartMinutes = Number(shift.start.slice(0, 2)) * 60 + Number(shift.start.slice(3));
     const shiftEndMinutes = Number(shift.end.slice(0, 2)) * 60 + Number(shift.end.slice(3));
@@ -1151,6 +1151,7 @@ async function markServiceCompleted(orderIdValue, now = Date.now()) {
       next.pointsEarned = points;
       await transaction.collection(COLLECTIONS.orders).doc(order.id).set({ data: next });
     }
+    await require('./invitation').awardInviterReward(transaction, next, now);
     return next;
   });
 }
@@ -1175,7 +1176,7 @@ async function transitionStaff(orderIdValue, action) {
     const now = Date.now();
     if (action === 'checkIn' && order.status === ORDER_STATUS.ARRIVED) return order;
     const timing = assertServiceTransitionTime(order, action, now);
-    assert(timing.allowed, timing.code, ({ CHECK_IN_TOO_EARLY: '仅可在预约前 60 分钟内办理到店', CHECK_IN_TOO_LATE: '已超过到店时间窗口，请由店主复核', SERVICE_TOO_EARLY: '服务开始时间过早', SERVICE_COMPLETE_TOO_EARLY: '预约服务尚未到结束时间，不能提前完成', ORDER_TIME_INVALID: '订单预约时间无效' })[timing.code] || '当前时间不允许此操作', 409);
+    assert(timing.allowed, timing.code, ({ SERVICE_TOO_EARLY: '服务开始时间过早', SERVICE_COMPLETE_TOO_EARLY: '预约服务尚未到结束时间，不能提前完成', ORDER_TIME_INVALID: '订单预约时间无效' })[timing.code] || '当前时间不允许此操作', 409);
     const next = { ...order, status: targetStatus, updatedAt: now };
     if (targetStatus === ORDER_STATUS.ARRIVED) next.arrivedAt = now;
     if (targetStatus === ORDER_STATUS.IN_SERVICE) next.serviceStartedAt = now;
