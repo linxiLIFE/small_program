@@ -1,6 +1,14 @@
 const { COLLECTIONS, ROLE_LABELS } = require('./constants');
 const { db, getContext, getOptional, find } = require('./db');
 const { AppError, assert } = require('./errors');
+const { AsyncLocalStorage } = require('async_hooks');
+const staffRequest = new AsyncLocalStorage();
+
+// Reuse a verified account only inside one native management invocation.
+// The next cloud request always reads the current account and technician state.
+function withStaffAccount(account, callback) {
+  return staffRequest.run({ account }, callback);
+}
 
 function requireOpenId() {
   const context = getContext();
@@ -50,6 +58,8 @@ async function getStaffAccount(openid) {
 async function getStaffAccountForContext(context = {}, reader = db) {
   const uid = String(context.uid || '').trim();
   const openid = String(context.openid || '').trim();
+  const scoped = staffRequest.getStore();
+  if (reader === db && scoped && uid && uid === scoped.account.uid) return scoped.account;
   if (uid) {
     const records = await find(COLLECTIONS.staff, { uid, active: true }, { limit: 1 }, reader);
     if (records.length) return records[0];
@@ -69,7 +79,10 @@ async function requireRole(roles) {
     throw new AppError('FORBIDDEN', '当前账号没有执行该操作的权限', 403);
   }
   if (account.role === 'TECHNICIAN') {
-    const technician = await getOptional(COLLECTIONS.technicians, account.technicianId);
+    const scoped = staffRequest.getStore();
+    const technician = scoped && scoped.account === account
+      ? await (scoped.technician ||= getOptional(COLLECTIONS.technicians, account.technicianId))
+      : await getOptional(COLLECTIONS.technicians, account.technicianId);
     assert(technician && technician.enabled !== false, 'FORBIDDEN', '技师账号已停用', 403);
   }
   return { context, account };
@@ -91,4 +104,4 @@ function safeUser(user, points = {}) {
   };
 }
 
-module.exports = { requireOpenId, userIdentityKey, getUser, ensureUser, getStaffAccount, getStaffAccountForContext, requireRole, safeUser };
+module.exports = { requireOpenId, userIdentityKey, getUser, ensureUser, getStaffAccount, getStaffAccountForContext, requireRole, withStaffAccount, safeUser };

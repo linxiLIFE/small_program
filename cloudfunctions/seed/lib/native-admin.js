@@ -2,14 +2,14 @@ const crypto = require('crypto');
 const https = require('https');
 const { COLLECTIONS } = require('./constants');
 const { db, getContext, getOptional, withRequestContext } = require('./db');
-const { requireOpenId, getStaffAccountForContext, requireRole } = require('./auth');
+const { requireOpenId, getStaffAccountForContext, requireRole, withStaffAccount } = require('./auth');
 const { assert, AppError } = require('./errors');
 const { enforceActionRateLimit } = require('./rate-limit');
 
 const SESSION_MS = 30 * 86400000;
 // Keep the native management identity out of customer and payment entry points.
 const ACTIONS = new Set([
-  'staffSession', 'adminSummary', 'adminListOrders', 'adminCatalog', 'getSettings',
+  'bootstrap', 'staffSession', 'adminSummary', 'adminListOrders', 'adminOrderFilters', 'adminCatalog', 'getSettings',
   'adminSchedule', 'adminSaveScheduleDay', 'adminSaveWeeklySchedule',
   'adminSaveCategory', 'adminSaveService', 'adminSaveWork', 'adminReorderCatalog',
   'adminDeleteCategory', 'adminDeleteService', 'adminDeleteWork', 'adminSaveFeaturedWorks',
@@ -92,10 +92,14 @@ async function dispatch(payload = {}, route) {
   assert(ACTIONS.has(payload.action), 'FORBIDDEN', '不支持的管理操作', 403);
   const account = await getStaffAccountForContext({ uid: record.uid });
   assert(account && (account.id || account._id) === record.accountId, 'FORBIDDEN', '管理账号已停用，请重新登录', 403);
-  return withRequestContext({ ...context, uid: record.uid }, async () => {
+  return withRequestContext({ ...context, uid: record.uid }, () => withStaffAccount(account, async () => {
     await requireRole(['OWNER', 'STAFF', 'TECHNICIAN']);
+    if (payload.action === 'bootstrap') {
+      const data = await route(account.role === 'TECHNICIAN' ? 'mySchedule' : 'adminSummary', account.role === 'TECHNICIAN' ? { compact: true } : { days: 30 });
+      return { session: publicSession(account), data };
+    }
     return route(payload.action, payload.payload || {});
-  });
+  }));
 }
 
 module.exports = { dispatch, login, verifyPassword, ACTIONS, sessionId };

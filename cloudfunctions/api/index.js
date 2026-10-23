@@ -112,6 +112,7 @@ async function route(action, payload) {
     case 'saveMySchedule': return admin.saveScheduleDay(payload || {});
     case 'adminSummary': return admin.summary(payload || {});
     case 'adminListOrders': return admin.listOrdersForAdmin(payload || {});
+    case 'adminOrderFilters': return admin.orderFilters();
     case 'adminCatalog': return admin.listCatalog();
     case 'adminSchedule': return admin.schedule(payload || {});
     case 'adminSaveScheduleDay': return admin.saveScheduleDay(payload || {});

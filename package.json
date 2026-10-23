@@ -8,7 +8,7 @@
     "test:checkin": "node scripts/test-checkin-anytime.js",
     "test:invitation": "node scripts/test-invitation.js",
     "test:share": "node scripts/test-sharing.js",
-    "test:admin": "node scripts/test-admin-entry.js && node scripts/test-native-admin.js",
+    "test:admin": "node scripts/test-admin-entry.js && node scripts/test-native-admin.js && node scripts/test-admin-runtime.js",
     "prepare:functions": "node scripts/prepare-cloudfunctions.js",
     "db:schema": "node scripts/apply-mysql-schema.js",
     "admin:bootstrap-owner": "node scripts/bootstrap-owner.js"

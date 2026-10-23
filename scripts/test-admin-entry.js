@@ -40,4 +40,7 @@ assert.equal(navigations.length, 3, 'leaving the page clears partial taps');
 const appConfig = require('../app.json');
 assert((appConfig.subPackages || []).some(pkg => pkg.pages.some(page => `${pkg.root}/${page}` === 'pages/admin/index')));
 assert(!appConfig.tabBar.list.some(tab => tab.pagePath === 'pages/admin/index'));
+assert(!fs.readFileSync(path.join(root,'pages/index/index.wxml'),'utf8').includes('home-avatar'));
+assert(!fs.readFileSync(path.join(root,'pages/index/index.js'),'utf8').includes('getProfile'));
+assert(fs.readFileSync(path.join(root,'pages/profile/index.wxml'),'utf8').includes('bindtap="handleAdminAvatarTap"'));
 console.log('admin entry passed: five taps, timeout, reset, duplicate navigation, retry, hidden subpackage route');

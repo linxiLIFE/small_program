@@ -92,6 +92,7 @@ function load(name){if(cache[name])return cache[name];const scope={module:{expor
  await assert.rejects(admin.saveScheduleDay({technicianId:'tech',date,leave:true,shifts:[],version:1}),/SCHEDULE_CONFLICT/);
  const saved=await admin.saveScheduleDay({technicianId:'tech',date,leave:false,shifts:[{start:'10:00',end:'20:00',breaks:[]}],version:1});assert.equal(saved.technicianId,'tech');
  await assert.rejects(admin.saveScheduleDay({technicianId:'tech',date,leave:false,shifts:[{start:'10:00',end:'20:00',breaks:[{start:'11:00',end:'11:30'}]}],version:1}),/SCHEDULE_CONFLICT/);
+ const compact=await admin.mySchedule({date,compact:true});assert.equal(compact.days.length,0);
  const own=await admin.mySchedule({date,technicianId:'other'});assert.equal(own.technician.id,'tech');assert(own.days.every(day=>day.technicianId==='tech'));
  const media=load('media');assert.throws(()=>media.decodeImage({base64:Buffer.from('<svg>evil</svg>').toString('base64')}),/INVALID_IMAGE/);
  const team=load('team');assert.throws(()=>team.validateCredentials({username:'ab',password:'12345678'}),/INVALID_USERNAME/);assert.throws(()=>team.validateCredentials({username:'technician',password:'12345678'}),/INVALID_PASSWORD/);

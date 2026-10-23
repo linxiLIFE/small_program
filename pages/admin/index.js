@@ -57,10 +57,16 @@ Page({
   stopTap() {},
   async restoreSession() {
     this.setData({ checking: true, error: '' });
-    try { if (admin.getSavedSession()) this.setSession(await admin.request('staffSession')); }
+    let initialData;
+    try {
+      if (admin.getSavedSession()) {
+        const result = await admin.request('bootstrap');
+        this.setSession(result.session); initialData = result.data;
+      }
+    }
     catch (err) { this.setData({ error: err.message }); }
     finally { this.setData({ checking: false }); }
-    if (this.data.session) await this.loadPage();
+    if (this.data.session) await this.loadPage({ initialData });
   },
   setSession(session) {
     if (!session || session.role === 'UNASSIGNED') throw new Error('此账号没有后台管理权限');
@@ -79,6 +85,7 @@ Page({
   async logout() {
     if (this.data.saving) return;
     try { await admin.logout(); } catch (_) { /* The client has still cleared the local session. */ }
+    this.orderFilters = null;
     this.sequence = (this.sequence || 0) + 1;
     this.setData({ session: null, password: '', summary: null, orders: [], settings: null, personal: null, catalog: { categories: [], services: [], works: [], technicians: [] }, editor: '', accountTechnician: null, accountPassword: '', refund: null, tab: 'dashboard', section: '', error: '', notice: '' });
   },
@@ -91,6 +98,7 @@ Page({
   async selectTab(event) {
     if (this.data.saving) return;
     const tab = event.currentTarget.dataset.tab;
+    if (tab === this.data.tab && !this.data.section) return;
     this.setData({ tab, section: '', error: '', notice: '', title: tab === 'dashboard' ? this.data.technician ? '我的排班' : '经营概览' : tab === 'orders' ? '预约订单' : '其他' });
     wx.pageScrollTo({ scrollTop: 0, duration: 0 }); await this.loadPage();
   },
@@ -100,20 +108,20 @@ Page({
     wx.pageScrollTo({ scrollTop: 0, duration: 0 }); await this.loadPage();
   },
   closeSection() { this.sequence = (this.sequence || 0) + 1; this.setData({ section: '', title: '其他', error: '', notice: '', loading: false }); },
-  async loadPage() {
+  async loadPage(options = {}) {
     if (!this.data.session) return;
     const sequence = this.sequence = (this.sequence || 0) + 1;
     this.setData({ loading: true, error: '' });
     try {
       const { tab, section, technician } = this.data;
-      if (technician && (tab === 'dashboard' || tab === 'orders' || section === 'personal')) {
-        const personal = await admin.request('mySchedule', { date: this.data.scheduleDate });
+      if (technician && (tab === 'dashboard' || section === 'personal')) {
+        const personal = options.initialData || await admin.request('mySchedule', { date: this.data.scheduleDate, compact: true });
         if (sequence !== this.sequence) return;
         this.setData({ personal: { ...personal, orders: personal.orders.map(order => decorateOrder(order, false)) }, plan: clone(personal.plan) });
       } else if (tab === 'dashboard') {
         const params = this.data.customRange ? { dateFrom: this.data.dateFrom, dateTo: this.data.dateTo } : { days: [7,30,90,365][this.data.rangeIndex] };
         if (this.data.customRange && (!params.dateFrom || !params.dateTo)) throw new Error('请选择起止日期');
-        const result = await admin.request('adminSummary', params);
+        const result = options.initialData || await admin.request('adminSummary', params);
         if (sequence !== this.sequence) return;
         const m = result.metrics;
         const max = Math.max(1, ...result.trend.map(item => Math.abs(item.netFen)));
@@ -124,10 +132,11 @@ Page({
         ], trend: result.trend.map(item => ({ ...item, height: Math.max(2, Math.round(Math.abs(item.netFen) / max * 100)), negative: item.netFen < 0, label: item.date.slice(5), value: money(item.netFen) })),
         rankings: [{ title: '大项分布', items: result.categories }, { title: '热门款式', items: result.works }, { title: '项目预约', items: result.services }, { title: '技师预约', items: result.technicians }] });
       } else if (tab === 'orders') {
+        // Filters do not block order rendering, and are loaded once per visit.
+        if (!technician) this.loadOrderFilters(sequence).catch(err => { if (sequence === this.sequence) this.handleError(err); });
         const result = await admin.request('adminListOrders', this.data.query);
         if (sequence !== this.sequence) return;
         this.setData({ orders: result.orders.map(order => decorateOrder(order, result.canRefund)), orderPage: result.page, orderPages: result.pages || 1, orderTotal: result.total });
-        await this.loadCatalog(sequence);
       } else if (['catalog','featured','team'].includes(section)) await this.loadCatalog(sequence);
       else if (['home','settings'].includes(section)) {
         const settings = await admin.request('getSettings'); if (sequence !== this.sequence) return;
@@ -152,13 +161,20 @@ Page({
       featured: catalog.works.filter(item => item.featured).sort((a,b) => a.featuredSort-b.featuredSort), featuredAvailable: catalog.works.filter(item => item.published !== false && !selected.has(item.id)) });
     this.updateCatalogItems();
   },
+  async loadOrderFilters(sequence) {
+    const token = admin.getSavedSession()?.token;
+    const filters = this.orderFilters || await admin.request('adminOrderFilters');
+    if (sequence !== this.sequence || token !== admin.getSavedSession()?.token) return;
+    this.orderFilters = filters;
+    this.setData({ serviceOptions: [{ id: '', name: '全部项目' }, ...filters.services], workOptions: [{ id: '', title: '全部款式' }, ...filters.works.filter(item => !this.data.query.serviceId || item.serviceId === this.data.query.serviceId)], technicianOptions: [{ id: '', name: '全部技师' }, ...filters.technicians] });
+  },
   toggleCustom(event) { this.setData({ customRange: event.detail.value }); },
   changeRange(event) { this.setData({ rangeIndex: Number(event.detail.value) }); this.loadPage(); },
   filterOrders(event) {
     const type = event.currentTarget.dataset.type; const index = Number(event.detail.value);
     const options = { status: this.data.statuses, technicianId: this.data.technicianOptions, serviceId: this.data.serviceOptions, workId: this.data.workOptions }[type];
     this.setData({ [`query.${type}`]: options[index].id, ...(type === 'status' ? { statusIndex: index } : {}) });
-    if (type === 'serviceId') this.setData({ 'query.workId': '', workOptions: [{ id: '', title: '全部款式' }, ...this.data.catalog.works.filter(item => !options[index].id || item.serviceId === options[index].id)] });
+    if (type === 'serviceId') this.setData({ 'query.workId': '', workOptions: [{ id: '', title: '全部款式' }, ...(this.orderFilters?.works || this.data.catalog.works).filter(item => !options[index].id || item.serviceId === options[index].id)] });
   },
   queryOrders() { this.setData({ 'query.page': 1 }); this.loadPage(); },
   resetOrderQuery() { this.setData({ query: { query: '', status: '', technicianId: '', serviceId: '', workId: '', dateFrom: '', dateTo: '', page: 1, limit: 20, sortBy: 'startAt', sortDirection: 'desc' }, statusIndex: 0 }); this.loadPage(); },

@@ -43,7 +43,7 @@ const sandbox = { module: {exports:{}}, Buffer, Date: Clock, process: {env: {TCB
   } };
   if (name === './constants') return {COLLECTIONS:{idempotency:'idempotency_keys'}};
   if (name === './db') return {db,getContext:()=>contexts.getStore(),getOptional:async (_,id)=>records.get(id),withRequestContext:(context,fn)=>contexts.run(context,fn)};
-  if (name === './auth') return {requireOpenId:()=>{const context=contexts.getStore();businessAssert(context?.openid,'UNAUTHENTICATED','需要微信身份',401);return context;},getStaffAccountForContext:findAccount,requireRole};
+  if (name === './auth') return {requireOpenId:()=>{const context=contexts.getStore();businessAssert(context?.openid,'UNAUTHENTICATED','需要微信身份',401);return context;},getStaffAccountForContext:findAccount,requireRole,withStaffAccount:(_,fn)=>fn()};
   if (name === './errors') return {AppError,assert:businessAssert};
   if (name === './rate-limit') return {enforceActionRateLimit:async action=>rates.push(action)};
   throw new Error(`Unexpected import ${name}`);
@@ -83,6 +83,9 @@ const invoke = (payload,who=context) => contexts.run(who,()=>server.dispatch(pay
   for(const action of ['createOrder','preparePayment','nativeAdmin','UNKNOWN']) await assert.rejects(invoke({action,token:owner.token}),{code:'FORBIDDEN'});
   await assert.rejects(invoke({action:'adminSaveSettings',token:tech.token}),{code:'FORBIDDEN'});
   assert.equal((await invoke({action:'mySchedule',token:tech.token})).uid,'tech-uid');
+  const boot = await invoke({action:'bootstrap',token:tech.token});
+  assert.equal(boot.session.technicianId,'tech-1'); assert.equal(boot.data.action,'mySchedule'); assert.equal(boot.data.payload.compact,true);
+  assert.equal((await invoke({action:'bootstrap',token:owner.token})).data.action,'adminSummary');
   staff.get('owner-uid').active=false;
   await assert.rejects(invoke({action:'adminSummary',token:owner.token}),{code:'FORBIDDEN'});
   staff.get('owner-uid').active=true;

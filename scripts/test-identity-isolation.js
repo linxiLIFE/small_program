@@ -25,7 +25,7 @@ const authModule = { exports: {} };
 vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../cloudfunctions/api/lib/auth.js'), 'utf8'), {
   module: authModule,
   exports: authModule.exports,
-  require: name => name === './constants' ? constants : name === './db' ? { db, getContext: () => ({}) , getOptional: async (collection, id) => users[`${collection}:${id}`] || null, find } : errors
+  require: name => name === 'async_hooks' ? require('async_hooks') : name === './constants' ? constants : name === './db' ? { db, getContext: () => ({}) , getOptional: async (collection, id) => users[`${collection}:${id}`] || null, find } : errors
 });
 
 (async () => {

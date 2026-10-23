@@ -192,14 +192,15 @@ async function ordersWithContact(records) {
 }
 
 async function listOrdersForAdmin(payload = {}) {
-  const { account } = await requireRole(['OWNER', 'STAFF']);
+  const { account } = await requireRole(['OWNER', 'STAFF', 'TECHNICIAN']);
   const clauses = [
     "NOT (status IN ('CANCELLED', 'CANCELLED_BY_USER') AND COALESCE(payment_status, 'NOT_STARTED') <> 'SUCCESS')"
   ];
   const params = [];
   const equal = (sql, value) => { if (value) { clauses.push(`${sql} = ?`); params.push(String(value)); } };
   equal('status', payload.status);
-  equal('technician_id', payload.technicianId);
+  if (account.role === 'TECHNICIAN') assert(account.technicianId, 'FORBIDDEN', '当前账号未绑定技师', 403);
+  equal('technician_id', account.role === 'TECHNICIAN' ? account.technicianId : payload.technicianId);
   equal("JSON_UNQUOTE(JSON_EXTRACT(data, '$.serviceId'))", payload.serviceId);
   equal('work_id', payload.workId);
   const dateFrom = payload.dateFrom ? normalizeDate(payload.dateFrom) : '';
@@ -230,6 +231,15 @@ async function listOrdersForAdmin(payload = {}) {
   const records = (rowsResult[0] || []).map((row) => typeof row.data === 'string' ? JSON.parse(row.data) : row.data);
   const total = Number(countResult[0] && countResult[0][0] && countResult[0][0].total || 0);
   return { orders: await ordersWithContact(records), canRefund: account.role === 'OWNER', page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) };
+}
+
+async function orderFilters() {
+  await requireRole(['OWNER', 'STAFF']);
+  const entries = await Promise.all([['services','name'],['works','title'],['technicians','name']].map(async ([table, label]) => {
+    const [rows] = await db.query(`SELECT id, JSON_UNQUOTE(JSON_EXTRACT(data, '$.${label}')) AS label, JSON_UNQUOTE(JSON_EXTRACT(data, '$.serviceId')) AS service_id FROM ${table} WHERE COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.archived')), 'false') <> 'true' ORDER BY id LIMIT 10000`);
+    return [table, rows.map(row => ({ id: row.id, [label]: row.label || '', ...(table === 'works' ? { serviceId: row.service_id || '' } : {}) }))];
+  }));
+  return Object.fromEntries(entries);
 }
 
 async function listAllTechnicians() {
@@ -416,7 +426,7 @@ async function personalScheduleData(technicianId, payload = {}) {
   const settings = await getCurrentSettings();
   const date = normalizeDate(payload.date);
   const first = toDateString();
-  const days = await Promise.all(Array.from({length:14}, async (_, index) => {
+  const days = payload.compact === true ? [] : await Promise.all(Array.from({length:14}, async (_, index) => {
     const day = toDateString(dateToTimestamp(first) + index * 86400000);
     const { record, source } = await getAdminDayPlan(technicianId, day, settings);
     const orders = await find(COLLECTIONS.orders, { technicianId: technicianId, date: day }, {limit:200});
@@ -441,4 +451,4 @@ async function previewTechnicianSchedule(payload = {}) {
 }
 
 const { saveService, saveWork, saveFeaturedWorks, listCatalog } = require('./catalog-admin');
-module.exports = { previewTechnicianSchedule, mySchedule, normalizeShifts, planCoversInterval, summary, listOrdersForAdmin, schedule, saveScheduleDay, saveWeeklySchedule, saveService, saveWork, saveFeaturedWorks, saveSettings, getPaymentConfigStatus, refundOrder, listCatalog };
+module.exports = { previewTechnicianSchedule, mySchedule, normalizeShifts, planCoversInterval, summary, listOrdersForAdmin, orderFilters, schedule, saveScheduleDay, saveWeeklySchedule, saveService, saveWork, saveFeaturedWorks, saveSettings, getPaymentConfigStatus, refundOrder, listCatalog };
